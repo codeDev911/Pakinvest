@@ -1,0 +1,6 @@
+{
+  "name": "PakInvest",
+  "description": "Smart investment platform in Pakistani Rupees (Rs.) featuring daily profit plans, referral network, secure JazzCash/EasyPaisa/Raast withdrawal gateways, and real-time portfolio analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
