@@ -44,7 +44,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [regEmail, setRegEmail] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
   const [regPin, setRegPin] = useState<string>('');
-  const [regReferralCode, setRegReferralCode] = useState<string>('');
+  const [regReferralCode, setRegReferralCode] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('pakinvest_ref_code');
+      if (saved) return saved;
+      const params = new URLSearchParams(window.location.search);
+      return params.get('ref') || params.get('invite') || params.get('referral') || '';
+    } catch {
+      return '';
+    }
+  });
 
   if (!isOpen) return null;
 

@@ -34,7 +34,19 @@ export const DepositModal: React.FC = () => {
 
   if (!isDepositModalOpen) return null;
 
-  const currentChannel = (officialChannels && officialChannels.find((c) => c.gateway === selectedGateway)) || OFFICIAL_DEPOSIT_CHANNELS[0];
+  const activeChannels = (officialChannels && officialChannels.length > 0)
+    ? officialChannels.filter((c) => c.isActive !== false)
+    : OFFICIAL_DEPOSIT_CHANNELS;
+
+  const availableGateways = Array.from(new Set(activeChannels.map((c) => c.gateway)));
+  const displayGateways = availableGateways.length > 0 ? availableGateways : (['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer', 'USDT_TRC20'] as GatewayType[]);
+
+  const effectiveGateway = displayGateways.includes(selectedGateway) ? selectedGateway : displayGateways[0];
+
+  const currentChannel =
+    activeChannels.find((c) => c.gateway === effectiveGateway) ||
+    activeChannels[0] ||
+    OFFICIAL_DEPOSIT_CHANNELS[0];
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -147,8 +159,8 @@ export const DepositModal: React.FC = () => {
                     Select Payment Gateway
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    {(['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer', 'USDT_TRC20'] as GatewayType[]).map((gw) => {
-                      const isSelected = selectedGateway === gw;
+                    {displayGateways.map((gw) => {
+                      const isSelected = effectiveGateway === gw;
                       return (
                         <button
                           key={gw}
@@ -165,7 +177,7 @@ export const DepositModal: React.FC = () => {
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate">
-                              {gw === 'Bank_Transfer' ? 'Meezan Bank' : gw === 'USDT_TRC20' ? 'USDT (TRC20)' : gw}
+                              {gw === 'Bank_Transfer' ? 'Meezan / Bank' : gw === 'USDT_TRC20' ? 'USDT (TRC20)' : gw}
                             </p>
                             <span className="text-[10px] text-slate-400 block truncate">
                               {gw === 'Raast' ? 'Instant 0% fee' : 'Fast automated'}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Moon, Sun, Flame, LogIn, Sparkles } from 'lucide-react';
+import { Moon, Sun, Bell, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Navbar: React.FC = () => {
@@ -8,7 +8,8 @@ export const Navbar: React.FC = () => {
     theme,
     toggleTheme,
     user,
-    setIsStreakModalOpen,
+    unreadNotificationsCount,
+    setIsNotificationModalOpen,
     setIsAuthModalOpen,
   } = useApp();
 
@@ -53,15 +54,19 @@ export const Navbar: React.FC = () => {
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Daily Streak Button */}
+          {/* Real-time Notification Button */}
           <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setIsStreakModalOpen(true)}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/80 text-amber-700 dark:text-amber-300 text-xs font-bold hover:bg-amber-100 transition-colors shadow-2xs"
-            title="Daily Check-in Streak Reward"
+            whileTap={{ scale: 0.92 }}
+            onClick={() => setIsNotificationModalOpen(true)}
+            className="relative p-2 sm:px-2.5 sm:py-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors shadow-2xs flex items-center gap-1.5"
+            title="Real-time Alerts & Activity"
           >
-            <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-            <span>{user.dailyStreak}d</span>
+            <Bell className="w-4 h-4" />
+            {unreadNotificationsCount > 0 && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-black rounded-full bg-emerald-500 text-white shadow-xs animate-bounce">
+                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+              </span>
+            )}
           </motion.button>
 
           {/* Theme Toggle Button */}

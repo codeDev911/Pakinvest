@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatPKR } from '../../utils/formatters';
+import { ActiveInvestmentCard } from '../ActiveInvestmentCard';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   ReceiptText,
   TrendingUp,
-  Flame,
+  Bell,
   Users,
   Eye,
   EyeOff,
@@ -21,6 +22,7 @@ import {
   Zap,
   Activity,
   Award,
+  CalendarCheck,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -30,15 +32,19 @@ export const HomeTab: React.FC = () => {
     activeInvestments,
     plans,
     transactions,
+    notifications,
+    unreadNotificationsCount,
     setCurrentTab,
     setIsDepositModalOpen,
     setIsWithdrawModalOpen,
     setSelectedPlanForDetail,
     setSelectedTransactionReceipt,
-    setIsStreakModalOpen,
+    setIsNotificationModalOpen,
     claimProfit,
     claimAllProfits,
     totalLiveUnclaimedProfit,
+    totalDailyProfitRate,
+    profitPerSecond,
     hideBalance,
     toggleHideBalance,
   } = useApp();
@@ -185,56 +191,93 @@ export const HomeTab: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. Daily Loyalty Bonus & Real-time Live Yield Claim Bar */}
+      {/* 3. Daily Loyalty Bonus & 24-Hour Cycle Daily Payout Summary Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Real-time Unclaimed Yield Banner */}
+        {/* 24-Hour Cycle Daily Payout Banner */}
         <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-slate-900 border border-emerald-200/80 dark:border-emerald-800/80 flex items-center justify-between shadow-2xs">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-              <Clock className="w-3 h-3 animate-spin text-emerald-600" />
-              Live Accruing Yield
-            </span>
-            <div className="text-lg font-black text-slate-900 dark:text-white font-display">
-              +{formatPKR(totalLiveUnclaimedProfit, { decimals: true })}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-emerald-600" />
+                24h Daily Payout Schedule
+              </span>
+              {totalDailyProfitRate > 0 && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono font-bold">
+                  24h Cycle
+                </span>
+              )}
             </div>
+            <div className="text-lg font-black text-slate-900 dark:text-white font-display">
+              {totalDailyProfitRate > 0 ? (
+                <span>+{formatPKR(totalDailyProfitRate)}<span className="text-xs font-normal text-slate-500">/day</span></span>
+              ) : (
+                <span className="text-slate-400 text-sm font-normal">No Active Plans</span>
+              )}
+            </div>
+            {totalDailyProfitRate > 0 && (
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                Total Claimed: <strong className="text-emerald-600 dark:text-emerald-400">{formatPKR(user.totalEarnedProfit || 0)}</strong>
+              </p>
+            )}
           </div>
 
           <button
             type="button"
             disabled={totalLiveUnclaimedProfit <= 0 || isClaimingAll}
             onClick={handleClaimAll}
-            className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            className={`py-2 px-3.5 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 ${
+              totalLiveUnclaimedProfit > 0
+                ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-500/20 shadow-md ring-2 ring-emerald-400/50 animate-pulse'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700'
+            }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{isClaimingAll ? 'Claiming...' : 'Claim Yield'}</span>
+            <span>
+              {isClaimingAll
+                ? 'Claiming...'
+                : totalLiveUnclaimedProfit > 0
+                ? `Claim All (${formatPKR(totalLiveUnclaimedProfit)})`
+                : '24h Timer Active'}
+            </span>
           </button>
         </div>
 
-        {/* Daily Streak Check-in Box */}
+        {/* Live Activity & Notifications Alert Box */}
         <div
-          onClick={() => setIsStreakModalOpen(true)}
-          className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/70 flex items-center justify-between cursor-pointer hover:border-amber-400 transition-colors shadow-2xs"
+          onClick={() => setIsNotificationModalOpen(true)}
+          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-all shadow-2xs group"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Flame className="w-5 h-5 fill-amber-500 text-amber-500" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/60 dark:border-emerald-800/60 relative">
+              <Bell className="w-5 h-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute -top-1 -right-1 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
+              )}
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                  Daily Check-in Streak
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {notifications.length > 0 ? notifications[0].title : 'Live Notifications & Status'}
                 </h4>
-                <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-md bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
-                  Day {user.dailyStreak} 🔥
-                </span>
+                {unreadNotificationsCount > 0 ? (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                    {unreadNotificationsCount} New
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    Live
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Tap to claim daily cash bonus
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-xs sm:max-w-md">
+                {notifications.length > 0
+                  ? notifications[0].message
+                  : 'Real-time updates on approvals, withdrawals, and payouts'}
               </p>
             </div>
           </div>
 
-          <ChevronRight className="w-4 h-4 text-slate-400" />
+          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
         </div>
       </div>
 
@@ -263,7 +306,7 @@ export const HomeTab: React.FC = () => {
             <TrendingUp className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
             <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">No Active Investment Plans</h4>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-              Activate an investment package starting at Rs. 1,000 to begin receiving daily automated returns.
+              Activate an investment package starting at Rs. 1,000 to begin receiving daily 24-hour automated returns.
             </p>
             <button
               type="button"
@@ -274,62 +317,9 @@ export const HomeTab: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {activeInvestments.map((inv) => (
-              <div
-                key={inv.id}
-                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
-                      {getPlanIcon(inv.planCategory)}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                        {inv.planName}
-                      </h4>
-                      <span className="text-[10px] text-slate-400">
-                        {inv.daysRemaining} days left • {inv.dailyProfitPercent}% Daily
-                      </span>
-                    </div>
-                  </div>
-
-                  <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-display">
-                    +{formatPKR(inv.dailyProfitAmount)}/day
-                  </span>
-                </div>
-
-                {/* Progress */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    <span>Capital: {formatPKR(inv.investedAmount)}</span>
-                    <span>Earned: {formatPKR(inv.earnedSoFar)}</span>
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                      style={{
-                        width: `${Math.min(100, Math.round(((inv.durationDays - inv.daysRemaining) / inv.durationDays) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Claim item profit */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-[10px] text-slate-400">
-                    Unclaimed: <strong className="text-emerald-600 dark:text-emerald-400 font-display">+{formatPKR(inv.unclaimedProfit, { decimals: true })}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => claimProfit(inv.id)}
-                    className="py-1 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold text-[11px] hover:bg-emerald-100 transition-colors"
-                  >
-                    Claim
-                  </button>
-                </div>
-              </div>
+              <ActiveInvestmentCard key={inv.id} investment={inv} />
             ))}
           </div>
         )}

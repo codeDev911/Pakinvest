@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { InvestmentPlan } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { ActiveInvestmentCard } from '../ActiveInvestmentCard';
 import {
   Zap,
   Sun,
@@ -125,88 +126,10 @@ export const PlansTab: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="space-y-3.5">
-              {activeInvestments.map((inv) => {
-                const progressPct = Math.min(
-                  100,
-                  Math.round(((inv.durationDays - inv.daysRemaining) / inv.durationDays) * 100)
-                );
-
-                return (
-                  <div
-                    key={inv.id}
-                    className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                          {getPlanIcon(inv.planCategory)}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                              {inv.planName}
-                            </h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
-                              Active Running
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            Invested: <strong className="text-slate-800 dark:text-slate-200">{formatPKR(inv.investedAmount)}</strong> • {inv.daysRemaining} days remaining
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400 block">Daily ROI Rate</span>
-                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-display">
-                          {inv.dailyProfitPercent}% ({formatPKR(inv.dailyProfitAmount)}/day)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                        <span>Cycle Progress ({progressPct}%)</span>
-                        <span>Maturity Date: {inv.endDate}</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500"
-                          style={{ width: `${progressPct}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Real-Time Live Accrual & Claim Area */}
-                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-emerald-500 animate-spin" />
-                          Unclaimed Real-Time Profit
-                        </span>
-                        <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-display">
-                          +{formatPKR(inv.unclaimedProfit, { decimals: true })}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-400">
-                          Total Earned: <strong className="text-slate-700 dark:text-slate-300">{formatPKR(inv.earnedSoFar)}</strong>
-                        </span>
-                        <button
-                          onClick={() => claimProfit(inv.id)}
-                          className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs transition-colors flex items-center gap-1 shadow-xs"
-                        >
-                          <Sparkles className="w-3 h-3" />
-                          <span>Claim</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="space-y-4">
+              {activeInvestments.map((inv) => (
+                <ActiveInvestmentCard key={inv.id} investment={inv} />
+              ))}
             </div>
           )}
         </div>

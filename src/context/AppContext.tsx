@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import {
   UserProfile,
   InvestmentPlan,
@@ -11,6 +11,8 @@ import {
   GatewayType,
   LivePayoutNotification,
   DatabaseStatus,
+  ReferralNetworkData,
+  UserNotification,
 } from '../types';
 import { INITIAL_PLANS, LIVE_PAYOUT_FEED, OFFICIAL_DEPOSIT_CHANNELS } from '../data/mockData';
 import { fireConfetti } from '../utils/formatters';
@@ -34,8 +36,11 @@ interface AppContextType {
   officialChannels: OfficialDepositChannel[];
   transactions: Transaction[];
   savedPaymentAccounts: PaymentAccount[];
+  notifications: UserNotification[];
+  unreadNotificationsCount: number;
   livePayouts: LivePayoutNotification[];
   databaseStatus: DatabaseStatus;
+  referralNetwork: ReferralNetworkData;
   toasts: ToastInfo[];
   removeToast: (id: string) => void;
   showToast: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
@@ -51,6 +56,8 @@ interface AppContextType {
   setSelectedTransactionReceipt: (tx: Transaction | null) => void;
   isStreakModalOpen: boolean;
   setIsStreakModalOpen: (open: boolean) => void;
+  isNotificationModalOpen: boolean;
+  setIsNotificationModalOpen: (open: boolean) => void;
   isAddAccountModalOpen: boolean;
   setIsAddAccountModalOpen: (open: boolean) => void;
   isAdminModalOpen: boolean;
@@ -80,6 +87,9 @@ interface AppContextType {
   claimAllProfits: () => Promise<void>;
   claimReferralBonus: () => Promise<void>;
   claimDailyStreak: () => Promise<void>;
+  markNotificationAsRead: (id?: string) => Promise<void>;
+  clearAllNotifications: () => Promise<void>;
+  fetchNotifications: () => Promise<void>;
   addPaymentAccount: (account: Omit<PaymentAccount, 'id' | 'addedDate'>) => Promise<void>;
   deletePaymentAccount: (id: string) => Promise<void>;
   updateUserPin: (newPin: string) => void;
@@ -87,6 +97,9 @@ interface AppContextType {
 
   // Computed state
   totalLiveUnclaimedProfit: number;
+  totalDailyProfitRate: number;
+  profitPerSecond: number;
+  profitPerHour: number;
   hideBalance: boolean;
   toggleHideBalance: () => void;
 }
@@ -116,6 +129,19 @@ const GUEST_USER: UserProfile = {
   isAdmin: false,
 };
 
+const INITIAL_REFERRAL_NETWORK: ReferralNetworkData = {
+  referralCode: 'PAK----',
+  referralTier: 1,
+  referralEarnings: 0,
+  unclaimedReferralEarnings: 0,
+  totalTeamMembers: 0,
+  totalTeamVolume: 0,
+  tier1Count: 0,
+  tier2Count: 0,
+  tier3Count: 0,
+  members: [],
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Theme state
   const [theme, setTheme] = useState<AppTheme>(() => {
@@ -140,12 +166,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [savedPaymentAccounts, setSavedPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [livePayouts, setLivePayouts] = useState<LivePayoutNotification[]>(LIVE_PAYOUT_FEED);
+  const [referralNetwork, setReferralNetwork] = useState<ReferralNetworkData>(INITIAL_REFERRAL_NETWORK);
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
     isPostgresConnected: false,
     hasDatabaseUrl: false,
   });
   const [toasts, setToasts] = useState<ToastInfo[]>([]);
   const [pendingAdminCount, setPendingAdminCount] = useState<number>(0);
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  const knownNotificationIds = useRef<Set<string>>(new Set());
 
   // Modals state
   const [isDepositModalOpen, setIsDepositModalOpen] = useState<boolean>(false);
@@ -287,30 +320,80 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setSavedPaymentAccounts(accData.accounts);
         }
       } catch {}
+
+      // 7. Fetch user's referral network & team members
+      try {
+        const refRes = await fetch('/api/referrals', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok: refOk, data: refData } = await safeParseJson(refRes);
+        if (refOk && refData?.success) {
+          setReferralNetwork({
+            referralCode: refData.referralCode || user.referralCode,
+            referralTier: refData.referralTier || 1,
+            referralEarnings: refData.referralEarnings || 0,
+            unclaimedReferralEarnings: refData.unclaimedReferralEarnings || 0,
+            totalTeamMembers: refData.totalTeamMembers || 0,
+            totalTeamVolume: refData.totalTeamVolume || 0,
+            tier1Count: refData.tier1Count || 0,
+            tier2Count: refData.tier2Count || 0,
+            tier3Count: refData.tier3Count || 0,
+            members: refData.members || [],
+          });
+        }
+      } catch {}
     } catch (err) {
       console.error('API refresh error:', err);
     }
   };
 
+  // URL referral code tracker
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref') || params.get('invite') || params.get('referral');
+      if (ref) {
+        localStorage.setItem('pakinvest_ref_code', ref.trim().toUpperCase());
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     refreshAllData();
   }, [token]);
 
-  // Real-time ticking profit simulator for active investments
+  // 1-second precise cycle tick for active investment countdowns
+  const [currentTimestamp, setCurrentTimestamp] = useState<number>(Date.now());
+
   useEffect(() => {
     const interval = setInterval(() => {
+      const now = Date.now();
+      setCurrentTimestamp(now);
       setActiveInvestments((prevInvestments) => {
         if (prevInvestments.length === 0) return prevInvestments;
         return prevInvestments.map((inv) => {
           if (inv.status !== 'active') return inv;
-          const tickProfit = (inv.dailyProfitAmount / 86400) * 3;
+          const nextClaim = inv.nextClaimTimestamp || (inv.lastClaimTimestamp + 86400000);
+          const isReady = now >= nextClaim;
+          let readyCycles = 0;
+          if (isReady) {
+            readyCycles = Math.min(
+              inv.daysRemaining || 1,
+              Math.max(1, Math.floor((now - (inv.lastClaimTimestamp || now)) / 86400000))
+            );
+          }
+          const availableProfit = isReady ? readyCycles * inv.dailyProfitAmount : 0;
+          if (inv.unclaimedProfit === availableProfit && inv.nextClaimTimestamp === nextClaim) {
+            return inv;
+          }
           return {
             ...inv,
-            unclaimedProfit: Number((inv.unclaimedProfit + tickProfit).toFixed(3)),
+            nextClaimTimestamp: nextClaim,
+            unclaimedProfit: availableProfit,
           };
         });
       });
-    }, 3000);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, []);
@@ -610,61 +693,120 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Claim single active plan profit
   const claimProfit = async (investmentId: string) => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setIsAuthModalOpen(true);
+      return;
+    }
     try {
       const res = await fetch('/api/investments/claim', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId }),
       });
-      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; totalEarnedProfit: number; claimedAmount: number; transaction?: Transaction }>(res);
+      const { ok, data } = await safeParseJson<{
+        success?: boolean;
+        balance: number;
+        totalEarnedProfit: number;
+        claimedAmount: number;
+        transaction?: Transaction;
+        investments?: ActiveInvestment[];
+        error?: string;
+      }>(res);
+
       if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
           totalEarnedProfit: data.totalEarnedProfit,
         }));
-        setActiveInvestments((prev) =>
-          prev.map((i) => (i.id === investmentId ? { ...i, unclaimedProfit: 0 } : i))
-        );
+        if (data.investments) {
+          setActiveInvestments(data.investments);
+        } else {
+          setActiveInvestments((prev) =>
+            prev.map((i) =>
+              i.id === investmentId
+                ? {
+                    ...i,
+                    unclaimedProfit: 0,
+                    earnedSoFar: (i.earnedSoFar || 0) + data.claimedAmount,
+                    lastClaimTimestamp: Date.now(),
+                    nextClaimTimestamp: Date.now() + 86400000,
+                  }
+                : i
+            )
+          );
+        }
         if (data.transaction) {
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
-        showToast('Profit Claimed! 💰', `Rs. ${Math.round(data.claimedAmount).toLocaleString()} added to your wallet!`, 'success');
+        showToast(
+          'Daily Profit Claimed! 💰',
+          `Rs. ${Math.round(data.claimedAmount).toLocaleString()} added to your wallet!`,
+          'success'
+        );
+      } else {
+        showToast('Cycle In Progress ⏳', data?.error || 'Countdown is still running. Profit will be ready at scheduled time.', 'warning');
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      showToast('Error', err?.message || 'Failed to claim profit', 'error');
     }
   };
 
   // Claim all accumulated profits
   const claimAllProfits = async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setIsAuthModalOpen(true);
+      return;
+    }
     try {
       const res = await fetch('/api/investments/claim', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId: 'all' }),
       });
-      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; totalEarnedProfit: number; claimedAmount: number; transaction?: Transaction }>(res);
+      const { ok, data } = await safeParseJson<{
+        success?: boolean;
+        balance: number;
+        totalEarnedProfit: number;
+        claimedAmount: number;
+        transaction?: Transaction;
+        investments?: ActiveInvestment[];
+        error?: string;
+      }>(res);
+
       if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
           totalEarnedProfit: data.totalEarnedProfit,
         }));
-        setActiveInvestments((prev) =>
-          prev.map((i) => ({ ...i, unclaimedProfit: 0 }))
-        );
+        if (data.investments) {
+          setActiveInvestments(data.investments);
+        } else {
+          setActiveInvestments((prev) =>
+            prev.map((i) => ({
+              ...i,
+              unclaimedProfit: 0,
+              lastClaimTimestamp: Date.now(),
+              nextClaimTimestamp: Date.now() + 86400000,
+            }))
+          );
+        }
         if (data.transaction) {
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
-        showToast('All Profits Claimed! 💰', `Transferred Rs. ${Math.round(data.claimedAmount).toLocaleString()} to your main balance!`, 'success');
+        showToast(
+          'All Daily Profits Claimed! 💰',
+          `Transferred Rs. ${Math.round(data.claimedAmount).toLocaleString()} to your main balance!`,
+          'success'
+        );
+      } else {
+        showToast('No Ready Claims ⏳', data?.error || 'No active plans have reached their 24-hour payout time yet.', 'info');
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      showToast('Error', err?.message || 'Failed to claim profits', 'error');
     }
   };
 
@@ -769,7 +911,146 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('PIN Updated', 'Your 4-digit security PIN has been updated.', 'success');
   };
 
-  const totalLiveUnclaimedProfit = activeInvestments.reduce((acc, curr) => acc + curr.unclaimedProfit, 0);
+  // Notification Operations
+  const fetchNotifications = async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await fetch('/api/notifications', { headers: getAuthHeaders() });
+      const { ok, data } = await safeParseJson<{ success?: boolean; notifications?: UserNotification[]; unreadCount?: number }>(res);
+      if (ok && data?.success && data?.notifications) {
+        setNotifications(data.notifications);
+        setUnreadNotificationsCount(data.unreadCount ?? 0);
+        data.notifications.forEach((n) => knownNotificationIds.current.add(n.id));
+      }
+    } catch {}
+  };
+
+  const markNotificationAsRead = async (id?: string) => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ notificationId: id }),
+      });
+      const { ok, data } = await safeParseJson<{ success?: boolean; unreadCount?: number }>(res);
+      if (ok && data?.success) {
+        setNotifications((prev) =>
+          prev.map((n) => (id ? (n.id === id ? { ...n, read: true } : n) : { ...n, read: true }))
+        );
+        setUnreadNotificationsCount(data.unreadCount ?? 0);
+      }
+    } catch {}
+  };
+
+  const clearAllNotifications = async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await fetch('/api/notifications/clear', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const { ok } = await safeParseJson(res);
+      if (ok) {
+        setNotifications([]);
+        setUnreadNotificationsCount(0);
+        showToast('Notifications Cleared', 'All activity logs and alerts cleared.', 'info');
+      }
+    } catch {}
+  };
+
+  // Real-time background synchronization (every 3.5s)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let isSubscribed = true;
+
+    const syncRealtime = async () => {
+      const activeToken = localStorage.getItem('pakinvest_jwt_token');
+      if (!activeToken) return;
+
+      try {
+        const syncRes = await fetch('/api/user/sync', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok, data } = await safeParseJson<{
+          success?: boolean;
+          user?: UserProfile;
+          activeInvestments?: ActiveInvestment[];
+          transactions?: Transaction[];
+          notifications?: UserNotification[];
+          unreadNotificationsCount?: number;
+        }>(syncRes);
+
+        if (!isSubscribed) return;
+
+        if (ok && data?.success) {
+          if (data.user) {
+            setUser((prev) => {
+              // detect balance update from admin or approval
+              return { ...prev, ...data.user };
+            });
+          }
+          if (data.activeInvestments) {
+            setActiveInvestments(data.activeInvestments);
+          }
+          if (data.transactions) {
+            setTransactions(data.transactions);
+          }
+          if (data.notifications) {
+            // Check for new notifications to toast in real-time
+            const newNotifs = data.notifications.filter((n) => !knownNotificationIds.current.has(n.id));
+            if (newNotifs.length > 0) {
+              newNotifs.forEach((n) => {
+                knownNotificationIds.current.add(n.id);
+                // show real-time toast alert
+                if (!n.read) {
+                  showToast(
+                    n.title,
+                    n.message,
+                    n.type.includes('declined') ? 'warning' : 'success'
+                  );
+                }
+              });
+            }
+            setNotifications(data.notifications);
+            setUnreadNotificationsCount(data.unreadNotificationsCount ?? 0);
+          }
+        }
+
+        // If user is admin, also poll admin pending count
+        if (user.isAdmin) {
+          try {
+            const adminRes = await fetch('/api/admin/pending');
+            const { ok: aOk, data: aData } = await safeParseJson(adminRes);
+            if (aOk && aData?.pending) {
+              setPendingAdminCount(aData.pending.length);
+            }
+          } catch {}
+        }
+      } catch (e) {
+        // quiet fail on transient sync
+      }
+    };
+
+    // Initial fetch on mount / auth change
+    syncRealtime();
+
+    const interval = setInterval(syncRealtime, 3500);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, user.isAdmin]);
+
+  const totalDailyProfitRate = activeInvestments
+    .filter((i) => i.status === 'active')
+    .reduce((sum, i) => sum + (Number(i.dailyProfitAmount) || 0), 0);
+
+  const profitPerSecond = totalDailyProfitRate / 86400;
+  const profitPerHour = totalDailyProfitRate / 24;
+  const totalLiveUnclaimedProfit = activeInvestments.reduce((acc, curr) => acc + (Number(curr.unclaimedProfit) || 0), 0);
 
   return (
     <AppContext.Provider
@@ -785,8 +1066,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         officialChannels,
         transactions,
         savedPaymentAccounts,
+        notifications,
+        unreadNotificationsCount,
         livePayouts,
         databaseStatus,
+        referralNetwork,
         toasts,
         removeToast,
         showToast,
@@ -800,6 +1084,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSelectedTransactionReceipt,
         isStreakModalOpen,
         setIsStreakModalOpen,
+        isNotificationModalOpen,
+        setIsNotificationModalOpen,
         isAddAccountModalOpen,
         setIsAddAccountModalOpen,
         isAdminModalOpen,
@@ -818,11 +1104,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         claimAllProfits,
         claimReferralBonus,
         claimDailyStreak,
+        markNotificationAsRead,
+        clearAllNotifications,
+        fetchNotifications,
         addPaymentAccount,
         deletePaymentAccount,
         updateUserPin,
         refreshAllData,
         totalLiveUnclaimedProfit,
+        totalDailyProfitRate,
+        profitPerSecond,
+        profitPerHour,
         hideBalance,
         toggleHideBalance,
       }}

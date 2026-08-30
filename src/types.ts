@@ -73,16 +73,55 @@ export interface ActiveInvestment {
   dailyProfitAmount: number;
   hourlyProfitAmount: number;
   totalExpectedReturn: number;
-  earnedSoFar: number;
+  earnedSoFar: number; // Total claimed profit so far
   durationDays: number;
   daysRemaining: number;
   hoursRemaining: number;
+  startTimestamp?: number;
+  startTimeFormatted?: string; // e.g. "02:33 PM"
   startDate: string;
   endDate: string;
-  nextPayoutTime: string;
+  nextPayoutTime: string; // e.g. "Daily at 02:33 PM"
+  nextClaimTimestamp: number; // Epoch timestamp for 24h completion
   status: 'active' | 'completed';
   lastClaimTimestamp: number;
   unclaimedProfit: number;
+}
+
+export type LedgerEntryType = 'DEBIT' | 'CREDIT';
+export type LedgerAccountType =
+  | 'USER_WALLET'
+  | 'TREASURY_ESCROW'
+  | 'YIELD_RESERVE'
+  | 'REFERRAL_POOL'
+  | 'LOYALTY_POOL'
+  | 'INVESTMENT_CAPITAL'
+  | 'SYSTEM_REVENUE';
+export type FraudAuditStatus = 'CLEARED' | 'SUSPICIOUS_FLAGGED' | 'BLOCKED';
+
+export interface LedgerAuditRecord {
+  ledgerId: string; // e.g. "LDG-20260830-10452"
+  journalSeq: number; // Sequential monotonic ledger entry number
+  entryType: LedgerEntryType; // DEBIT / CREDIT
+  accountType: LedgerAccountType;
+  counterpartyAccount?: string;
+  balanceBefore: number; // User balance immediately before transaction
+  balanceAfter: number; // User balance immediately after transaction
+  deltaAmount: number; // Signed mutation (+ / -)
+  idempotencyKey: string; // Unique deduplication token preventing double deductions
+  antiDoubleSpendLock: boolean; // Atomic lock clearance
+  fraudRiskScore: number; // 0 to 100 (0-15 = Low/Safe, 16-50 = Medium, >50 = High)
+  fraudAuditStatus: FraudAuditStatus;
+  fraudChecks: {
+    duplicateTidCheck: 'PASSED' | 'FAILED';
+    velocityCheck: 'PASSED' | 'FLAGGED';
+    balanceIntegrityCheck: 'PASSED' | 'FAILED';
+    pinVerification?: 'PASSED' | 'FAILED' | 'BYPASSED';
+  };
+  cryptoChecksum: string; // SHA-256 tamper-evident cryptographic hash signature
+  reconciliationStatus: 'MATCHED' | 'DISCREPANCY_FLAGGED';
+  authorizedBy: 'SYSTEM_AUTOPILOT' | 'ADMIN_OFFICER' | 'USER_AUTHENTICATED';
+  timestamp: string;
 }
 
 export interface Transaction {
@@ -106,6 +145,16 @@ export interface Transaction {
   timestamp: string;
   notes?: string;
   planName?: string;
+  // Bank-Grade Ledger & Fraud Prevention properties
+  ledger?: LedgerAuditRecord;
+  ledgerId?: string;
+  journalSeq?: number;
+  balanceBefore?: number;
+  balanceAfter?: number;
+  idempotencyKey?: string;
+  fraudRiskScore?: number;
+  cryptoChecksum?: string;
+  reconciliationStatus?: 'MATCHED' | 'DISCREPANCY_FLAGGED';
 }
 
 export interface ReferralMember {
@@ -117,6 +166,19 @@ export interface ReferralMember {
   totalDeposited: number;
   commissionEarned: number;
   tier: 1 | 2 | 3;
+}
+
+export interface ReferralNetworkData {
+  referralCode: string;
+  referralTier: number;
+  referralEarnings: number;
+  unclaimedReferralEarnings: number;
+  totalTeamMembers: number;
+  totalTeamVolume: number;
+  tier1Count: number;
+  tier2Count: number;
+  tier3Count: number;
+  members: ReferralMember[];
 }
 
 export interface PaymentAccount {
@@ -151,6 +213,26 @@ export interface LivePayoutNotification {
   gateway: GatewayType;
   timeAgo: string;
   type: 'withdrawal' | 'deposit' | 'daily_profit';
+}
+
+export interface UserNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type:
+    | 'deposit_approved'
+    | 'deposit_declined'
+    | 'withdrawal_approved'
+    | 'withdrawal_declined'
+    | 'profit_unlocked'
+    | 'profit_claimed'
+    | 'referral_reward'
+    | 'system';
+  amount?: number;
+  read: boolean;
+  timestamp: string;
+  createdAt: number;
 }
 
 export interface DatabaseStatus {

@@ -127,6 +127,7 @@ export const INITIAL_PLANS: InvestmentPlan[] = [
 
 export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
+    id: 'ch_jazzcash_01',
     gateway: 'JazzCash',
     accountTitle: 'PakInvest Digital Services',
     accountNumber: '03049876543',
@@ -134,8 +135,10 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
     minDeposit: 500,
     maxDeposit: 500000,
     processingTime: 'Pending Admin Verification',
+    isActive: true,
   },
   {
+    id: 'ch_easypaisa_01',
     gateway: 'EasyPaisa',
     accountTitle: 'PakInvest Payment Hub',
     accountNumber: '03451234567',
@@ -143,8 +146,10 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
     minDeposit: 500,
     maxDeposit: 500000,
     processingTime: 'Pending Admin Verification',
+    isActive: true,
   },
   {
+    id: 'ch_raast_01',
     gateway: 'Raast',
     accountTitle: 'PakInvest Raast Corporate',
     accountNumber: '03049876543',
@@ -152,8 +157,10 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
     minDeposit: 500,
     maxDeposit: 1000000,
     processingTime: 'Pending Admin Verification',
+    isActive: true,
   },
   {
+    id: 'ch_bank_meezan',
     gateway: 'Bank_Transfer',
     accountTitle: 'PakInvest Holdings Pvt Ltd',
     accountNumber: '0102030405060708',
@@ -163,8 +170,10 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
     minDeposit: 1000,
     maxDeposit: 2500000,
     processingTime: 'Pending Admin Verification',
+    isActive: true,
   },
   {
+    id: 'ch_usdt_trc20',
     gateway: 'USDT_TRC20',
     accountTitle: 'PakInvest Crypto Clearing',
     accountNumber: 'TX9rqv8B1XzM4pLqW2K9aJ7pZvNxM8sTqE',
@@ -172,6 +181,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
     minDeposit: 3000,
     maxDeposit: 10000000,
     processingTime: 'Pending Admin Verification',
+    isActive: true,
   }
 ];
 

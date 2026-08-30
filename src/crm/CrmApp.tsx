@@ -289,7 +289,7 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
       });
       const data = await safeJson(res);
       if (data?.success) {
-        showToast('Channel Updated', `Payment channel "${channel.gateway}" saved.`, 'success');
+        showToast('Channel Saved', `Payment channel "${channel.gateway}" saved successfully.`, 'success');
         await loadCrmData();
         return true;
       } else {
@@ -298,6 +298,26 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
       }
     } catch (err) {
       showToast('Error', 'Network error saving channel.', 'error');
+      return false;
+    }
+  };
+
+  const handleDeleteChannel = async (channelId: string) => {
+    try {
+      const res = await fetch(`/api/admin/deposit-channels/${encodeURIComponent(channelId)}`, {
+        method: 'DELETE',
+      });
+      const data = await safeJson(res);
+      if (data?.success) {
+        showToast('Channel Deleted', 'Payment channel removed successfully.', 'info');
+        await loadCrmData();
+        return true;
+      } else {
+        showToast('Error', data?.error || 'Failed to delete channel.', 'error');
+        return false;
+      }
+    } catch (err) {
+      showToast('Error', 'Network error deleting channel.', 'error');
       return false;
     }
   };
@@ -360,6 +380,7 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
           <CrmGatewaysView
             channels={allChannels}
             onSaveChannel={handleSaveChannel}
+            onDeleteChannel={handleDeleteChannel}
           />
         );
       case 'ledger':

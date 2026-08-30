@@ -17,6 +17,7 @@ import { PlanDetailModal } from '../components/modals/PlanDetailModal';
 import { TransactionReceiptModal } from '../components/modals/TransactionReceiptModal';
 import { ClaimRewardsModal } from '../components/modals/ClaimRewardsModal';
 import { AddAccountModal } from '../components/modals/AddAccountModal';
+import { NotificationModal } from '../components/NotificationModal';
 import { AuthModal } from '../components/auth/AuthModal';
 import { AuthScreen } from './AuthScreen';
 
@@ -72,6 +73,7 @@ export const ClientApp: React.FC = () => {
       <TransactionReceiptModal />
       <ClaimRewardsModal />
       <AddAccountModal />
+      <NotificationModal />
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
