@@ -177,37 +177,55 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   };
 
+  // Safe JSON parser helper to prevent SyntaxError if non-JSON (HTML 404/500) is returned
+  const safeParseJson = async <T = any>(res: Response): Promise<{ ok: boolean; status: number; data: T }> => {
+    try {
+      const text = await res.text();
+      const parsed = JSON.parse(text);
+      return { ok: res.ok, status: res.status, data: parsed };
+    } catch {
+      const errorMsg = !res.ok
+        ? `Server responded with ${res.status}: ${res.statusText || 'Unable to process request'}`
+        : 'Invalid server response format. Please try again.';
+      return {
+        ok: false,
+        status: res.status,
+        data: { success: false, error: errorMsg } as unknown as T,
+      };
+    }
+  };
+
   // Load all user and server state on startup or token change
   const refreshAllData = async () => {
     try {
       const activeToken = localStorage.getItem('pakinvest_jwt_token');
 
       // 1. Check database connection status
-      const dbRes = await fetch('/api/database/status');
-      if (dbRes.ok) {
-        const dbData = await dbRes.json();
-        setDatabaseStatus(dbData);
-      }
+      try {
+        const dbRes = await fetch('/api/database/status');
+        const { ok, data: dbData } = await safeParseJson(dbRes);
+        if (ok && dbData) {
+          setDatabaseStatus(dbData);
+        }
+      } catch {}
 
       // 2. Fetch plans & deposit channels (public)
-      const [plansRes, channelsRes] = await Promise.all([
-        fetch('/api/plans'),
-        fetch('/api/deposit-channels'),
-      ]);
+      try {
+        const [plansRes, channelsRes] = await Promise.all([
+          fetch('/api/plans'),
+          fetch('/api/deposit-channels'),
+        ]);
 
-      if (plansRes.ok) {
-        const plansData = await plansRes.json();
-        if (plansData.success && plansData.plans) {
+        const { ok: plansOk, data: plansData } = await safeParseJson(plansRes);
+        if (plansOk && plansData?.success && plansData?.plans) {
           setPlans(plansData.plans);
         }
-      }
 
-      if (channelsRes.ok) {
-        const chanData = await channelsRes.json();
-        if (chanData.success && chanData.channels) {
+        const { ok: chanOk, data: chanData } = await safeParseJson(channelsRes);
+        if (chanOk && chanData?.success && chanData?.channels) {
           setOfficialChannels(chanData.channels);
         }
-      }
+      } catch {}
 
       if (!activeToken) {
         setIsAuthenticated(false);
@@ -219,56 +237,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // 3. Fetch authenticated user profile
-      const userRes = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${activeToken}` },
-      });
+      try {
+        const userRes = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok: userOk, data: userData } = await safeParseJson(userRes);
 
-      if (userRes.ok) {
-        const userData = await userRes.json();
-        if (userData.success && userData.user) {
+        if (userOk && userData?.success && userData?.user) {
           setUser(userData.user);
           setIsAuthenticated(true);
+        } else {
+          // Token expired or invalid
+          localStorage.removeItem('pakinvest_jwt_token');
+          setToken(null);
+          setIsAuthenticated(false);
+          setUser(GUEST_USER);
         }
-      } else {
-        // Token expired or invalid
-        localStorage.removeItem('pakinvest_jwt_token');
-        setToken(null);
-        setIsAuthenticated(false);
-        setUser(GUEST_USER);
-      }
+      } catch {}
 
       // 4. Fetch user's active investments
-      const invRes = await fetch('/api/investments', {
-        headers: { Authorization: `Bearer ${activeToken}` },
-      });
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        if (invData.success && invData.investments) {
+      try {
+        const invRes = await fetch('/api/investments', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok: invOk, data: invData } = await safeParseJson(invRes);
+        if (invOk && invData?.success && invData?.investments) {
           setActiveInvestments(invData.investments);
         }
-      }
+      } catch {}
 
       // 5. Fetch user's transactions
-      const txRes = await fetch('/api/transactions', {
-        headers: { Authorization: `Bearer ${activeToken}` },
-      });
-      if (txRes.ok) {
-        const txData = await txRes.json();
-        if (txData.success && txData.transactions) {
+      try {
+        const txRes = await fetch('/api/transactions', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok: txOk, data: txData } = await safeParseJson(txRes);
+        if (txOk && txData?.success && txData?.transactions) {
           setTransactions(txData.transactions);
         }
-      }
+      } catch {}
 
       // 6. Fetch user's payment accounts
-      const accRes = await fetch('/api/payment-accounts', {
-        headers: { Authorization: `Bearer ${activeToken}` },
-      });
-      if (accRes.ok) {
-        const accData = await accRes.json();
-        if (accData.success && accData.accounts) {
+      try {
+        const accRes = await fetch('/api/payment-accounts', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const { ok: accOk, data: accData } = await safeParseJson(accRes);
+        if (accOk && accData?.success && accData?.accounts) {
           setSavedPaymentAccounts(accData.accounts);
         }
-      }
+      } catch {}
     } catch (err) {
       console.error('API refresh error:', err);
     }
@@ -358,8 +376,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password }),
       });
-      const data = await res.json();
-      if (data.success && data.token && data.user) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
+      if (ok && data?.success && data?.token && data?.user) {
         localStorage.setItem('pakinvest_jwt_token', data.token);
         setToken(data.token);
         setUser(data.user);
@@ -369,9 +387,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast('Login Successful', `Welcome back, ${data.user.name}!`, 'success');
         return { success: true };
       }
-      return { success: false, error: data.error || 'Login failed' };
+      return { success: false, error: data?.error || 'Login failed. Please verify your credentials.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Server error' };
+      return { success: false, error: err?.message || 'Network connection failed' };
     }
   };
 
@@ -390,8 +408,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (data.success && data.token && data.user) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
+      if (ok && data?.success && data?.token && data?.user) {
         localStorage.setItem('pakinvest_jwt_token', data.token);
         setToken(data.token);
         setUser(data.user);
@@ -402,9 +420,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast('Registration Successful 🎉', `Welcome to PakInvest, ${data.user.name}!`, 'success');
         return { success: true };
       }
-      return { success: false, error: data.error || 'Registration failed' };
+      return { success: false, error: data?.error || 'Registration failed' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Server error' };
+      return { success: false, error: err?.message || 'Network connection failed' };
     }
   };
 
@@ -428,18 +446,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ databaseUrl }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; message?: string; error?: string }>(res);
+      if (ok && data?.success) {
         await refreshAllData();
         showToast('Database Connected', 'PostgreSQL with Prisma is now active & synchronized!', 'success');
         return { success: true, message: data.message };
       } else {
-        showToast('Connection Failed', data.error || 'Could not connect to PostgreSQL', 'error');
-        return { success: false, error: data.error };
+        showToast('Connection Failed', data?.error || 'Could not connect to PostgreSQL', 'error');
+        return { success: false, error: data?.error };
       }
     } catch (err: any) {
-      showToast('Connection Error', err.message, 'error');
-      return { success: false, error: err.message };
+      showToast('Connection Error', err?.message || 'Failed to connect', 'error');
+      return { success: false, error: err?.message };
     }
   };
 
@@ -470,9 +488,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }),
       });
 
-      const data = await res.json();
-      if (data.success && data.transaction) {
-        setTransactions((prev) => [data.transaction, ...prev]);
+      const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; error?: string }>(res);
+      if (ok && data?.success && data?.transaction) {
+        setTransactions((prev) => [data.transaction!, ...prev]);
         fireConfetti();
         showToast(
           'Deposit Submitted (Pending)',
@@ -483,11 +501,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await refreshAllData();
         return true;
       } else {
-        showToast('Deposit Failed', data.error || 'Unable to submit deposit', 'error');
+        showToast('Deposit Failed', data?.error || 'Unable to submit deposit', 'error');
         return false;
       }
     } catch (err: any) {
-      showToast('Connection Error', err.message || 'Failed to submit deposit', 'error');
+      showToast('Connection Error', err?.message || 'Failed to submit deposit', 'error');
       return false;
     }
   };
@@ -521,13 +539,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }),
       });
 
-      const data = await res.json();
-      if (data.success && data.transaction) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; balance?: number; error?: string }>(res);
+      if (ok && data?.success && data?.transaction) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance !== undefined ? data.balance : prev.balance - amount,
         }));
-        setTransactions((prev) => [data.transaction, ...prev]);
+        setTransactions((prev) => [data.transaction!, ...prev]);
         showToast(
           'Withdrawal Requested (Pending)',
           `Rs. ${amount.toLocaleString()} payout to ${gateway} (${accountNumber}) is pending manual approval.`,
@@ -537,11 +555,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await refreshAllData();
         return true;
       } else {
-        showToast('Withdrawal Failed', data.error || 'Unable to process withdrawal', 'error');
+        showToast('Withdrawal Failed', data?.error || 'Unable to process withdrawal', 'error');
         return false;
       }
     } catch (err: any) {
-      showToast('Connection Error', err.message || 'Failed to process withdrawal', 'error');
+      showToast('Connection Error', err?.message || 'Failed to process withdrawal', 'error');
       return false;
     }
   };
@@ -563,29 +581,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         body: JSON.stringify({ planId: plan.id, amount: investAmount }),
       });
 
-      const data = await res.json();
-      if (data.success && data.investment) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; investment?: ActiveInvestment; user?: UserProfile; transaction?: Transaction; error?: string }>(res);
+      if (ok && data?.success && data?.investment && data?.user) {
         setUser((prev) => ({
           ...prev,
-          balance: data.user.balance,
-          investedCapital: data.user.investedCapital,
+          balance: data.user!.balance,
+          investedCapital: data.user!.investedCapital,
         }));
-        setActiveInvestments((prev) => [data.investment, ...prev]);
+        setActiveInvestments((prev) => [data.investment!, ...prev]);
         if (data.transaction) {
-          setTransactions((prev) => [data.transaction, ...prev]);
+          setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
         showToast('Plan Activated! 🚀', `Invested Rs. ${investAmount.toLocaleString()} in ${plan.name}. Daily profit is now active!`, 'success');
         return true;
       } else {
-        showToast('Activation Failed', data.error || 'Insufficient balance', 'error');
-        if (data.error && data.error.includes('Insufficient balance')) {
+        showToast('Activation Failed', data?.error || 'Insufficient balance', 'error');
+        if (data?.error && data.error.includes('Insufficient balance')) {
           setIsDepositModalOpen(true);
         }
         return false;
       }
     } catch (err: any) {
-      showToast('Error', err.message || 'Failed to activate plan', 'error');
+      showToast('Error', err?.message || 'Failed to activate plan', 'error');
       return false;
     }
   };
@@ -599,8 +617,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; totalEarnedProfit: number; claimedAmount: number; transaction?: Transaction }>(res);
+      if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
@@ -610,7 +628,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           prev.map((i) => (i.id === investmentId ? { ...i, unclaimedProfit: 0 } : i))
         );
         if (data.transaction) {
-          setTransactions((prev) => [data.transaction, ...prev]);
+          setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
         showToast('Profit Claimed! 💰', `Rs. ${Math.round(data.claimedAmount).toLocaleString()} added to your wallet!`, 'success');
@@ -629,8 +647,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId: 'all' }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; totalEarnedProfit: number; claimedAmount: number; transaction?: Transaction }>(res);
+      if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
@@ -640,7 +658,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           prev.map((i) => ({ ...i, unclaimedProfit: 0 }))
         );
         if (data.transaction) {
-          setTransactions((prev) => [data.transaction, ...prev]);
+          setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
         showToast('All Profits Claimed! 💰', `Transferred Rs. ${Math.round(data.claimedAmount).toLocaleString()} to your main balance!`, 'success');
@@ -658,23 +676,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         method: 'POST',
         headers: getAuthHeaders(),
       });
-      const data = await res.json();
-      if (data.success) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; claimedAmount: number; transaction?: Transaction; error?: string }>(res);
+      if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
           unclaimedReferralEarnings: 0,
         }));
         if (data.transaction) {
-          setTransactions((prev) => [data.transaction, ...prev]);
+          setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
         showToast('Commission Claimed!', `Rs. ${data.claimedAmount.toLocaleString()} referral bonus transferred to wallet!`, 'success');
       } else {
-        showToast('Claim Info', data.error || 'No pending commission to claim', 'info');
+        showToast('Claim Info', data?.error || 'No pending commission to claim', 'info');
       }
     } catch (err: any) {
-      showToast('Error', err.message || 'Failed to claim referral bonus', 'error');
+      showToast('Error', err?.message || 'Failed to claim referral bonus', 'error');
     }
   };
 
@@ -691,8 +709,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         method: 'POST',
         headers: getAuthHeaders(),
       });
-      const data = await res.json();
-      if (data.success) {
+      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; dailyStreak: number; reward: number; transaction?: Transaction; error?: string }>(res);
+      if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
@@ -700,15 +718,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           lastCheckInDate: new Date().toISOString().split('T')[0],
         }));
         if (data.transaction) {
-          setTransactions((prev) => [data.transaction, ...prev]);
+          setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
         showToast('Check-in Bonus Claimed! 🎁', `Earned Rs. ${data.reward} for Day ${data.dailyStreak} streak!`, 'success');
       } else {
-        showToast('Already Claimed', data.error || 'Already claimed today', 'info');
+        showToast('Already Claimed', data?.error || 'Already claimed today', 'info');
       }
     } catch (err: any) {
-      showToast('Error', err.message || 'Failed to check-in', 'error');
+      showToast('Error', err?.message || 'Failed to check-in', 'error');
     }
   };
 
@@ -721,13 +739,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: getAuthHeaders(),
         body: JSON.stringify(account),
       });
-      const data = await res.json();
-      if (data.success && data.account) {
-        setSavedPaymentAccounts((prev) => [data.account, ...prev]);
+      const { ok, data } = await safeParseJson<{ success?: boolean; account?: PaymentAccount; error?: string }>(res);
+      if (ok && data?.success && data?.account) {
+        setSavedPaymentAccounts((prev) => [data.account!, ...prev]);
         showToast('Payment Method Saved', `${account.gateway} account added.`, 'success');
       }
     } catch (err: any) {
-      showToast('Error', err.message, 'error');
+      showToast('Error', err?.message || 'Failed to save payment method', 'error');
     }
   };
 
@@ -742,7 +760,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSavedPaymentAccounts((prev) => prev.filter((p) => p.id !== id));
       showToast('Account Removed', 'Payment method removed from your list.', 'info');
     } catch (err: any) {
-      showToast('Error', err.message, 'error');
+      showToast('Error', err?.message || 'Failed to remove account', 'error');
     }
   };
 

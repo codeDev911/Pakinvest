@@ -597,17 +597,20 @@ async function persistInvestmentUpdate(invId: string, data: any) {
   }
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+export const app = express();
+app.use(express.json());
 
-  app.use(express.json());
+let dbInitPromise: Promise<boolean> | null = null;
+app.use(async (req, res, next) => {
+  if (!dbInitPromise) {
+    dbInitPromise = tryConnectPrisma();
+  }
+  await dbInitPromise;
+  next();
+});
 
-  // Attempt initial PostgreSQL connection if environment variable exists
-  await tryConnectPrisma();
-
-  // Auth Middleware
-  const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+// Auth Middleware
+const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Unauthorized. Please sign in to your account.' });
@@ -1705,7 +1708,7 @@ async function startServer() {
   });
 
   app.post('/api/admin/plans', async (req, res) => {
-    const planData = req.body;
+    const planData = req.body.plan || req.body;
     if (!planData.id || !planData.name || !planData.minAmount || !planData.dailyProfitPercent) {
       return res.status(400).json({ error: 'Missing required plan attributes' });
     }
@@ -1799,7 +1802,7 @@ async function startServer() {
       }
       return res.json({ success: true, message: 'Deposit channels updated successfully', channels: memoryDepositChannels });
     }
-    const singleChannel = req.body;
+    const singleChannel = req.body.channel || req.body;
     const idx = memoryDepositChannels.findIndex((c) => c.gateway === singleChannel.gateway);
     if (idx >= 0) {
       memoryDepositChannels[idx] = { ...memoryDepositChannels[idx], ...singleChannel };
@@ -1894,6 +1897,26 @@ async function startServer() {
     res.json({ success: true, transactions: memoryTransactions });
   });
 
+  // 404 handler for unmatched /api routes
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ success: false, error: `API route ${req.method} ${req.path} not found.` });
+  });
+
+  // Global API error middleware
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[Server Uncaught Error]:', err);
+    if (req.path.startsWith('/api/')) {
+      return res.status(err.status || 500).json({
+        success: false,
+        error: err?.message || 'Internal server error occurred. Please try again.',
+      });
+    }
+    next(err);
+  });
+
+async function startServer() {
+  const PORT = 3000;
+
   // ----------------------------------------------------
   // Vite Integration for Dev / Production
   // ----------------------------------------------------
@@ -1916,6 +1939,11 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal server startup error:', err);
-});
+// Only launch standalone dev/prod server listener when not running on serverless platforms (e.g. Vercel)
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Fatal server startup error:', err);
+  });
+}
+
+export default app;

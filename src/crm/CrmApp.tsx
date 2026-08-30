@@ -54,6 +54,16 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   const [allPlans, setAllPlans] = useState<InvestmentPlan[]>([]);
   const [allChannels, setAllChannels] = useState<OfficialDepositChannel[]>([]);
 
+  // Safe parse helper for robust networking
+  const safeJson = async (res: Response) => {
+    try {
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch {
+      return { success: false, error: `Server response ${res.status}: ${res.statusText}` };
+    }
+  };
+
   // Fetch all CRM Data
   const loadCrmData = async () => {
     setIsRefreshing(true);
@@ -66,30 +76,19 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         fetch('/api/admin/deposit-channels'),
       ]);
 
-      if (statsRes.ok) {
-        const d = await statsRes.json();
-        if (d.success && d.stats) setStats(d.stats);
-      }
+      const [statsData, txData, usersData, plansData, channelsData] = await Promise.all([
+        safeJson(statsRes),
+        safeJson(txRes),
+        safeJson(usersRes),
+        safeJson(plansRes),
+        safeJson(channelsRes),
+      ]);
 
-      if (txRes.ok) {
-        const d = await txRes.json();
-        if (d.success && d.transactions) setAllTransactions(d.transactions);
-      }
-
-      if (usersRes.ok) {
-        const d = await usersRes.json();
-        if (d.success && d.users) setAllUsers(d.users);
-      }
-
-      if (plansRes.ok) {
-        const d = await plansRes.json();
-        if (d.success && d.plans) setAllPlans(d.plans);
-      }
-
-      if (channelsRes.ok) {
-        const d = await channelsRes.json();
-        if (d.success && d.channels) setAllChannels(d.channels);
-      }
+      if (statsData?.success && statsData?.stats) setStats(statsData.stats);
+      if (txData?.success && txData?.transactions) setAllTransactions(txData.transactions);
+      if (usersData?.success && usersData?.users) setAllUsers(usersData.users);
+      if (plansData?.success && plansData?.plans) setAllPlans(plansData.plans);
+      if (channelsData?.success && channelsData?.channels) setAllChannels(channelsData.channels);
     } catch (err) {
       console.error('Failed to load CRM data:', err);
     } finally {
@@ -124,12 +123,12 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Deposit Approved', 'User wallet credited & 3-tier commissions distributed.', 'success');
         await loadCrmData();
       } else {
-        showToast('Approval Failed', data.error || 'Server error', 'error');
+        showToast('Approval Failed', data?.error || 'Server error', 'error');
       }
     } catch (err) {
       showToast('Error', 'Failed to approve deposit.', 'error');
@@ -143,12 +142,12 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId, reason }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Deposit Declined', 'Request marked declined with reason.', 'info');
         await loadCrmData();
       } else {
-        showToast('Action Failed', data.error || 'Server error', 'error');
+        showToast('Action Failed', data?.error || 'Server error', 'error');
       }
     } catch (err) {
       showToast('Error', 'Failed to decline deposit.', 'error');
@@ -163,12 +162,12 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Withdrawal Dispatched', 'Marked settled in ledger.', 'success');
         await loadCrmData();
       } else {
-        showToast('Action Failed', data.error || 'Server error', 'error');
+        showToast('Action Failed', data?.error || 'Server error', 'error');
       }
     } catch (err) {
       showToast('Error', 'Failed to approve withdrawal.', 'error');
@@ -182,12 +181,12 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId, reason }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Withdrawal Declined', 'Funds auto-refunded to user wallet.', 'warning');
         await loadCrmData();
       } else {
-        showToast('Action Failed', data.error || 'Server error', 'error');
+        showToast('Action Failed', data?.error || 'Server error', 'error');
       }
     } catch (err) {
       showToast('Error', 'Failed to decline withdrawal.', 'error');
@@ -202,13 +201,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Package Saved', `Plan "${plan.name}" updated successfully.`, 'success');
         await loadCrmData();
         return true;
       } else {
-        showToast('Error', data.error || 'Failed to save plan.', 'error');
+        showToast('Error', data?.error || 'Failed to save plan.', 'error');
         return false;
       }
     } catch (err) {
@@ -220,13 +219,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   const handleDeletePlan = async (planId: string) => {
     try {
       const res = await fetch(`/api/admin/plans/${planId}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Package Deleted', 'Investment package removed.', 'info');
         await loadCrmData();
         return true;
       } else {
-        showToast('Error', data.error || 'Failed to delete plan.', 'error');
+        showToast('Error', data?.error || 'Failed to delete plan.', 'error');
         return false;
       }
     } catch (err) {
@@ -243,13 +242,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, amount, type, note }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Balance Adjusted', `User balance updated: ${type === 'credit' ? '+' : '-'}Rs. ${amount.toLocaleString()}`, 'success');
         await loadCrmData();
         return true;
       } else {
-        showToast('Error', data.error || 'Failed to adjust balance.', 'error');
+        showToast('Error', data?.error || 'Failed to adjust balance.', 'error');
         return false;
       }
     } catch (err) {
@@ -265,13 +264,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, newPin }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('PIN Reset', `Security PIN reset to ${newPin}.`, 'success');
         await loadCrmData();
         return true;
       } else {
-        showToast('Error', data.error || 'Failed to reset PIN.', 'error');
+        showToast('Error', data?.error || 'Failed to reset PIN.', 'error');
         return false;
       }
     } catch (err) {
@@ -288,13 +287,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await safeJson(res);
+      if (data?.success) {
         showToast('Channel Updated', `Payment channel "${channel.gateway}" saved.`, 'success');
         await loadCrmData();
         return true;
       } else {
-        showToast('Error', data.error || 'Failed to save channel.', 'error');
+        showToast('Error', data?.error || 'Failed to save channel.', 'error');
         return false;
       }
     } catch (err) {
