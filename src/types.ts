@@ -64,6 +64,9 @@ export interface InvestmentPlan {
 
 export interface ActiveInvestment {
   id: string;
+  userId?: string;
+  userName?: string;
+  userPhone?: string;
   planId: string;
   planName: string;
   planCategory: string;
@@ -247,6 +250,7 @@ export type CrmNavTab =
   | 'deposits'
   | 'withdrawals'
   | 'plans'
+  | 'active-plans'
   | 'users'
   | 'gateways'
   | 'ledger';

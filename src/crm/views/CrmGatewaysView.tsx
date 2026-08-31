@@ -11,15 +11,16 @@ import {
   Trash2,
   X,
   Plus,
-  AlertCircle,
-  AlertTriangle,
   Copy,
   Check,
-  Search,
   Power,
   Clock,
-  ShieldCheck,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
+import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
+import { GatewayDetailModal } from '../components/GatewayDetailModal';
+import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmGatewaysViewProps {
   channels: OfficialDepositChannel[];
@@ -35,610 +36,505 @@ const GATEWAY_OPTIONS: { type: GatewayType; label: string; sub: string }[] = [
   { type: 'USDT_TRC20', label: 'USDT (TRC20)', sub: 'Binance / Tron Wallet' },
 ];
 
-const DEFAULT_NEW_CHANNEL: OfficialDepositChannel = {
-  id: '',
-  gateway: 'JazzCash',
-  accountTitle: '',
-  accountNumber: '',
-  bankName: '',
-  branchCode: '',
-  instructions: 'Send money to this account and submit the transaction ID (TID) from your confirmation SMS/receipt.',
-  minDeposit: 1000,
-  maxDeposit: 500000,
-  processingTime: '5-15 mins manual verification',
-  isActive: true,
-};
-
 export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
   channels,
   onSaveChannel,
   onDeleteChannel,
 }) => {
-  const [editingChannel, setEditingChannel] = useState<OfficialDepositChannel | null>(null);
-  const [isAddingNew, setIsAddingNew] = useState<boolean>(false);
-  const [channelToDelete, setChannelToDelete] = useState<OfficialDepositChannel | null>(null);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterGateway, setFilterGateway] = useState<string>('all');
+  const { theme } = useCrmTheme();
+  const isDark = theme === 'dark';
 
-  const handleCopy = (text: string, id: string) => {
+  const [selectedChannel, setSelectedChannel] = useState<OfficialDepositChannel | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Modal Create/Edit State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<OfficialDepositChannel>({
+    id: '',
+    gateway: 'JazzCash',
+    accountTitle: '',
+    accountNumber: '',
+    bankName: '',
+    branchCode: '',
+    instructions: 'Send money to this account and submit the transaction ID (TID) from your confirmation SMS/receipt.',
+    minDeposit: 1000,
+    maxDeposit: 500000,
+    processingTime: '5-15 mins manual verification',
+    isActive: true,
+  });
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent, text: string, id: string) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getGatewayIcon = (gw: GatewayType | string) => {
-    switch (gw) {
-      case 'JazzCash':
-        return <Smartphone className="w-5 h-5 text-amber-500" />;
-      case 'EasyPaisa':
-        return <CreditCard className="w-5 h-5 text-emerald-500" />;
-      case 'Raast':
-        return <Sparkles className="w-5 h-5 text-orange-500" />;
-      case 'Bank_Transfer':
-        return <Building2 className="w-5 h-5 text-blue-500" />;
-      case 'USDT_TRC20':
-        return <Coins className="w-5 h-5 text-teal-400" />;
-      default:
-        return <CreditCard className="w-5 h-5 text-slate-400" />;
-    }
-  };
-
-  const handleOpenAddModal = () => {
-    setIsAddingNew(true);
-    setEditingChannel({
-      ...DEFAULT_NEW_CHANNEL,
-      id: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    });
-  };
-
-  const handleOpenEditModal = (channel: OfficialDepositChannel) => {
-    setIsAddingNew(false);
-    setEditingChannel({ ...channel });
-  };
-
-  const handleQuickToggleActive = async (channel: OfficialDepositChannel) => {
-    const updated = { ...channel, isActive: !channel.isActive };
+  const handleToggleActive = async (channelId: string, currentStatus: boolean) => {
+    const target = channels.find((c) => c.id === channelId);
+    if (!target) return;
+    const updated = { ...target, isActive: !currentStatus };
     await onSaveChannel(updated);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
+  const handleOpenCreate = () => {
+    setIsEditing(false);
+    setEditingChannel({
+      id: `gw-${Date.now().toString().slice(-4)}`,
+      gateway: 'JazzCash',
+      accountTitle: '',
+      accountNumber: '',
+      bankName: '',
+      branchCode: '',
+      instructions: 'Send money to this official till/account and submit the TID in proof form.',
+      minDeposit: 1000,
+      maxDeposit: 500000,
+      processingTime: '5-15 mins manual verification',
+      isActive: true,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (c: OfficialDepositChannel) => {
+    setIsEditing(true);
+    setEditingChannel({ ...c });
+    setIsModalOpen(true);
+  };
+
+  const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingChannel) return;
-    if (!editingChannel.accountTitle.trim() || !editingChannel.accountNumber.trim()) {
-      return;
-    }
+    if (!editingChannel.accountTitle || !editingChannel.accountNumber) return;
 
     setIsSaving(true);
     const success = await onSaveChannel(editingChannel);
     setIsSaving(false);
     if (success) {
-      setEditingChannel(null);
-      setIsAddingNew(false);
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!channelToDelete) return;
-    const targetId = channelToDelete.id || channelToDelete.gateway;
-    setIsDeleting(true);
-    const success = await onDeleteChannel(targetId);
-    setIsDeleting(false);
-    if (success) {
-      setChannelToDelete(null);
+      setIsModalOpen(false);
     }
   };
 
   const filteredChannels = channels.filter((c) => {
-    const matchesSearch =
-      c.accountTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.accountNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.gateway.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.bankName && c.bankName.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesGateway = filterGateway === 'all' || c.gateway === filterGateway;
-
-    return matchesSearch && matchesGateway;
+    if (statusFilter === 'active' && !c.isActive) return false;
+    if (statusFilter === 'disabled' && c.isActive) return false;
+    return true;
   });
 
-  const activeCount = channels.filter((c) => c.isActive).length;
+  const filterGroups: FilterGroup[] = [
+    {
+      key: 'status',
+      label: 'Channel Status',
+      selectedValue: statusFilter,
+      onChange: setStatusFilter,
+      options: [
+        { label: 'All Statuses', value: 'all' },
+        { label: 'Live Active Receiving', value: 'active' },
+        { label: 'Disabled Channels', value: 'disabled' },
+      ],
+    },
+  ];
 
-  return (
-    <div className="space-y-5 pb-16">
-      {/* 1. Header & Add Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 p-5 rounded-3xl backdrop-blur-sm">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <CreditCard className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span>Official Payment Channels & Receiving Tills</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-[10px] text-emerald-300 font-bold">
-                  {channels.length} Configured
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Manage JazzCash, EasyPaisa, Raast, Bank IBFT, and Crypto accounts displayed to users for deposit
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-400">
-            <span>Live Channels:</span>
-            <strong className="text-emerald-400 font-bold">
-              {activeCount} / {channels.length}
-            </strong>
-          </div>
-
-          <button
-            type="button"
-            id="btn-add-payment-channel"
-            onClick={handleOpenAddModal}
-            className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all active:scale-[0.98] cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Payment Channel</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Filter & Search Controls */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by account title, number, bank, or gateway..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          <button
-            type="button"
-            onClick={() => setFilterGateway('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
-              filterGateway === 'all'
-                ? 'bg-slate-800 text-white border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            All ({channels.length})
-          </button>
-          {GATEWAY_OPTIONS.map((opt) => {
-            const count = channels.filter((c) => c.gateway === opt.type).length;
-            if (count === 0 && filterGateway !== opt.type) return null;
-            return (
-              <button
-                key={opt.type}
-                type="button"
-                onClick={() => setFilterGateway(opt.type)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                  filterGateway === opt.type
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-                }`}
-              >
-                <span>{opt.label}</span>
-                <span className="text-[10px] opacity-75">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Gateways List Grid */}
-      {filteredChannels.length === 0 ? (
-        <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800/80 text-center space-y-4">
-          <div className="w-14 h-14 rounded-3xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
-            <CreditCard className="w-7 h-7" />
+  const columns: Column<OfficialDepositChannel>[] = [
+    {
+      key: 'gateway',
+      header: 'Payment Gateway',
+      render: (c) => (
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-500 text-xs shrink-0">
+            <Smartphone className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">No Payment Channels Match Your Filter</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-              {searchQuery
-                ? 'Try adjusting your search query or reset filters.'
-                : 'There are no payment channels configured yet. Add your first receiving account.'}
-            </p>
+            <div className="font-bold text-white tracking-tight">{c.gateway}</div>
+            <div className="text-[10px] text-slate-400 font-mono">ID: {c.id}</div>
           </div>
+        </div>
+      ),
+    },
+    {
+      key: 'accountNumber',
+      header: 'Account Number / Till ID',
+      render: (c) => (
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono font-black text-amber-400 text-xs">
+              {c.accountNumber}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => handleCopy(e, c.accountNumber, `c-${c.id}`)}
+              className="p-0.5 rounded text-slate-400 hover:text-white"
+            >
+              {copiedId === `c-${c.id}` ? (
+                <Check className="w-3 h-3 text-emerald-400" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
+            </button>
+          </div>
+          <div className="text-[10px] text-slate-400 truncate max-w-[150px]">
+            {c.accountTitle}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'bankName',
+      header: 'Institution / Branch',
+      render: (c) => (
+        <div className="text-xs">
+          <div className="font-semibold text-slate-200">{c.bankName || 'Mobile Wallet'}</div>
+          {c.branchCode && (
+            <div className="text-[10px] text-slate-400 font-mono">Branch: {c.branchCode}</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'minDeposit',
+      header: 'Deposit Limits',
+      align: 'right',
+      render: (c) => (
+        <div className="text-xs">
+          <div className="font-mono font-bold text-emerald-400">
+            {formatPKR(c.minDeposit)} - {formatPKR(c.maxDeposit)}
+          </div>
+          <div className="text-[10px] text-slate-500">{c.processingTime || '5 - 15 Mins'}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Live Status',
+      align: 'center',
+      render: (c) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleActive(c.id, c.isActive);
+          }}
+          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
+            c.isActive
+              ? 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-rose-950 hover:text-rose-300 hover:border-rose-800'
+              : 'bg-rose-950 text-rose-300 border-rose-800 hover:bg-emerald-950 hover:text-emerald-300 hover:border-emerald-800'
+          }`}
+          title="Click to toggle status"
+        >
+          {c.isActive ? 'ACTIVE' : 'DISABLED'}
+        </button>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      sortable: false,
+      render: (c) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            onClick={handleOpenAddModal}
-            className="inline-flex items-center gap-2 py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+            onClick={() => handleOpenEdit(c)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Edit Channel"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add First Channel</span>
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeleteChannel(c.id)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+            title="Delete Channel"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6 pb-16">
+      {/* 1. Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-amber-400" />
+            <span>Official Receiving Channels & Till Numbers</span>
+          </h2>
+          <p className="text-xs text-slate-400">
+            Configure official JazzCash, EasyPaisa and Bank accounts displayed to investors
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'table' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Table View"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'cards' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-950/40 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Channel</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Main Content: Table or Cards */}
+      {viewMode === 'table' ? (
+        <CrmDataTable<OfficialDepositChannel>
+          data={filteredChannels}
+          columns={columns}
+          keyExtractor={(c) => c.id}
+          searchPlaceholder="Search by account title, account number, or gateway..."
+          searchFields={[(c) => c.accountTitle, (c) => c.accountNumber, (c) => c.gateway, (c) => c.bankName]}
+          filterGroups={filterGroups}
+          initialPageSize={10}
+          onRowClick={(c) => setSelectedChannel(c)}
+          emptyMessage="No payment channels found"
+          emptySubtext="Add an official channel using the 'Add Channel' button above."
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredChannels.map((channel) => {
-            const channelKey = channel.id || `${channel.gateway}_${channel.accountNumber}`;
-            return (
-              <div
-                key={channelKey}
-                className={`p-5 rounded-3xl bg-slate-900 border transition-all space-y-4 relative flex flex-col justify-between ${
-                  channel.isActive
-                    ? 'border-slate-800 hover:border-slate-700/80 shadow-md'
-                    : 'border-rose-900/30 bg-slate-900/60 opacity-80'
-                }`}
-              >
-                <div className="space-y-3.5">
-                  {/* Top Bar */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
-                        {getGatewayIcon(channel.gateway)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-white truncate">
-                            {channel.gateway.replace('_', ' ')}
-                          </h3>
-                          {channel.isActive ? (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold shrink-0 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <span>Live</span>
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800 text-[10px] font-bold shrink-0">
-                              Disabled
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-300 font-semibold truncate mt-0.5">
-                          {channel.accountTitle}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Quick Active Toggle */}
-                    <button
-                      type="button"
-                      title={channel.isActive ? 'Click to Disable Channel' : 'Click to Enable Channel'}
-                      onClick={() => handleQuickToggleActive(channel)}
-                      className={`p-2 rounded-xl border text-xs font-bold transition-colors ${
-                        channel.isActive
-                          ? 'bg-emerald-950/60 border-emerald-800 text-emerald-400 hover:bg-rose-950 hover:text-rose-400 hover:border-rose-800'
-                          : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-emerald-400 hover:border-emerald-800'
-                      }`}
-                    >
-                      <Power className="w-4 h-4" />
-                    </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredChannels.map((c) => (
+            <div
+              key={c.id}
+              onClick={() => setSelectedChannel(c)}
+              className="p-5 rounded-3xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 transition-all cursor-pointer space-y-4 group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400">
+                    <Smartphone className="w-5 h-5" />
                   </div>
-
-                  {/* Account Details Box */}
-                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between font-mono">
-                      <span className="text-slate-500 text-[11px]">Account / Till / IBAN:</span>
-                      <div className="flex items-center gap-1.5 max-w-[65%]">
-                        <strong className="text-amber-300 font-bold text-xs truncate">
-                          {channel.accountNumber}
-                        </strong>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(channel.accountNumber, channelKey)}
-                          className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800"
-                          title="Copy Account Number"
-                        >
-                          {copiedId === channelKey ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {channel.bankName && (
-                      <div className="flex items-center justify-between text-slate-300">
-                        <span className="text-slate-500 text-[11px]">Bank / Institution:</span>
-                        <span className="font-medium truncate max-w-[60%]">{channel.bankName}</span>
-                      </div>
-                    )}
-
-                    {channel.branchCode && (
-                      <div className="flex items-center justify-between text-slate-300">
-                        <span className="text-slate-500 text-[11px]">Branch / Swift Code:</span>
-                        <span className="font-mono">{channel.branchCode}</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-900">
-                      <span className="text-slate-500 text-[11px]">Allowed Deposit Range:</span>
-                      <span className="text-emerald-400 font-bold text-xs">
-                        {formatPKR(channel.minDeposit)} - {formatPKR(channel.maxDeposit)}
-                      </span>
-                    </div>
-
-                    {channel.processingTime && (
-                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
-                        <span className="text-slate-500 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>Estimated Time:</span>
-                        </span>
-                        <span className="text-slate-300 font-medium">{channel.processingTime}</span>
-                      </div>
-                    )}
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{c.gateway}</h3>
+                    <p className="text-[10px] text-slate-400">{c.bankName || 'Mobile Account'}</p>
                   </div>
-
-                  {channel.instructions && (
-                    <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/50 text-[11px] text-slate-400 italic leading-relaxed">
-                      "{channel.instructions}"
-                    </div>
-                  )}
                 </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    c.isActive
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                      : 'bg-rose-950 text-rose-300 border border-rose-800'
+                  }`}
+                >
+                  {c.isActive ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
 
-                {/* Card Actions (Edit & Delete) */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800/80">
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Account Title:</span>
+                  <strong className="text-white">{c.accountTitle}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Number / Till:</span>
+                  <span className="font-mono font-bold text-amber-400">{c.accountNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Limits:</span>
+                  <span className="font-mono text-emerald-400 font-semibold">{formatPKR(c.minDeposit)} - {formatPKR(c.maxDeposit)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] font-semibold text-slate-400 group-hover:text-amber-400 transition-colors">
+                  Click to inspect details →
+                </span>
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    onClick={() => handleOpenEditModal(channel)}
-                    className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    onClick={() => handleOpenEdit(c)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                   >
-                    <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Edit Channel</span>
+                    <Edit2 className="w-3.5 h-3.5" />
                   </button>
-
                   <button
                     type="button"
-                    onClick={() => setChannelToDelete(channel)}
-                    className="py-1.5 px-3 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/40 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    onClick={() => onDeleteChannel(c.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Delete</span>
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* 4. Add / Edit Channel Modal */}
-      {editingChannel && (
+      {/* 3. Entity Detail Modal */}
+      {selectedChannel && (
+        <GatewayDetailModal
+          channel={selectedChannel}
+          onClose={() => setSelectedChannel(null)}
+          onEdit={(c) => handleOpenEdit(c)}
+          onDelete={(id) => onDeleteChannel(id)}
+          onToggleActive={(id, st) => handleToggleActive(id, st)}
+        />
+      )}
+
+      {/* 4. Create / Edit Modal Form */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <CreditCard className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">
-                  {isAddingNew ? 'Add New Payment Channel' : `Edit Channel: ${editingChannel.gateway}`}
-                </h3>
-              </div>
+          <div className="w-full max-w-xl rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 my-8 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-amber-400" />
+                <span>{isEditing ? 'Edit Official Receiving Channel' : 'Add Official Receiving Channel'}</span>
+              </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setEditingChannel(null);
-                  setIsAddingNew(false);
-                }}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-4">
-              {/* Gateway Type Selector */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">Gateway / Platform</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {GATEWAY_OPTIONS.map((gw) => {
-                    const isSelected = editingChannel.gateway === gw.type;
-                    return (
-                      <button
-                        key={gw.type}
-                        type="button"
-                        onClick={() => setEditingChannel({ ...editingChannel, gateway: gw.type })}
-                        className={`p-2.5 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? 'bg-emerald-950/60 border-emerald-500 text-white ring-1 ring-emerald-500'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {getGatewayIcon(gw.type)}
-                          <span className="text-xs font-bold text-white truncate">{gw.label}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{gw.sub}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Account Title */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Official Account Title</label>
-                <input
-                  type="text"
-                  value={editingChannel.accountTitle}
-                  onChange={(e) => setEditingChannel({ ...editingChannel, accountTitle: e.target.value })}
-                  placeholder="e.g. PAKINVEST DIGITAL ENTERPRISES PVT"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              {/* Account Number / Till / IBAN */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">
-                  Account Number / Mobile Wallet / Till ID / IBAN / Crypto Address
-                </label>
-                <input
-                  type="text"
-                  value={editingChannel.accountNumber}
-                  onChange={(e) => setEditingChannel({ ...editingChannel, accountNumber: e.target.value })}
-                  placeholder="e.g. 03049876543 or PK82MEZN0102030405060708"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
-                  required
-                />
-              </div>
-
-              {/* Bank Name & Branch Code */}
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Bank Name (Optional)</label>
+                  <label className="font-bold text-slate-300">Gateway Type</label>
+                  <select
+                    value={editingChannel.gateway}
+                    onChange={(e) => setEditingChannel({ ...editingChannel, gateway: e.target.value as GatewayType })}
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-bold"
+                  >
+                    {GATEWAY_OPTIONS.map((g) => (
+                      <option key={g.type} value={g.type}>
+                        {g.label} ({g.sub})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300">Account Title</label>
+                  <input
+                    type="text"
+                    value={editingChannel.accountTitle}
+                    onChange={(e) => setEditingChannel({ ...editingChannel, accountTitle: e.target.value })}
+                    placeholder="e.g. PakInvest Official Pvt Ltd"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-bold"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300">Account Number / Till ID / IBAN</label>
+                  <input
+                    type="text"
+                    value={editingChannel.accountNumber}
+                    onChange={(e) => setEditingChannel({ ...editingChannel, accountNumber: e.target.value })}
+                    placeholder="e.g. 03001234567 or Till # 12345"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300">Bank Name (if applicable)</label>
                   <input
                     type="text"
                     value={editingChannel.bankName || ''}
                     onChange={(e) => setEditingChannel({ ...editingChannel, bankName: e.target.value })}
-                    placeholder="Meezan Bank Ltd."
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="e.g. Meezan Bank, HBL"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Branch Code / Swift (Optional)</label>
-                  <input
-                    type="text"
-                    value={editingChannel.branchCode || ''}
-                    onChange={(e) => setEditingChannel({ ...editingChannel, branchCode: e.target.value })}
-                    placeholder="0204 (Gulberg Branch)"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* Min & Max Deposit */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Min Deposit (PKR)</label>
+                  <label className="font-bold text-slate-300">Min Deposit Limit (PKR)</label>
                   <input
                     type="number"
                     min="100"
                     value={editingChannel.minDeposit}
                     onChange={(e) => setEditingChannel({ ...editingChannel, minDeposit: Number(e.target.value) })}
-                    placeholder="1000"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Max Deposit (PKR)</label>
+                  <label className="font-bold text-slate-300">Max Deposit Limit (PKR)</label>
                   <input
                     type="number"
-                    min="500"
+                    min="1000"
                     value={editingChannel.maxDeposit}
                     onChange={(e) => setEditingChannel({ ...editingChannel, maxDeposit: Number(e.target.value) })}
-                    placeholder="1000000"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
                     required
                   />
                 </div>
               </div>
 
-              {/* Processing Time */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Processing Time Note</label>
-                <input
-                  type="text"
-                  value={editingChannel.processingTime}
-                  onChange={(e) => setEditingChannel({ ...editingChannel, processingTime: e.target.value })}
-                  placeholder="e.g. 5-15 mins manual verification or Instant via Raast"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              {/* Instructions Note */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Deposit Instructions for User</label>
+                <label className="font-bold text-slate-300">Deposit Instructions (shown to investor)</label>
                 <textarea
-                  value={editingChannel.instructions || ''}
+                  value={editingChannel.instructions}
                   onChange={(e) => setEditingChannel({ ...editingChannel, instructions: e.target.value })}
-                  placeholder="Explain step-by-step how users should make transfer & submit TID."
+                  placeholder="Steps the user must follow..."
                   rows={2}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
                 />
               </div>
 
-              {/* Active Toggle Checkbox */}
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
-                  id="activeToggle"
+                  id="activeChannelCheck"
                   checked={editingChannel.isActive}
                   onChange={(e) => setEditingChannel({ ...editingChannel, isActive: e.target.checked })}
-                  className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  className="rounded text-emerald-500 focus:ring-0"
                 />
-                <label htmlFor="activeToggle" className="text-xs text-slate-300 font-semibold cursor-pointer select-none">
-                  Make this account active and available for investor deposits immediately
+                <label htmlFor="activeChannelCheck" className="text-slate-300 font-semibold cursor-pointer">
+                  Activate channel immediately for receiving client deposits
                 </label>
               </div>
 
-              {/* Modal Buttons */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingChannel(null);
-                    setIsAddingNew(false);
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  onClick={() => setIsModalOpen(false)}
+                  className="py-2 px-4 rounded-xl bg-slate-800 text-slate-300 font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950/40 cursor-pointer disabled:opacity-50"
+                  className="py-2 px-5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-md shadow-amber-950/40"
                 >
-                  {isSaving ? 'Saving Channel...' : isAddingNew ? 'Create Channel' : 'Save Changes'}
+                  {isSaving ? 'Saving...' : 'Save Channel'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Delete Confirmation Modal */}
-      {channelToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <div className="text-center space-y-1.5">
-              <h3 className="text-base font-bold text-white">Delete Payment Channel?</h3>
-              <p className="text-xs text-slate-400">
-                Are you sure you want to remove the{' '}
-                <strong className="text-white">{channelToDelete.gateway.replace('_', ' ')}</strong> receiving account (
-                <span className="text-amber-400 font-mono font-bold">{channelToDelete.accountNumber}</span> -{' '}
-                <span className="text-slate-200">{channelToDelete.accountTitle}</span>)?
-              </p>
-              <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-900/40 text-[11px] text-rose-300 mt-2 text-left">
-                ⚠️ Investors will immediately no longer be able to select or deposit to this account.
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setChannelToDelete(null)}
-                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handleConfirmDelete}
-                className="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-md shadow-rose-950/40 cursor-pointer disabled:opacity-50"
-              >
-                {isDeleting ? 'Deleting...' : 'Yes, Delete Channel'}
-              </button>
-            </div>
           </div>
         </div>
       )}

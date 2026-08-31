@@ -1110,6 +1110,61 @@ router.post('/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
+router.post('/auth/change-password', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user as DBUser;
+    const { oldPassword, newPassword, confirmPassword } = req.body;
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'Please fill in current password, new password, and confirmation.' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'New password and confirmation password do not match.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+    }
+
+    // Check old password
+    const isOldPasswordCorrect =
+      bcrypt.compareSync(oldPassword, user.password) || user.password === oldPassword;
+
+    if (!isOldPasswordCorrect) {
+      return res.status(400).json({ error: 'Incorrect current password. Please enter your valid current password.' });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({ error: 'New password cannot be the same as your current password.' });
+    }
+
+    const hashedNewPassword = bcrypt.hashSync(newPassword, 10);
+    user.password = hashedNewPassword;
+
+    // Update in memory and database
+    const memIndex = memoryUsers.findIndex((u) => u.id === user.id);
+    if (memIndex !== -1) {
+      memoryUsers[memIndex].password = hashedNewPassword;
+    }
+
+    await persistUserUpdate(user.id, { password: hashedNewPassword });
+
+    addNotification(user.id, {
+      title: 'Security Notice: Password Changed 🔒',
+      message: 'Your account login password has been changed successfully. If you did not make this change, please contact support immediately.',
+      type: 'system',
+    });
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully! Your account credentials have been updated.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Server error while updating password' });
+  }
+});
+
 // ----------------------------------------------------
 // PLANS & INVESTMENTS API
 // ----------------------------------------------------
@@ -1250,112 +1305,142 @@ router.post('/investments/claim', authenticate, (req, res) => {
   const { investmentId } = req.body;
   const now = Date.now();
 
-  let claimedTotal = 0;
-  const updatedInvs: DBActiveInvestment[] = [];
+  const lockKey = `${user.id}:claim_profit`;
+  if (activeOperationLocks.has(lockKey)) {
+    return res.status(429).json({ error: 'A claim request is already in progress. Please wait a moment.' });
+  }
 
-  if (investmentId === 'all') {
-    const userInvs = memoryInvestments.filter((inv) => inv.userId === user.id && inv.status === 'active');
-    for (const inv of userInvs) {
-      const nextClaim = inv.nextClaimTimestamp || (inv.lastClaimTimestamp + 86400000);
-      if (now >= nextClaim) {
-        const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor((now - inv.lastClaimTimestamp) / 86400000)));
-        const profit = readyCycles * inv.dailyProfitAmount;
-        claimedTotal += profit;
-        inv.earnedSoFar += profit;
-        inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
-        inv.lastClaimTimestamp = now;
-        inv.nextClaimTimestamp = now + 86400000;
-        inv.unclaimedProfit = 0;
-        if (inv.daysRemaining <= 0) {
-          inv.status = 'completed';
-          user.balance += inv.investedAmount; // Capital return on maturity
+  activeOperationLocks.add(lockKey);
+
+  try {
+    let claimedTotal = 0;
+    const updatedInvs: DBActiveInvestment[] = [];
+
+    if (investmentId === 'all') {
+      const userInvs = memoryInvestments.filter((inv) => inv.userId === user.id && inv.status === 'active');
+      for (const inv of userInvs) {
+        const lastClaim = Number(inv.lastClaimTimestamp) || inv.startTimestamp || now;
+        const nextClaim = inv.nextClaimTimestamp ? Number(inv.nextClaimTimestamp) : lastClaim + 86400000;
+        
+        if (now >= nextClaim && inv.daysRemaining > 0) {
+          const elapsed = now - lastClaim;
+          const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor(elapsed / 86400000)));
+          
+          if (readyCycles > 0) {
+            const profit = readyCycles * inv.dailyProfitAmount;
+            claimedTotal += profit;
+            inv.earnedSoFar = (inv.earnedSoFar || 0) + profit;
+            inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
+            // Advance timestamp cleanly by exact cycle duration to avoid clock drift
+            inv.lastClaimTimestamp = lastClaim + (readyCycles * 86400000);
+            inv.nextClaimTimestamp = inv.lastClaimTimestamp + 86400000;
+            inv.unclaimedProfit = 0;
+
+            if (inv.daysRemaining <= 0) {
+              inv.status = 'completed';
+              user.balance += inv.investedAmount; // Capital return on maturity
+            }
+            updatedInvs.push(inv);
+          }
         }
-        updatedInvs.push(inv);
       }
+      if (claimedTotal === 0) {
+        return res.status(400).json({
+          error: 'No investments have completed their 24-hour cycle yet. Please wait for the daily countdown timer to reach 00:00:00.',
+        });
+      }
+    } else {
+      const inv = memoryInvestments.find((i) => i.id === investmentId && i.userId === user.id);
+      if (!inv) return res.status(404).json({ error: 'Investment plan not found.' });
+      if (inv.status !== 'active' || inv.daysRemaining <= 0) {
+        return res.status(400).json({ error: 'This investment plan is already completed.' });
+      }
+
+      const lastClaim = Number(inv.lastClaimTimestamp) || inv.startTimestamp || now;
+      const nextClaim = inv.nextClaimTimestamp ? Number(inv.nextClaimTimestamp) : lastClaim + 86400000;
+
+      if (now < nextClaim) {
+        const msLeft = nextClaim - now;
+        const hours = Math.floor(msLeft / (1000 * 60 * 60));
+        const mins = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
+        const secs = Math.floor((msLeft % (1000 * 60)) / 1000);
+        const timeStr = `${hours}h ${mins}m ${secs}s`;
+        return res.status(400).json({
+          error: `24-hour cycle is still running! Next daily profit of Rs. ${inv.dailyProfitAmount.toLocaleString()} will unlock in ${timeStr} (${inv.nextPayoutTime || 'at ' + inv.startTimeFormatted}).`,
+        });
+      }
+
+      const elapsed = now - lastClaim;
+      const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor(elapsed / 86400000)));
+      if (readyCycles <= 0) {
+        return res.status(400).json({ error: '24-hour payout cycle not yet reached.' });
+      }
+
+      const profit = readyCycles * inv.dailyProfitAmount;
+      claimedTotal = profit;
+      inv.earnedSoFar = (inv.earnedSoFar || 0) + profit;
+      inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
+      inv.lastClaimTimestamp = lastClaim + (readyCycles * 86400000);
+      inv.nextClaimTimestamp = inv.lastClaimTimestamp + 86400000;
+      inv.unclaimedProfit = 0;
+
+      if (inv.daysRemaining <= 0) {
+        inv.status = 'completed';
+        user.balance += inv.investedAmount; // Capital return on maturity
+      }
+      updatedInvs.push(inv);
     }
-    if (claimedTotal === 0) {
-      return res.status(400).json({
-        error: 'No investments have completed their 24-hour cycle yet. Please wait for the daily countdown timer to reach 00:00:00.',
+
+    user.balance += claimedTotal;
+    user.totalEarnedProfit += claimedTotal;
+
+    const tx: DBTransaction = {
+      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+      userId: user.id,
+      userName: user.name,
+      userPhone: user.phone,
+      type: 'daily_profit',
+      amount: claimedTotal,
+      fee: 0,
+      netAmount: claimedTotal,
+      status: 'completed',
+      referenceCode: `CLAIM-${Date.now().toString().slice(-6)}`,
+      timestamp: getFormattedNow(),
+      notes: `Claimed 24-hour daily profit payout (+Rs. ${claimedTotal.toLocaleString()})`,
+    };
+    memoryTransactions.unshift(tx);
+
+    persistUserUpdate(user.id, { balance: user.balance, totalEarnedProfit: user.totalEarnedProfit });
+    for (const inv of updatedInvs) {
+      persistInvestmentUpdate(inv.id, {
+        earnedSoFar: inv.earnedSoFar,
+        daysRemaining: inv.daysRemaining,
+        status: inv.status,
+        unclaimedProfit: 0,
+        lastClaimTimestamp: inv.lastClaimTimestamp,
+        nextClaimTimestamp: inv.nextClaimTimestamp,
       });
     }
-  } else {
-    const inv = memoryInvestments.find((i) => i.id === investmentId && i.userId === user.id);
-    if (!inv) return res.status(404).json({ error: 'Investment plan not found' });
-    if (inv.status !== 'active') return res.status(400).json({ error: 'This investment plan is no longer active.' });
+    persistTx(tx);
 
-    const nextClaim = inv.nextClaimTimestamp || (inv.lastClaimTimestamp + 86400000);
-    if (now < nextClaim) {
-      const msLeft = nextClaim - now;
-      const hours = Math.floor(msLeft / (1000 * 60 * 60));
-      const mins = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
-      const secs = Math.floor((msLeft % (1000 * 60)) / 1000);
-      const timeStr = `${hours}h ${mins}m ${secs}s`;
-      return res.status(400).json({
-        error: `24-hour cycle is still running! Next daily profit of Rs. ${inv.dailyProfitAmount.toLocaleString()} will unlock in ${timeStr} (${inv.nextPayoutTime || 'at ' + inv.startTimeFormatted}).`,
-      });
-    }
-
-    const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor((now - inv.lastClaimTimestamp) / 86400000)));
-    const profit = readyCycles * inv.dailyProfitAmount;
-    claimedTotal = profit;
-    inv.earnedSoFar += profit;
-    inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
-    inv.lastClaimTimestamp = now;
-    inv.nextClaimTimestamp = now + 86400000;
-    inv.unclaimedProfit = 0;
-    if (inv.daysRemaining <= 0) {
-      inv.status = 'completed';
-      user.balance += inv.investedAmount; // Capital return on maturity
-    }
-    updatedInvs.push(inv);
-  }
-
-  user.balance += claimedTotal;
-  user.totalEarnedProfit += claimedTotal;
-
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'daily_profit',
-    amount: claimedTotal,
-    fee: 0,
-    netAmount: claimedTotal,
-    status: 'completed',
-    referenceCode: `CLAIM-${Date.now().toString().slice(-6)}`,
-    timestamp: getFormattedNow(),
-    notes: `Claimed 24-hour daily profit payout (+Rs. ${claimedTotal.toLocaleString()})`,
-  };
-  memoryTransactions.unshift(tx);
-
-  persistUserUpdate(user.id, { balance: user.balance, totalEarnedProfit: user.totalEarnedProfit });
-  for (const inv of updatedInvs) {
-    persistInvestmentUpdate(inv.id, {
-      earnedSoFar: inv.earnedSoFar,
-      daysRemaining: inv.daysRemaining,
-      status: inv.status,
-      unclaimedProfit: 0,
-      lastClaimTimestamp: inv.lastClaimTimestamp,
+    addNotification(user.id, {
+      title: 'Daily ROI Profit Claimed! ✨',
+      message: `+Rs. ${claimedTotal.toLocaleString()} 24-hour daily return credited to your wallet balance.`,
+      type: 'profit_claimed',
+      amount: claimedTotal,
     });
+
+    res.json({
+      success: true,
+      claimedAmount: claimedTotal,
+      balance: user.balance,
+      totalEarnedProfit: user.totalEarnedProfit,
+      transaction: tx,
+      investments: memoryInvestments.filter((i) => i.userId === user.id),
+    });
+  } finally {
+    activeOperationLocks.delete(lockKey);
   }
-  persistTx(tx);
-
-  addNotification(user.id, {
-    title: 'Daily ROI Profit Claimed! ✨',
-    message: `+Rs. ${claimedTotal.toLocaleString()} 24-hour daily return credited to your wallet balance.`,
-    type: 'profit_claimed',
-    amount: claimedTotal,
-  });
-
-  res.json({
-    success: true,
-    claimedAmount: claimedTotal,
-    balance: user.balance,
-    totalEarnedProfit: user.totalEarnedProfit,
-    transaction: tx,
-    investments: memoryInvestments.filter((i) => i.userId === user.id),
-  });
 });
 
 // ----------------------------------------------------
@@ -1493,11 +1578,14 @@ router.get('/referrals', authenticate, async (req, res) => {
           lastCheckInDate: u.lastCheckInDate || undefined,
           avatar: u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
         }));
-        memoryUsers = allUsersList;
+        // Merge with memoryUsers
+        const existingIds = new Set(allUsersList.map((u) => u.id));
+        const memoryOnlyUsers = memoryUsers.filter((u) => !existingIds.has(u.id));
+        memoryUsers = [...allUsersList, ...memoryOnlyUsers];
       }
       const dbTx = await prisma.transaction.findMany();
       if (dbTx.length > 0) {
-        allTxList = dbTx.map((t) => ({
+        const mappedDbTx: DBTransaction[] = dbTx.map((t) => ({
           ...t,
           userId: t.userId || '',
           userName: t.userName || undefined,
@@ -1512,6 +1600,10 @@ router.get('/referrals', authenticate, async (req, res) => {
           planName: t.planName || undefined,
           status: t.status as any,
         }));
+        // Merge without overwriting fresh in-memory transactions
+        const dbTxIds = new Set(mappedDbTx.map((t) => t.id));
+        const memOnlyTx = memoryTransactions.filter((t) => !dbTxIds.has(t.id));
+        allTxList = [...memOnlyTx, ...mappedDbTx];
         memoryTransactions = allTxList;
       }
     } catch (err) {
@@ -1601,40 +1693,51 @@ router.get('/referrals', authenticate, async (req, res) => {
 
 router.post('/referrals/claim', authenticate, (req, res) => {
   const user = (req as any).user as DBUser;
-  const unclaimed = user.unclaimedReferralEarnings;
-  if (unclaimed <= 0) {
-    return res.status(400).json({ error: 'No unclaimed referral commission available at this time.' });
+  const lockKey = `${user.id}:claim_referrals`;
+  if (activeOperationLocks.has(lockKey)) {
+    return res.status(429).json({ error: 'Referral commission claim is already in progress.' });
   }
 
-  user.balance += unclaimed;
-  user.unclaimedReferralEarnings = 0;
+  activeOperationLocks.add(lockKey);
 
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'referral_bonus',
-    amount: unclaimed,
-    fee: 0,
-    netAmount: unclaimed,
-    status: 'completed',
-    referenceCode: `REF-CLAIM-${Date.now().toString().slice(-6)}`,
-    timestamp: getFormattedNow(),
-    notes: 'Multi-tier team commission claimed to main wallet balance',
-  };
-  memoryTransactions.unshift(tx);
+  try {
+    const unclaimed = user.unclaimedReferralEarnings;
+    if (unclaimed <= 0) {
+      return res.status(400).json({ error: 'No unclaimed referral commission available at this time.' });
+    }
 
-  persistUserUpdate(user.id, { balance: user.balance, unclaimedReferralEarnings: 0 });
-  persistTx(tx);
+    user.balance += unclaimed;
+    user.unclaimedReferralEarnings = 0;
 
-  res.json({
-    success: true,
-    claimedAmount: unclaimed,
-    balance: user.balance,
-    unclaimedReferralEarnings: 0,
-    transaction: tx,
-  });
+    const tx: DBTransaction = {
+      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+      userId: user.id,
+      userName: user.name,
+      userPhone: user.phone,
+      type: 'referral_bonus',
+      amount: unclaimed,
+      fee: 0,
+      netAmount: unclaimed,
+      status: 'completed',
+      referenceCode: `REF-CLAIM-${Date.now().toString().slice(-6)}`,
+      timestamp: getFormattedNow(),
+      notes: 'Multi-tier team commission claimed to main wallet balance',
+    };
+    memoryTransactions.unshift(tx);
+
+    persistUserUpdate(user.id, { balance: user.balance, unclaimedReferralEarnings: 0 });
+    persistTx(tx);
+
+    res.json({
+      success: true,
+      claimedAmount: unclaimed,
+      balance: user.balance,
+      unclaimedReferralEarnings: 0,
+      transaction: tx,
+    });
+  } finally {
+    activeOperationLocks.delete(lockKey);
+  }
 });
 
 // ----------------------------------------------------
@@ -1642,59 +1745,70 @@ router.post('/referrals/claim', authenticate, (req, res) => {
 // ----------------------------------------------------
 router.post('/streak/checkin', authenticate, (req, res) => {
   const user = (req as any).user as DBUser;
-  const todayStr = new Date().toISOString().split('T')[0];
-  if (user.lastCheckInDate === todayStr) {
-    return res.status(400).json({ error: 'You have already checked in today! Come back tomorrow for your next reward.' });
+  const lockKey = `${user.id}:streak_checkin`;
+  if (activeOperationLocks.has(lockKey)) {
+    return res.status(429).json({ error: 'Check-in is already in progress.' });
   }
 
-  user.dailyStreak = (user.dailyStreak % 7) + 1;
-  user.lastCheckInDate = todayStr;
+  activeOperationLocks.add(lockKey);
 
-  const bonusAmounts: Record<number, number> = {
-    1: 250,
-    2: 300,
-    3: 350,
-    4: 400,
-    5: 450,
-    6: 500,
-    7: 1000,
-  };
-  const reward = bonusAmounts[user.dailyStreak] || 250;
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (user.lastCheckInDate === todayStr) {
+      return res.status(400).json({ error: 'You have already checked in today! Come back tomorrow for your next reward.' });
+    }
 
-  user.balance += reward;
-  user.totalEarnedProfit += reward;
+    user.dailyStreak = (user.dailyStreak % 7) + 1;
+    user.lastCheckInDate = todayStr;
 
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'streak_reward',
-    amount: reward,
-    fee: 0,
-    netAmount: reward,
-    status: 'completed',
-    referenceCode: `STREAK-D${user.dailyStreak}`,
-    timestamp: getFormattedNow(),
-    notes: `Day ${user.dailyStreak} Loyalty Check-in Cash Bonus`,
-  };
-  memoryTransactions.unshift(tx);
+    const bonusAmounts: Record<number, number> = {
+      1: 250,
+      2: 300,
+      3: 350,
+      4: 400,
+      5: 450,
+      6: 500,
+      7: 1000,
+    };
+    const reward = bonusAmounts[user.dailyStreak] || 250;
 
-  persistUserUpdate(user.id, {
-    balance: user.balance,
-    totalEarnedProfit: user.totalEarnedProfit,
-    dailyStreak: user.dailyStreak,
-    lastCheckInDate: user.lastCheckInDate,
-  });
-  persistTx(tx);
+    user.balance += reward;
+    user.totalEarnedProfit += reward;
 
-  res.json({
-    success: true,
-    dailyStreak: user.dailyStreak,
-    reward,
-    balance: user.balance,
-    transaction: tx,
-  });
+    const tx: DBTransaction = {
+      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+      userId: user.id,
+      userName: user.name,
+      userPhone: user.phone,
+      type: 'streak_reward',
+      amount: reward,
+      fee: 0,
+      netAmount: reward,
+      status: 'completed',
+      referenceCode: `STREAK-D${user.dailyStreak}`,
+      timestamp: getFormattedNow(),
+      notes: `Day ${user.dailyStreak} Loyalty Check-in Cash Bonus`,
+    };
+    memoryTransactions.unshift(tx);
+
+    persistUserUpdate(user.id, {
+      balance: user.balance,
+      totalEarnedProfit: user.totalEarnedProfit,
+      dailyStreak: user.dailyStreak,
+      lastCheckInDate: user.lastCheckInDate,
+    });
+    persistTx(tx);
+
+    res.json({
+      success: true,
+      dailyStreak: user.dailyStreak,
+      reward,
+      balance: user.balance,
+      transaction: tx,
+    });
+  } finally {
+    activeOperationLocks.delete(lockKey);
+  }
 });
 
 // ----------------------------------------------------
@@ -2327,6 +2441,63 @@ router.post('/admin/users/reset-pin', (req, res) => {
 
 router.get('/admin/transactions', (req, res) => {
   res.json({ success: true, transactions: memoryTransactions });
+});
+
+router.get('/admin/active-investments', (req, res) => {
+  const enriched = memoryInvestments.map((inv) => {
+    const user = memoryUsers.find((u) => u.id === inv.userId);
+    return {
+      ...inv,
+      userName: user?.name || 'Investor',
+      userPhone: user?.phone || '',
+    };
+  });
+  res.json({ success: true, activeInvestments: enriched });
+});
+
+router.post('/admin/active-investments/cancel', (req, res) => {
+  const { investmentId, reason, refundPrincipal } = req.body;
+  const inv = memoryInvestments.find((i) => i.id === investmentId);
+  if (!inv) return res.status(404).json({ error: 'Investment record not found' });
+
+  inv.status = 'completed';
+  const user = memoryUsers.find((u) => u.id === inv.userId);
+  if (user) {
+    user.investedCapital = Math.max(0, user.investedCapital - inv.investedAmount);
+    if (refundPrincipal) {
+      user.balance += inv.investedAmount;
+      const tx: DBTransaction = {
+        id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+        userId: user.id,
+        userName: user.name,
+        userPhone: user.phone,
+        type: 'admin_adjustment',
+        amount: inv.investedAmount,
+        fee: 0,
+        netAmount: inv.investedAmount,
+        status: 'completed',
+        gateway: 'System_Balance',
+        referenceCode: `INV-REFUND-${Date.now().toString().slice(-6)}`,
+        timestamp: getFormattedNow(),
+        notes: `Admin Investment Refund: ${inv.planName} (${reason || 'Terminated early by administrator'})`,
+      };
+      memoryTransactions.unshift(tx);
+      persistTx(tx);
+    }
+    persistUserUpdate(user.id, {
+      investedCapital: user.investedCapital,
+      balance: user.balance,
+    });
+
+    addNotification(user.id, {
+      title: 'Investment Package Concluded 📦',
+      message: `Your active investment in ${inv.planName} (Rs. ${inv.investedAmount.toLocaleString()}) has been closed by admin. ${refundPrincipal ? 'Principal was refunded to your wallet.' : ''}`,
+      type: 'system',
+      amount: inv.investedAmount,
+    });
+  }
+
+  res.json({ success: true, message: 'Investment updated successfully' });
 });
 
 // ----------------------------------------------------

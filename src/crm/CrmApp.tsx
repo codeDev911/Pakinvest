@@ -5,8 +5,8 @@ import {
   Transaction,
   UserProfile,
   InvestmentPlan,
+  ActiveInvestment,
   OfficialDepositChannel,
-  DatabaseStatus,
 } from '../types';
 import { CrmLogin } from './CrmLogin';
 import { CrmSidebar } from './CrmSidebar';
@@ -14,19 +14,24 @@ import { CrmHeader } from './CrmHeader';
 import { CrmOverviewView } from './views/CrmOverviewView';
 import { CrmDepositsView } from './views/CrmDepositsView';
 import { CrmWithdrawalsView } from './views/CrmWithdrawalsView';
+import { CrmActivePlansView } from './views/CrmActivePlansView';
 import { CrmPlansView } from './views/CrmPlansView';
 import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
+import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
 
 interface CrmAppProps {
   onSwitchToClient: () => void;
 }
 
-export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
+const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   const { showToast } = useApp();
+  const { theme } = useCrmTheme();
+  const isDark = theme === 'dark';
+
   const [adminName, setAdminName] = useState<string | null>(() => {
     return localStorage.getItem('pakinvest_crm_operator');
   });
@@ -52,6 +57,7 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [allPlans, setAllPlans] = useState<InvestmentPlan[]>([]);
+  const [allActiveInvestments, setAllActiveInvestments] = useState<ActiveInvestment[]>([]);
   const [allChannels, setAllChannels] = useState<OfficialDepositChannel[]>([]);
 
   // Safe parse helper for robust networking
@@ -68,19 +74,21 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   const loadCrmData = async () => {
     setIsRefreshing(true);
     try {
-      const [statsRes, txRes, usersRes, plansRes, channelsRes] = await Promise.all([
+      const [statsRes, txRes, usersRes, plansRes, activeInvRes, channelsRes] = await Promise.all([
         fetch('/api/admin/stats'),
         fetch('/api/admin/transactions'),
         fetch('/api/admin/users'),
         fetch('/api/admin/plans'),
+        fetch('/api/admin/active-investments'),
         fetch('/api/admin/deposit-channels'),
       ]);
 
-      const [statsData, txData, usersData, plansData, channelsData] = await Promise.all([
+      const [statsData, txData, usersData, plansData, activeInvData, channelsData] = await Promise.all([
         safeJson(statsRes),
         safeJson(txRes),
         safeJson(usersRes),
         safeJson(plansRes),
+        safeJson(activeInvRes),
         safeJson(channelsRes),
       ]);
 
@@ -88,6 +96,7 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
       if (txData?.success && txData?.transactions) setAllTransactions(txData.transactions);
       if (usersData?.success && usersData?.users) setAllUsers(usersData.users);
       if (plansData?.success && plansData?.plans) setAllPlans(plansData.plans);
+      if (activeInvData?.success && activeInvData?.activeInvestments) setAllActiveInvestments(activeInvData.activeInvestments);
       if (channelsData?.success && channelsData?.channels) setAllChannels(channelsData.channels);
     } catch (err) {
       console.error('Failed to load CRM data:', err);
@@ -101,7 +110,6 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
       loadCrmData();
     }
   }, [adminName]);
-
 
   const handleLoginSuccess = (name: string) => {
     setAdminName(name);
@@ -190,6 +198,29 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
       }
     } catch (err) {
       showToast('Error', 'Failed to decline withdrawal.', 'error');
+    }
+  };
+
+  // Active Contract Cancellation
+  const handleCancelInvestment = async (invId: string, reason: string, refundPrincipal: boolean) => {
+    try {
+      const res = await fetch('/api/admin/active-investments/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ investmentId: invId, reason, refundPrincipal }),
+      });
+      const data = await safeJson(res);
+      if (data?.success) {
+        showToast('Contract Cancelled', 'Investment contract closed and ledger updated.', 'info');
+        await loadCrmData();
+        return true;
+      } else {
+        showToast('Error', data?.error || 'Failed to cancel contract.', 'error');
+        return false;
+      }
+    } catch (err) {
+      showToast('Error', 'Network error cancelling contract.', 'error');
+      return false;
     }
   };
 
@@ -359,6 +390,13 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
             onDeclineWithdrawal={handleDeclineWithdrawal}
           />
         );
+      case 'active-plans':
+        return (
+          <CrmActivePlansView
+            activeInvestments={allActiveInvestments}
+            onCancelInvestment={handleCancelInvestment}
+          />
+        );
       case 'plans':
         return (
           <CrmPlansView
@@ -393,7 +431,11 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row font-sans">
+    <div
+      className={`min-h-screen flex flex-col md:flex-row font-sans transition-colors duration-200 ${
+        isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
+      }`}
+    >
       {/* Sidebar for Desktop */}
       <div className="hidden md:block">
         <CrmSidebar
@@ -422,15 +464,20 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
         {/* Mobile Sidebar Dropdown */}
         {isMobileMenuOpen && (
-          <div className="md:hidden bg-slate-900 border-b border-slate-800 p-4 space-y-2">
+          <div
+            className={`md:hidden border-b p-4 space-y-2 ${
+              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            }`}
+          >
             {[
               { id: 'overview', label: 'Dashboard & Metrics' },
               { id: 'deposits', label: `Deposit Approvals (${stats.pendingDepositsCount})` },
               { id: 'withdrawals', label: `Withdrawal Payouts (${stats.pendingWithdrawalsCount})` },
+              { id: 'active-plans', label: `Active Contracts (${stats.activeInvestmentsCount})` },
               { id: 'plans', label: 'Investment Packages' },
               { id: 'users', label: 'Investors Directory' },
               { id: 'gateways', label: 'Payment Channels' },
-              { id: 'ledger', label: 'Master Ledger' },
+              { id: 'ledger', label: 'Master Financial Ledger' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -440,24 +487,28 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
                   setIsMobileMenuOpen(false);
                 }}
                 className={`w-full text-left p-2.5 rounded-xl text-xs font-bold ${
-                  currentTab === item.id ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+                  currentTab === item.id
+                    ? 'bg-emerald-600 text-white'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
                 }`}
               >
                 {item.label}
               </button>
             ))}
-            <div className="pt-2 border-t border-slate-800 flex justify-between">
+            <div className={`pt-2 border-t flex justify-between ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
               <button
                 type="button"
                 onClick={onSwitchToClient}
-                className="text-xs text-emerald-400 font-bold"
+                className="text-xs text-emerald-500 font-bold"
               >
-                Switch to Client App
+                Switch to Investor App
               </button>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="text-xs text-rose-400 font-bold"
+                className="text-xs text-rose-500 font-bold"
               >
                 Log Out
               </button>
@@ -475,5 +526,12 @@ export const CrmApp: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   );
 };
 
+export const CrmApp: React.FC<CrmAppProps> = (props) => {
+  return (
+    <CrmThemeProvider>
+      <CrmAppContent {...props} />
+    </CrmThemeProvider>
+  );
+};
 
 export default CrmApp;

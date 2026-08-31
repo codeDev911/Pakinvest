@@ -83,7 +83,7 @@ export const PlanDetailModal: React.FC = () => {
           initial={{ y: '100%', opacity: 0.5 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
           className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden z-10"
         >
           {/* Top handle bar */}

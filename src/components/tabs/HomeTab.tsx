@@ -191,94 +191,42 @@ export const HomeTab: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. Daily Loyalty Bonus & 24-Hour Cycle Daily Payout Summary Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* 24-Hour Cycle Daily Payout Banner */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-slate-900 border border-emerald-200/80 dark:border-emerald-800/80 flex items-center justify-between shadow-2xs">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                <Clock className="w-3 h-3 text-emerald-600" />
-                24h Daily Payout Schedule
-              </span>
-              {totalDailyProfitRate > 0 && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono font-bold">
-                  24h Cycle
+      {/* 3. Live Activity & Notifications Alert Box */}
+      <div
+        onClick={() => setIsNotificationModalOpen(true)}
+        className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-all shadow-2xs group"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/60 dark:border-emerald-800/60 relative">
+            <Bell className="w-5 h-5" />
+            {unreadNotificationsCount > 0 && (
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute -top-1 -right-1 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                {notifications.length > 0 ? notifications[0].title : 'Live Notifications & Status'}
+              </h4>
+              {unreadNotificationsCount > 0 ? (
+                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                  {unreadNotificationsCount} New
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">
+                  Live
                 </span>
               )}
             </div>
-            <div className="text-lg font-black text-slate-900 dark:text-white font-display">
-              {totalDailyProfitRate > 0 ? (
-                <span>+{formatPKR(totalDailyProfitRate)}<span className="text-xs font-normal text-slate-500">/day</span></span>
-              ) : (
-                <span className="text-slate-400 text-sm font-normal">No Active Plans</span>
-              )}
-            </div>
-            {totalDailyProfitRate > 0 && (
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Total Claimed: <strong className="text-emerald-600 dark:text-emerald-400">{formatPKR(user.totalEarnedProfit || 0)}</strong>
-              </p>
-            )}
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-xs sm:max-w-md">
+              {notifications.length > 0
+                ? notifications[0].message
+                : 'Real-time updates on approvals, withdrawals, and payouts'}
+            </p>
           </div>
-
-          <button
-            type="button"
-            disabled={totalLiveUnclaimedProfit <= 0 || isClaimingAll}
-            onClick={handleClaimAll}
-            className={`py-2 px-3.5 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 ${
-              totalLiveUnclaimedProfit > 0
-                ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-500/20 shadow-md ring-2 ring-emerald-400/50 animate-pulse'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>
-              {isClaimingAll
-                ? 'Claiming...'
-                : totalLiveUnclaimedProfit > 0
-                ? `Claim All (${formatPKR(totalLiveUnclaimedProfit)})`
-                : '24h Timer Active'}
-            </span>
-          </button>
         </div>
 
-        {/* Live Activity & Notifications Alert Box */}
-        <div
-          onClick={() => setIsNotificationModalOpen(true)}
-          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-all shadow-2xs group"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/60 dark:border-emerald-800/60 relative">
-              <Bell className="w-5 h-5" />
-              {unreadNotificationsCount > 0 && (
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute -top-1 -right-1 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                  {notifications.length > 0 ? notifications[0].title : 'Live Notifications & Status'}
-                </h4>
-                {unreadNotificationsCount > 0 ? (
-                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                    {unreadNotificationsCount} New
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">
-                    Live
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-xs sm:max-w-md">
-                {notifications.length > 0
-                  ? notifications[0].message
-                  : 'Real-time updates on approvals, withdrawals, and payouts'}
-              </p>
-            </div>
-          </div>
-
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
-        </div>
+        <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
       </div>
 
       {/* 4. Active Investments Section */}

@@ -14,11 +14,12 @@ import {
   Coins,
   ShieldCheck,
   Zap,
-  Sun,
-  Truck,
-  Building2,
-  CheckCircle2,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
+import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
+import { PlanDetailModal } from '../components/PlanDetailModal';
+import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmPlansViewProps {
   plans: InvestmentPlan[];
@@ -31,6 +32,14 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
   onSavePlan,
   onDeletePlan,
 }) => {
+  const { theme } = useCrmTheme();
+  const isDark = theme === 'dark';
+
+  const [selectedPlan, setSelectedPlan] = useState<InvestmentPlan | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  // Modal Create/Edit State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Partial<InvestmentPlan>>({
@@ -56,350 +65,499 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
   const [highlightsInput, setHighlightsInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const categories: string[] = Array.from(new Set(plans.map((p) => p.category).filter((c): c is string => Boolean(c))));
+
+  const filteredPlans = plans.filter((p) => {
+    if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
+    return true;
+  });
+
+  const filterGroups: FilterGroup[] = categories.length > 0
+    ? [
+        {
+          key: 'category',
+          label: 'Category',
+          selectedValue: categoryFilter,
+          onChange: setCategoryFilter,
+          options: [
+            { label: 'All Categories', value: 'all' },
+            ...categories.map((c: string) => ({ label: c, value: c })),
+          ],
+        },
+      ]
+    : [];
+
   const handleOpenCreate = () => {
     setIsEditing(false);
-    const newId = `plan_${Date.now()}`;
     setEditingPlan({
-      id: newId,
+      id: `plan-${Date.now().toString().slice(-4)}`,
       name: '',
       category: 'Starter',
-      badge: 'Verified Package',
-      minAmount: 3000,
-      maxAmount: 3000,
-      fixedAmount: 3000,
-      dailyProfitPercent: 6.0,
-      dailyProfitAmount: 180,
+      badge: 'Popular Tier',
+      minAmount: 2000,
+      maxAmount: 2000,
+      fixedAmount: 2000,
+      dailyProfitPercent: 5.0,
+      dailyProfitAmount: 100,
       durationDays: 30,
-      totalRoiPercent: 180,
-      totalReturnAmount: 8400,
+      totalRoiPercent: 150,
+      totalReturnAmount: 5000,
       payoutFrequency: 'daily',
       capitalReturnPolicy: 'Capital returned on maturity',
-      description: 'Investment package delivering daily cash dividends.',
-      highlights: ['Daily profit credited every 24h', '0% withdrawal fee', 'Principal returned on expiry'],
+      description: 'Reliable Pakistani daily dividend yield investment package.',
+      highlights: ['Guaranteed daily profit credit', '100% principal returned', 'Instant withdrawal'],
       popular: false,
       accentColor: '#10b981',
     });
-    setHighlightsInput('Daily profit credited every 24h\n0% withdrawal fee\nPrincipal returned on expiry');
+    setHighlightsInput('Guaranteed daily profit credit\n100% principal returned\nInstant withdrawal');
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (plan: InvestmentPlan) => {
     setIsEditing(true);
     setEditingPlan({ ...plan });
-    setHighlightsInput(plan.highlights.join('\n'));
+    setHighlightsInput((plan.highlights || []).join('\n'));
     setIsModalOpen(true);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
+  const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingPlan.name || !editingPlan.minAmount || !editingPlan.dailyProfitPercent) {
-      alert('Please fill in package name, investment amount, and daily ROI %.');
-      return;
-    }
+    if (!editingPlan.name || !editingPlan.fixedAmount) return;
 
-    const hlArray = highlightsInput
+    setIsSaving(true);
+    const amount = Number(editingPlan.fixedAmount || editingPlan.minAmount || 1000);
+    const dailyRate = Number(editingPlan.dailyProfitPercent || 5.0);
+    const duration = Number(editingPlan.durationDays || 30);
+    const dailyAmount = Math.round((amount * dailyRate) / 100);
+    const totalProfit = dailyAmount * duration;
+    const totalReturn = amount + totalProfit;
+    const totalRoi = Math.round((totalProfit / amount) * 100);
+
+    const highlightsList = highlightsInput
       .split('\n')
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter((s) => s.length > 0);
 
-    const minAmt = Number(editingPlan.minAmount) || 1000;
-    const dailyPct = Number(editingPlan.dailyProfitPercent) || 5;
-    const durDays = Number(editingPlan.durationDays) || 30;
-    const dailyProfit = (minAmt * dailyPct) / 100;
-    const totalRoi = dailyPct * durDays;
-    const totalReturn = dailyProfit * durDays + minAmt;
-
-    const fullPlan: InvestmentPlan = {
-      id: editingPlan.id || `plan_${Date.now()}`,
+    const completePlan: InvestmentPlan = {
+      id: editingPlan.id || `plan-${Date.now().toString().slice(-4)}`,
       name: editingPlan.name,
-      category: editingPlan.category || 'Starter',
-      icon: editingPlan.icon || 'ShieldCheck',
+      category: (editingPlan.category as any) || 'Starter',
+      icon: editingPlan.icon || 'TrendingUp',
       badge: editingPlan.badge || '',
-      minAmount: minAmt,
-      maxAmount: Number(editingPlan.maxAmount) || minAmt,
-      fixedAmount: minAmt,
-      dailyProfitPercent: dailyPct,
-      dailyProfitAmount: dailyProfit,
-      durationDays: durDays,
+      minAmount: amount,
+      maxAmount: amount,
+      fixedAmount: amount,
+      dailyProfitPercent: dailyRate,
+      dailyProfitAmount: dailyAmount,
+      durationDays: duration,
       totalRoiPercent: totalRoi,
       totalReturnAmount: totalReturn,
-      payoutFrequency: editingPlan.payoutFrequency || 'daily',
+      payoutFrequency: 'daily',
       capitalReturnPolicy: editingPlan.capitalReturnPolicy || 'Capital returned on maturity',
       description: editingPlan.description || '',
-      highlights: hlArray.length > 0 ? hlArray : ['Guaranteed daily return', 'Instant withdrawals'],
-      popular: Boolean(editingPlan.popular),
+      highlights: highlightsList.length > 0 ? highlightsList : ['Guaranteed daily payout'],
+      popular: !!editingPlan.popular,
       accentColor: editingPlan.accentColor || '#10b981',
     };
 
-    setIsSaving(true);
-    const success = await onSavePlan(fullPlan);
+    const success = await onSavePlan(completePlan);
     setIsSaving(false);
     if (success) {
       setIsModalOpen(false);
     }
   };
 
-  const handleDelete = async (planId: string, name: string) => {
-    if (window.confirm(`Are you sure you want to delete the plan "${name}"?`)) {
-      await onDeletePlan(planId);
-    }
-  };
+  const columns: Column<InvestmentPlan>[] = [
+    {
+      key: 'name',
+      header: 'Package Name',
+      render: (p) => (
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-xs"
+            style={{ backgroundColor: p.accentColor || '#10b981' }}
+          >
+            <Package className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-bold text-white tracking-tight flex items-center gap-1.5">
+              <span>{p.name}</span>
+              {p.popular && (
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
+                  Featured
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {p.category} • ID: {p.id}
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'fixedAmount',
+      header: 'Fixed Capital',
+      align: 'right',
+      render: (p) => (
+        <div className="font-black text-emerald-400 font-mono text-sm">
+          {formatPKR(p.fixedAmount || p.minAmount)}
+        </div>
+      ),
+    },
+    {
+      key: 'dailyProfitPercent',
+      header: 'Daily Profit ROI',
+      align: 'right',
+      render: (p) => (
+        <div>
+          <div className="font-bold text-amber-400 text-xs">
+            +{formatPKR(p.dailyProfitAmount || ((p.fixedAmount || p.minAmount) * p.dailyProfitPercent) / 100)} / day
+          </div>
+          <div className="text-[10px] text-slate-500">{p.dailyProfitPercent}% daily</div>
+        </div>
+      ),
+    },
+    {
+      key: 'durationDays',
+      header: 'Tenure',
+      align: 'center',
+      render: (p) => (
+        <span className="font-bold text-slate-200 text-xs">
+          {p.durationDays} Days
+        </span>
+      ),
+    },
+    {
+      key: 'totalReturnAmount',
+      header: 'Total Expected Return',
+      align: 'right',
+      render: (p) => (
+        <div>
+          <div className="font-black text-purple-400 font-mono text-xs">
+            {formatPKR(p.totalReturnAmount || (p.minAmount * (100 + p.totalRoiPercent)) / 100)}
+          </div>
+          <div className="text-[10px] text-slate-500">{p.totalRoiPercent}% Total ROI</div>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      sortable: false,
+      render: (p) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => handleOpenEdit(p)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Edit Package"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeletePlan(p.id)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+            title="Delete Package"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="space-y-5 pb-16">
-      {/* Header & Add Button */}
+    <div className="space-y-6 pb-16">
+      {/* 1. Header with Create Plan and View Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Package className="w-5 h-5 text-indigo-400" />
-            <span>Investment Plans & Yield Rate Administration</span>
+            <Package className="w-5 h-5 text-emerald-400" />
+            <span>Investment Packages Catalog</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Create, update daily profit % and manage investment packages in real time
+            Configure ROI rates, fixed capital tiers, tenure duration and investor highlights
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-950/40"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Package</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'table' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Table View"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'cards' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950/40 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Package</span>
+          </button>
+        </div>
       </div>
 
-      {/* Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {plans.map((plan) => (
-          <div
-            key={plan.id}
-            className="p-5 rounded-3xl bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all relative overflow-hidden"
-          >
-            {/* Accent Bar */}
+      {/* 2. Main Content: Table or Cards */}
+      {viewMode === 'table' ? (
+        <CrmDataTable<InvestmentPlan>
+          data={filteredPlans}
+          columns={columns}
+          keyExtractor={(p) => p.id}
+          searchPlaceholder="Search by package name, category, or ID..."
+          searchFields={[(p) => p.name, (p) => p.category, (p) => p.id, (p) => p.description]}
+          filterGroups={filterGroups}
+          initialPageSize={10}
+          onRowClick={(p) => setSelectedPlan(p)}
+          emptyMessage="No investment packages found"
+          emptySubtext="Create a package using the 'Add Package' button above."
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredPlans.map((p) => (
             <div
-              className="absolute top-0 left-0 right-0 h-1.5"
-              style={{ backgroundColor: plan.accentColor || '#10b981' }}
-            />
-
-            <div className="space-y-3 pt-1">
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    {plan.category}
-                  </span>
-                  <h3 className="text-base font-bold text-white">{plan.name}</h3>
+              key={p.id}
+              onClick={() => setSelectedPlan(p)}
+              className="p-5 rounded-3xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all cursor-pointer space-y-4 group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-white shadow-md"
+                    style={{ backgroundColor: p.accentColor || '#10b981' }}
+                  >
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{p.name}</h3>
+                    <p className="text-[10px] text-slate-400">{p.category}</p>
+                  </div>
                 </div>
-                {plan.badge && (
-                  <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
-                    {plan.badge}
+                {p.popular && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                    Featured
                   </span>
                 )}
               </div>
 
-              {/* Price & Daily Profit Metrics */}
-              <div className="grid grid-cols-2 gap-2 p-3 rounded-2xl bg-slate-950 border border-slate-800/80">
+              <div className="grid grid-cols-2 gap-2 p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs">
                 <div>
-                  <span className="text-[10px] text-slate-500 font-medium">Investment:</span>
-                  <p className="text-sm font-black text-white">{formatPKR(plan.fixedAmount || plan.minAmount)}</p>
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Capital</span>
+                  <p className="font-black text-emerald-400 font-mono text-sm">{formatPKR(p.fixedAmount || p.minAmount)}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 font-medium">Daily Return:</span>
-                  <p className="text-sm font-black text-emerald-400">
-                    +{plan.dailyProfitPercent}% ({formatPKR(plan.dailyProfitAmount)}/d)
-                  </p>
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Daily Return</span>
+                  <p className="font-bold text-amber-400">{p.dailyProfitPercent}% / day</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 font-medium">Duration:</span>
-                  <p className="text-xs font-bold text-slate-300">{plan.durationDays} Days</p>
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Tenure</span>
+                  <p className="font-bold text-indigo-400">{p.durationDays} Days</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 font-medium">Total Return:</span>
-                  <p className="text-xs font-bold text-indigo-400">{formatPKR(plan.totalReturnAmount)}</p>
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Total Return</span>
+                  <p className="font-bold text-purple-400 font-mono">{formatPKR(p.totalReturnAmount || 0)}</p>
                 </div>
               </div>
 
-              {/* Highlights */}
-              <ul className="space-y-1 text-xs text-slate-300">
-                {plan.highlights.slice(0, 3).map((h, i) => (
-                  <li key={i} className="flex items-center gap-1.5 truncate">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="truncate">{h}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] font-semibold text-slate-400 group-hover:text-emerald-400 transition-colors">
+                  Click to inspect details →
+                </span>
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(p)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeletePlan(p.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => handleOpenEdit(plan)}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit Plan</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(plan.id, plan.name)}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* 3. Entity Detail Modal */}
+      {selectedPlan && (
+        <PlanDetailModal
+          plan={selectedPlan}
+          onClose={() => setSelectedPlan(null)}
+          onEdit={(p) => handleOpenEdit(p)}
+          onDelete={(id) => onDeletePlan(id)}
+        />
+      )}
 
-      {/* Create / Edit Plan Modal */}
+      {/* 4. Create / Edit Modal Form */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-indigo-400">
-                <Package className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">
-                  {isEditing ? `Edit Plan: ${editingPlan.name}` : 'Create New Investment Package'}
-                </h3>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-xl rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 my-8 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Package className="w-5 h-5 text-emerald-400" />
+                <span>{isEditing ? 'Edit Investment Package' : 'Create New Investment Package'}</span>
+              </h3>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-4">
+            <form onSubmit={handleSaveSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Package Name</label>
+                  <label className="font-bold text-slate-300">Package Name</label>
                   <input
                     type="text"
                     value={editingPlan.name || ''}
                     onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
-                    placeholder="e.g. Solar Energy Commercial Grid"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. Bluechip Gold Spark"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-bold"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Category</label>
-                  <select
-                    value={editingPlan.category || 'Starter'}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, category: e.target.value as any })}
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="Starter">Starter Package</option>
-                    <option value="Solar Energy">Solar Energy</option>
-                    <option value="Agro Yield">Agro Yield</option>
-                    <option value="CPEC Logistics">CPEC Logistics</option>
-                    <option value="Real Estate">Commercial Real Estate</option>
-                    <option value="VIP Bluechip">VIP Bluechip Institutional</option>
-                  </select>
+                  <label className="font-bold text-slate-300">Category</label>
+                  <input
+                    type="text"
+                    value={editingPlan.category || ''}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, category: e.target.value })}
+                    placeholder="e.g. Solar Energy, Agro Yield..."
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                  />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Investment Capital (Rs.)</label>
+                  <label className="font-bold text-slate-300">Fixed Capital (PKR)</label>
                   <input
                     type="number"
-                    value={editingPlan.minAmount || 1500}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, minAmount: Number(e.target.value), fixedAmount: Number(e.target.value), maxAmount: Number(e.target.value) })}
-                    placeholder="5000"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    min="500"
+                    value={editingPlan.fixedAmount || ''}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, fixedAmount: Number(e.target.value) })}
+                    placeholder="e.g. 5000"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Daily Profit ROI (%)</label>
+                  <label className="font-bold text-slate-300">Daily Return (%)</label>
                   <input
                     type="number"
                     step="0.1"
-                    value={editingPlan.dailyProfitPercent || 5}
+                    min="0.1"
+                    value={editingPlan.dailyProfitPercent || ''}
                     onChange={(e) => setEditingPlan({ ...editingPlan, dailyProfitPercent: Number(e.target.value) })}
-                    placeholder="6.0"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. 6.0"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Duration (Days)</label>
+                  <label className="font-bold text-slate-300">Duration (Days)</label>
                   <input
                     type="number"
-                    value={editingPlan.durationDays || 30}
+                    min="1"
+                    value={editingPlan.durationDays || ''}
                     onChange={(e) => setEditingPlan({ ...editingPlan, durationDays: Number(e.target.value) })}
-                    placeholder="30"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. 30"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Badge Text (Optional)</label>
+                  <label className="font-bold text-slate-300">Accent Color</label>
                   <input
-                    type="text"
-                    value={editingPlan.badge || ''}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, badge: e.target.value })}
-                    placeholder="e.g. Ramadan Special VIP"
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    type="color"
+                    value={editingPlan.accentColor || '#10b981'}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, accentColor: e.target.value })}
+                    className="w-full h-10 p-1 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Highlights (One per line)</label>
-                <textarea
-                  value={highlightsInput}
-                  onChange={(e) => setHighlightsInput(e.target.value)}
-                  placeholder="Rs. 300 credited daily&#10;Clean solar asset backing&#10;Instant JazzCash withdrawal"
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Package Description</label>
+                <label className="font-bold text-slate-300">Package Description</label>
                 <textarea
                   value={editingPlan.description || ''}
                   onChange={(e) => setEditingPlan({ ...editingPlan, description: e.target.value })}
-                  placeholder="Brief description of the underlying asset..."
+                  placeholder="Overview of business backing and yield generation..."
                   rows={2}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
                 />
               </div>
 
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(editingPlan.popular)}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, popular: e.target.checked })}
-                    className="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="text-xs text-slate-300 font-semibold">Mark as "Popular Package"</span>
+              <div className="space-y-1">
+                <label className="font-bold text-slate-300">Bullet Highlights (1 per line)</label>
+                <textarea
+                  value={highlightsInput}
+                  onChange={(e) => setHighlightsInput(e.target.value)}
+                  placeholder="Guaranteed daily return&#10;Fast JazzCash withdrawal&#10;Principal refund"
+                  rows={3}
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="popularCheck"
+                  checked={!!editingPlan.popular}
+                  onChange={(e) => setEditingPlan({ ...editingPlan, popular: e.target.checked })}
+                  className="rounded text-emerald-500 focus:ring-0"
+                />
+                <label htmlFor="popularCheck" className="text-slate-300 font-semibold cursor-pointer">
+                  Mark as Featured / Popular Package
                 </label>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+                  className="py-2 px-4 rounded-xl bg-slate-800 text-slate-300 font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-indigo-950/40"
+                  className="py-2 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md shadow-emerald-950/40"
                 >
-                  {isSaving ? 'Saving Package...' : isEditing ? 'Update Plan' : 'Create Plan'}
+                  {isSaving ? 'Saving...' : 'Save Package'}
                 </button>
               </div>
             </form>

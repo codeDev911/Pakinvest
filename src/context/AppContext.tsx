@@ -93,6 +93,7 @@ interface AppContextType {
   addPaymentAccount: (account: Omit<PaymentAccount, 'id' | 'addedDate'>) => Promise<void>;
   deletePaymentAccount: (id: string) => Promise<void>;
   updateUserPin: (newPin: string) => void;
+  changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   refreshAllData: () => Promise<void>;
 
   // Computed state
@@ -305,8 +306,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: txOk, data: txData } = await safeParseJson(txRes);
-        if (txOk && txData?.success && txData?.transactions) {
-          setTransactions(txData.transactions);
+        if (txOk && txData?.success && Array.isArray(txData?.transactions)) {
+          setTransactions((prev) => {
+            const serverTxMap = new Map(txData.transactions.map((t: Transaction) => [t.id, t]));
+            // Keep local transactions that aren't indexed on server yet
+            const localPending = prev.filter((t) => !serverTxMap.has(t.id));
+            return [...localPending, ...txData.transactions];
+          });
         }
       } catch {}
 
@@ -573,15 +579,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; error?: string }>(res);
       if (ok && data?.success && data?.transaction) {
-        setTransactions((prev) => [data.transaction!, ...prev]);
+        const newTx = data.transaction;
+        setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
         fireConfetti();
         showToast(
           'Deposit Submitted (Pending)',
           `Rs. ${amount.toLocaleString()} via ${gateway} is awaiting manual verification. TID: ${refNumber}`,
           'info'
         );
-        setSelectedTransactionReceipt(data.transaction);
-        await refreshAllData();
+        setSelectedTransactionReceipt(newTx);
+        fetchNotifications();
         return true;
       } else {
         showToast('Deposit Failed', data?.error || 'Unable to submit deposit', 'error');
@@ -624,18 +631,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; balance?: number; error?: string }>(res);
       if (ok && data?.success && data?.transaction) {
+        const newTx = data.transaction;
         setUser((prev) => ({
           ...prev,
-          balance: data.balance !== undefined ? data.balance : prev.balance - amount,
+          balance: data.balance !== undefined ? data.balance : Math.max(0, prev.balance - amount),
         }));
-        setTransactions((prev) => [data.transaction!, ...prev]);
+        setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
         showToast(
           'Withdrawal Requested (Pending)',
           `Rs. ${amount.toLocaleString()} payout to ${gateway} (${accountNumber}) is pending manual approval.`,
           'info'
         );
-        setSelectedTransactionReceipt(data.transaction);
-        await refreshAllData();
+        setSelectedTransactionReceipt(newTx);
+        fetchNotifications();
         return true;
       } else {
         showToast('Withdrawal Failed', data?.error || 'Unable to process withdrawal', 'error');
@@ -911,6 +919,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('PIN Updated', 'Your 4-digit security PIN has been updated.', 'success');
   };
 
+  const changePassword = async (oldPassword: string, newPassword: string, confirmPassword: string) => {
+    if (!isAuthenticated) {
+      setIsAuthModalOpen(true);
+      return { success: false, error: 'Please sign in to change your password.' };
+    }
+
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
+      });
+      const { ok, data } = await safeParseJson<{ success?: boolean; message?: string; error?: string }>(res);
+      if (ok && data?.success) {
+        showToast('Password Changed 🔒', data.message || 'Your account password has been updated.', 'success');
+        return { success: true, message: data.message };
+      } else {
+        const errorMsg = data?.error || 'Failed to change password. Please check your credentials.';
+        showToast('Password Update Failed', errorMsg, 'error');
+        return { success: false, error: errorMsg };
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Network error while changing password.';
+      showToast('Error', errorMsg, 'error');
+      return { success: false, error: errorMsg };
+    }
+  };
+
   // Notification Operations
   const fetchNotifications = async () => {
     if (!isAuthenticated) return;
@@ -959,62 +995,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {}
   };
 
-  // Real-time background synchronization (every 3.5s)
+  // Background check ONLY for Notifications & Alerts (every 8s)
   useEffect(() => {
     if (!isAuthenticated) return;
 
     let isSubscribed = true;
 
-    const syncRealtime = async () => {
+    const pollNotifications = async () => {
       const activeToken = localStorage.getItem('pakinvest_jwt_token');
       if (!activeToken) return;
 
       try {
-        const syncRes = await fetch('/api/user/sync', {
+        const res = await fetch('/api/notifications', {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok, data } = await safeParseJson<{
           success?: boolean;
-          user?: UserProfile;
-          activeInvestments?: ActiveInvestment[];
-          transactions?: Transaction[];
           notifications?: UserNotification[];
-          unreadNotificationsCount?: number;
-        }>(syncRes);
+          unreadCount?: number;
+        }>(res);
 
         if (!isSubscribed) return;
 
-        if (ok && data?.success) {
-          if (data.user) {
-            setUser((prev) => {
-              // detect balance update from admin or approval
-              return { ...prev, ...data.user };
-            });
-          }
-          if (data.activeInvestments) {
-            setActiveInvestments(data.activeInvestments);
-          }
-          if (data.transactions) {
-            setTransactions(data.transactions);
-          }
-          if (data.notifications) {
-            // Check for new notifications to toast in real-time
-            const newNotifs = data.notifications.filter((n) => !knownNotificationIds.current.has(n.id));
-            if (newNotifs.length > 0) {
-              newNotifs.forEach((n) => {
-                knownNotificationIds.current.add(n.id);
-                // show real-time toast alert
-                if (!n.read) {
-                  showToast(
-                    n.title,
-                    n.message,
-                    n.type.includes('declined') ? 'warning' : 'success'
-                  );
+        if (ok && data?.success && Array.isArray(data.notifications)) {
+          let hasApprovalOrStatusChange = false;
+
+          // Check for new notifications to toast in real-time
+          data.notifications.forEach((n) => {
+            if (!knownNotificationIds.current.has(n.id)) {
+              knownNotificationIds.current.add(n.id);
+              if (!n.read) {
+                showToast(
+                  n.title,
+                  n.message,
+                  n.type.includes('declined') ? 'warning' : 'success'
+                );
+                if (n.type.includes('approved') || n.type.includes('declined')) {
+                  hasApprovalOrStatusChange = true;
                 }
-              });
+              }
             }
-            setNotifications(data.notifications);
-            setUnreadNotificationsCount(data.unreadNotificationsCount ?? 0);
+          });
+
+          setNotifications(data.notifications);
+          setUnreadNotificationsCount(data.unreadCount ?? 0);
+
+          // If admin approved or declined a transaction, cleanly sync user balances
+          if (hasApprovalOrStatusChange) {
+            refreshAllData();
           }
         }
 
@@ -1029,14 +1057,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           } catch {}
         }
       } catch (e) {
-        // quiet fail on transient sync
+        // quiet fail on transient notification poll
       }
     };
 
     // Initial fetch on mount / auth change
-    syncRealtime();
+    pollNotifications();
 
-    const interval = setInterval(syncRealtime, 3500);
+    const interval = setInterval(pollNotifications, 8000);
 
     return () => {
       isSubscribed = false;
@@ -1110,6 +1138,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addPaymentAccount,
         deletePaymentAccount,
         updateUserPin,
+        changePassword,
         refreshAllData,
         totalLiveUnclaimedProfit,
         totalDailyProfitRate,
