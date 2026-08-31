@@ -22,12 +22,14 @@ import { CrmLedgerView } from './views/CrmLedgerView';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
+import { getApiUrl } from '../config/api';
 
 interface CrmAppProps {
   onSwitchToClient: () => void;
+  onLogout?: () => void;
 }
 
-const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
+const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) => {
   const { showToast } = useApp();
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -75,12 +77,12 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
     setIsRefreshing(true);
     try {
       const [statsRes, txRes, usersRes, plansRes, activeInvRes, channelsRes] = await Promise.all([
-        fetch('/api/admin/stats'),
-        fetch('/api/admin/transactions'),
-        fetch('/api/admin/users'),
-        fetch('/api/admin/plans'),
-        fetch('/api/admin/active-investments'),
-        fetch('/api/admin/deposit-channels'),
+        fetch(getApiUrl('/api/admin/stats')),
+        fetch(getApiUrl('/api/admin/transactions')),
+        fetch(getApiUrl('/api/admin/users')),
+        fetch(getApiUrl('/api/admin/plans')),
+        fetch(getApiUrl('/api/admin/active-investments')),
+        fetch(getApiUrl('/api/admin/deposit-channels')),
       ]);
 
       const [statsData, txData, usersData, plansData, activeInvData, channelsData] = await Promise.all([
@@ -111,22 +113,32 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
     }
   }, [adminName]);
 
-  const handleLoginSuccess = (name: string) => {
+  const handleLoginSuccess = (name: string, token?: string) => {
     setAdminName(name);
     localStorage.setItem('pakinvest_crm_operator', name);
+    if (token) {
+      localStorage.setItem('pakinvest_admin_token', token);
+    } else if (!localStorage.getItem('pakinvest_admin_token')) {
+      const generatedToken = `adm_sec_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      localStorage.setItem('pakinvest_admin_token', generatedToken);
+    }
     showToast('CRM Authenticated', `Welcome back, ${name}. Live session initialized.`, 'success');
   };
 
   const handleLogout = () => {
     setAdminName(null);
     localStorage.removeItem('pakinvest_crm_operator');
+    localStorage.removeItem('pakinvest_admin_token');
     showToast('CRM Locked', 'Operator logged out securely.', 'info');
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   // Deposit Actions
   const handleApproveDeposit = async (txId: string) => {
     try {
-      const res = await fetch('/api/admin/approve-deposit', {
+      const res = await fetch(getApiUrl('/api/admin/approve-deposit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId }),
@@ -145,7 +157,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   const handleDeclineDeposit = async (txId: string, reason: string) => {
     try {
-      const res = await fetch('/api/admin/decline-deposit', {
+      const res = await fetch(getApiUrl('/api/admin/decline-deposit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId, reason }),
@@ -165,7 +177,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   // Withdrawal Actions
   const handleApproveWithdrawal = async (txId: string) => {
     try {
-      const res = await fetch('/api/admin/approve-withdrawal', {
+      const res = await fetch(getApiUrl('/api/admin/approve-withdrawal'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId }),
@@ -184,7 +196,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   const handleDeclineWithdrawal = async (txId: string, reason: string) => {
     try {
-      const res = await fetch('/api/admin/decline-withdrawal', {
+      const res = await fetch(getApiUrl('/api/admin/decline-withdrawal'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txId, transactionId: txId, reason }),
@@ -204,7 +216,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   // Active Contract Cancellation
   const handleCancelInvestment = async (invId: string, reason: string, refundPrincipal: boolean) => {
     try {
-      const res = await fetch('/api/admin/active-investments/cancel', {
+      const res = await fetch(getApiUrl('/api/admin/active-investments/cancel'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ investmentId: invId, reason, refundPrincipal }),
@@ -227,7 +239,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   // Plan Actions
   const handleSavePlan = async (plan: InvestmentPlan) => {
     try {
-      const res = await fetch('/api/admin/plans', {
+      const res = await fetch(getApiUrl('/api/admin/plans'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),
@@ -249,7 +261,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   const handleDeletePlan = async (planId: string) => {
     try {
-      const res = await fetch(`/api/admin/plans/${planId}`, { method: 'DELETE' });
+      const res = await fetch(getApiUrl(`/api/admin/plans/${planId}`), { method: 'DELETE' });
       const data = await safeJson(res);
       if (data?.success) {
         showToast('Package Deleted', 'Investment package removed.', 'info');
@@ -268,7 +280,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   // User Actions
   const handleAdjustBalance = async (userId: string, amount: number, type: 'credit' | 'debit', note: string) => {
     try {
-      const res = await fetch('/api/admin/users/adjust-balance', {
+      const res = await fetch(getApiUrl('/api/admin/users/adjust-balance'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, amount, type, note }),
@@ -290,7 +302,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   const handleResetPin = async (userId: string, newPin: string) => {
     try {
-      const res = await fetch('/api/admin/users/reset-pin', {
+      const res = await fetch(getApiUrl('/api/admin/users/reset-pin'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, newPin }),
@@ -313,7 +325,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
   // Channel Actions
   const handleSaveChannel = async (channel: OfficialDepositChannel) => {
     try {
-      const res = await fetch('/api/admin/deposit-channels', {
+      const res = await fetch(getApiUrl('/api/admin/deposit-channels'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel }),
@@ -335,7 +347,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
-      const res = await fetch(`/api/admin/deposit-channels/${encodeURIComponent(channelId)}`, {
+      const res = await fetch(getApiUrl(`/api/admin/deposit-channels/${encodeURIComponent(channelId)}`), {
         method: 'DELETE',
       });
       const data = await safeJson(res);
@@ -355,7 +367,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient }) => {
 
   // If not logged in as admin operator, show login screen
   if (!adminName) {
-    return <CrmLogin onLoginSuccess={handleLoginSuccess} />;
+    return <CrmLogin onLoginSuccess={handleLoginSuccess} onBackToClient={onSwitchToClient} />;
   }
 
   const pendingTransactions = allTransactions.filter((t) => t.status === 'pending');

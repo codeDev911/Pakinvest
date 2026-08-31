@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { INITIAL_PLANS, LIVE_PAYOUT_FEED, OFFICIAL_DEPOSIT_CHANNELS } from '../data/mockData';
 import { fireConfetti } from '../utils/formatters';
+import { getApiUrl } from '../config/api';
 
 export interface ToastInfo {
   id: string;
@@ -236,7 +237,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 1. Check database connection status
       try {
-        const dbRes = await fetch('/api/database/status');
+        const dbRes = await fetch(getApiUrl('/api/database/status'));
         const { ok, data: dbData } = await safeParseJson(dbRes);
         if (ok && dbData) {
           setDatabaseStatus(dbData);
@@ -246,8 +247,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 2. Fetch plans & deposit channels (public)
       try {
         const [plansRes, channelsRes] = await Promise.all([
-          fetch('/api/plans'),
-          fetch('/api/deposit-channels'),
+          fetch(getApiUrl('/api/plans')),
+          fetch(getApiUrl('/api/deposit-channels')),
         ]);
 
         const { ok: plansOk, data: plansData } = await safeParseJson(plansRes);
@@ -272,7 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 3. Fetch authenticated user profile
       try {
-        const userRes = await fetch('/api/auth/me', {
+        const userRes = await fetch(getApiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: userOk, data: userData } = await safeParseJson(userRes);
@@ -291,7 +292,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 4. Fetch user's active investments
       try {
-        const invRes = await fetch('/api/investments', {
+        const invRes = await fetch(getApiUrl('/api/investments'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: invOk, data: invData } = await safeParseJson(invRes);
@@ -302,7 +303,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 5. Fetch user's transactions
       try {
-        const txRes = await fetch('/api/transactions', {
+        const txRes = await fetch(getApiUrl('/api/transactions'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: txOk, data: txData } = await safeParseJson(txRes);
@@ -318,7 +319,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 6. Fetch user's payment accounts
       try {
-        const accRes = await fetch('/api/payment-accounts', {
+        const accRes = await fetch(getApiUrl('/api/payment-accounts'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: accOk, data: accData } = await safeParseJson(accRes);
@@ -329,7 +330,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 7. Fetch user's referral network & team members
       try {
-        const refRes = await fetch('/api/referrals', {
+        const refRes = await fetch(getApiUrl('/api/referrals'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: refOk, data: refData } = await safeParseJson(refRes);
@@ -460,7 +461,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Auth: Login
   const login = async (identifier: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password }),
@@ -492,7 +493,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     referralCode?: string;
   }) => {
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -530,7 +531,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // PostgreSQL Connection Action
   const connectPostgresUrl = async (databaseUrl: string) => {
     try {
-      const res = await fetch('/api/database/connect', {
+      const res = await fetch(getApiUrl('/api/database/connect'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ databaseUrl }),
@@ -565,7 +566,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
-      const res = await fetch('/api/deposit', {
+      const res = await fetch(getApiUrl('/api/deposit'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -616,7 +617,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
-      const res = await fetch('/api/withdraw', {
+      const res = await fetch(getApiUrl('/api/withdraw'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -666,7 +667,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const investAmount = customAmount || plan.fixedAmount || plan.minAmount;
 
     try {
-      const res = await fetch('/api/investments/activate', {
+      const res = await fetch(getApiUrl('/api/investments/activate'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ planId: plan.id, amount: investAmount }),
@@ -706,7 +707,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     try {
-      const res = await fetch('/api/investments/claim', {
+      const res = await fetch(getApiUrl('/api/investments/claim'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId }),
@@ -768,7 +769,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     try {
-      const res = await fetch('/api/investments/claim', {
+      const res = await fetch(getApiUrl('/api/investments/claim'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ investmentId: 'all' }),
@@ -822,7 +823,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const claimReferralBonus = async () => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/referrals/claim', {
+      const res = await fetch(getApiUrl('/api/referrals/claim'), {
         method: 'POST',
         headers: getAuthHeaders(),
       });
@@ -855,7 +856,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
-      const res = await fetch('/api/streak/checkin', {
+      const res = await fetch(getApiUrl('/api/streak/checkin'), {
         method: 'POST',
         headers: getAuthHeaders(),
       });
@@ -884,7 +885,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addPaymentAccount = async (account: Omit<PaymentAccount, 'id' | 'addedDate'>) => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/payment-accounts', {
+      const res = await fetch(getApiUrl('/api/payment-accounts'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(account),
@@ -903,7 +904,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deletePaymentAccount = async (id: string) => {
     if (!isAuthenticated) return;
     try {
-      await fetch(`/api/payment-accounts/${id}`, {
+      await fetch(getApiUrl(`/api/payment-accounts/${id}`), {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
@@ -926,7 +927,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
-      const res = await fetch('/api/auth/change-password', {
+      const res = await fetch(getApiUrl('/api/auth/change-password'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
@@ -951,7 +952,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchNotifications = async () => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/notifications', { headers: getAuthHeaders() });
+      const res = await fetch(getApiUrl('/api/notifications'), { headers: getAuthHeaders() });
       const { ok, data } = await safeParseJson<{ success?: boolean; notifications?: UserNotification[]; unreadCount?: number }>(res);
       if (ok && data?.success && data?.notifications) {
         setNotifications(data.notifications);
@@ -964,7 +965,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const markNotificationAsRead = async (id?: string) => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/notifications/mark-read', {
+      const res = await fetch(getApiUrl('/api/notifications/mark-read'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ notificationId: id }),
@@ -982,7 +983,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const clearAllNotifications = async () => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/notifications/clear', {
+      const res = await fetch(getApiUrl('/api/notifications/clear'), {
         method: 'POST',
         headers: getAuthHeaders(),
       });
@@ -1006,7 +1007,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!activeToken) return;
 
       try {
-        const res = await fetch('/api/notifications', {
+        const res = await fetch(getApiUrl('/api/notifications'), {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok, data } = await safeParseJson<{
@@ -1049,7 +1050,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // If user is admin, also poll admin pending count
         if (user.isAdmin) {
           try {
-            const adminRes = await fetch('/api/admin/pending');
+            const adminRes = await fetch(getApiUrl('/api/admin/pending'));
             const { ok: aOk, data: aData } = await safeParseJson(adminRes);
             if (aOk && aData?.pending) {
               setPendingAdminCount(aData.pending.length);

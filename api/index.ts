@@ -781,6 +781,17 @@ function addNotification(
 export const app = express();
 app.use(express.json());
 
+// CORS & Preflight Handling for Standalone Mobile APK and External Clients
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 let dbInitPromise: Promise<boolean> | null = null;
 app.use(async (req, res, next) => {
   if (!dbInitPromise) {

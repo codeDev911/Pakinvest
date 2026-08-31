@@ -1,16 +1,30 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, UserCheck, KeyRound, Sparkles, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, UserCheck, KeyRound, Sparkles, AlertCircle, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface CrmLoginProps {
-  onLoginSuccess: (adminName: string) => void;
+  onLoginSuccess: (adminName: string, adminToken?: string) => void;
+  onBackToClient?: () => void;
 }
 
-export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess }) => {
+export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClient }) => {
   const [accessCode, setAccessCode] = useState('');
   const [adminName, setAdminName] = useState('Operations Manager');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const generateAdminToken = (name: string) => {
+    const timestamp = Date.now();
+    const randomHex = Math.random().toString(36).substring(2, 10);
+    return `adm_sec_${timestamp}_${randomHex}_${btoa(encodeURIComponent(name)).replace(/=/g, '')}`;
+  };
+
+  const handleAuthorize = (operator: string) => {
+    const token = generateAdminToken(operator);
+    localStorage.setItem('pakinvest_admin_token', token);
+    localStorage.setItem('pakinvest_crm_operator', operator);
+    onLoginSuccess(operator, token);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +36,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess }) => {
       setIsLoading(true);
       setTimeout(() => {
         setIsLoading(false);
-        onLoginSuccess(adminName || 'Admin Operator');
+        handleAuthorize(adminName || 'Admin Operator');
       }, 500);
     } else {
       setError('Invalid Access Key. (Default Master PIN: 7860 or admin123)');
@@ -35,7 +49,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      onLoginSuccess(role);
+      handleAuthorize(role);
     }, 400);
   };
 
@@ -46,6 +60,17 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess }) => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6"
       >
+        {onBackToClient && (
+          <button
+            type="button"
+            onClick={onBackToClient}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-emerald-400 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Investor Portal</span>
+          </button>
+        )}
+
         <div className="text-center space-y-2">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 text-slate-950 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20">
             <ShieldCheck className="w-8 h-8" />
@@ -54,7 +79,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess }) => {
             PakInvest Operations CRM
           </h1>
           <p className="text-xs text-slate-400">
-            Internal Management System • Approvals, Payouts & Package Administration
+            Protected Administrator Route • Approvals & Financial Control
           </p>
         </div>
 
