@@ -206,6 +206,10 @@ export interface OfficialDepositChannel {
   minDeposit: number;
   maxDeposit: number;
   processingTime: string;
+  currentBalance?: number;
+  manualAdjustment?: number;
+  totalDepositsVolume?: number;
+  completedDepositsCount?: number;
   isActive?: boolean;
 }
 
@@ -251,9 +255,43 @@ export type CrmNavTab =
   | 'withdrawals'
   | 'plans'
   | 'active-plans'
+  | 'rewards'
   | 'users'
   | 'gateways'
   | 'ledger';
+
+export interface DailyRewardTier {
+  day: number;
+  reward: number; // in Rs.
+  title?: string;
+  badge?: string;
+  description?: string;
+  isActive?: boolean;
+}
+
+export interface CrmRewardsSummary {
+  totalRewardsGiven: number;
+  streakRewardsCount: number;
+  streakRewardsTotal: number;
+  referralBonusesCount: number;
+  referralBonusesTotal: number;
+  dailyYieldDividendsTotal: number;
+  adminBonusesTotal: number;
+  recentRewardsTransactions: Transaction[];
+  dailyTiers: DailyRewardTier[];
+}
+
+export interface CrmChannelBalanceSummary {
+  gateway: GatewayType | string;
+  accountTitle: string;
+  accountNumber: string;
+  bankName?: string | null;
+  balance: number;
+  manualAdjustment: number;
+  totalDeposited: number;
+  completedCount: number;
+  isActive: boolean;
+}
 
 export interface CrmStats {
   totalDeposited: number;
@@ -266,4 +304,13 @@ export interface CrmStats {
   activeInvestmentsCount: number;
   totalLockedCapital: number;
   totalPaidProfits: number;
+  totalChannelsBalance?: number;
+  channelBalances?: CrmChannelBalanceSummary[];
+  // Rewards & Promotional Inflows/Outflows Tracking
+  totalRewardsGiven?: number;
+  streakRewardsTotal?: number;
+  referralBonusesTotal?: number;
+  dailyYieldDividendsTotal?: number;
+  adminBonusesTotal?: number;
+  rewardsSummary?: CrmRewardsSummary;
 }

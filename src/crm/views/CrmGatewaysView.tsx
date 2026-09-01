@@ -25,6 +25,7 @@ import { useCrmTheme } from '../context/CrmThemeContext';
 interface CrmGatewaysViewProps {
   channels: OfficialDepositChannel[];
   onSaveChannel: (channel: OfficialDepositChannel) => Promise<boolean>;
+  onAdjustChannel?: (channelId: string, gateway: string, amount: number, type: 'increase' | 'decrease', reason: string) => Promise<boolean>;
   onDeleteChannel: (channelId: string) => Promise<boolean>;
 }
 
@@ -39,6 +40,7 @@ const GATEWAY_OPTIONS: { type: GatewayType; label: string; sub: string }[] = [
 export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
   channels,
   onSaveChannel,
+  onAdjustChannel,
   onDeleteChannel,
 }) => {
   const { theme } = useCrmTheme();
@@ -48,6 +50,14 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Adjustment Modal State
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [adjustTargetChannel, setAdjustTargetChannel] = useState<OfficialDepositChannel | null>(null);
+  const [adjustType, setAdjustType] = useState<'increase' | 'decrease'>('increase');
+  const [adjustAmount, setAdjustAmount] = useState<string>('');
+  const [adjustReason, setAdjustReason] = useState<string>('');
+  const [isAdjusting, setIsAdjusting] = useState(false);
 
   // Modal Create/Edit State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,6 +89,36 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
     if (!target) return;
     const updated = { ...target, isActive: !currentStatus };
     await onSaveChannel(updated);
+  };
+
+  const handleOpenAdjust = (c: OfficialDepositChannel, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setAdjustTargetChannel(c);
+    setAdjustType('increase');
+    setAdjustAmount('');
+    setAdjustReason('');
+    setIsAdjustModalOpen(true);
+  };
+
+  const handleAdjustSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustTargetChannel || !onAdjustChannel) return;
+    const num = Number(adjustAmount);
+    if (isNaN(num) || num <= 0) return;
+
+    setIsAdjusting(true);
+    const success = await onAdjustChannel(
+      adjustTargetChannel.id || '',
+      adjustTargetChannel.gateway,
+      num,
+      adjustType,
+      adjustReason || 'Channel reconciliation / error correction'
+    );
+    setIsAdjusting(false);
+    if (success) {
+      setIsAdjustModalOpen(false);
+      setAdjustTargetChannel(null);
+    }
   };
 
   const handleOpenCreate = () => {
@@ -206,6 +246,23 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
       ),
     },
     {
+      key: 'currentBalance',
+      header: 'Current Money',
+      align: 'right',
+      render: (c) => (
+        <div className="text-xs text-right">
+          <div className="font-mono font-black text-amber-400 text-sm">
+            {formatPKR(c.currentBalance || 0)}
+          </div>
+          {c.manualAdjustment !== undefined && c.manualAdjustment !== 0 && (
+            <div className={`text-[10px] font-mono ${c.manualAdjustment > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              Adj: {c.manualAdjustment > 0 ? '+' : ''}{formatPKR(c.manualAdjustment)}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
       key: 'isActive',
       header: 'Live Status',
       align: 'center',
@@ -233,7 +290,16 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
       align: 'right',
       sortable: false,
       render: (c) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => handleOpenAdjust(c, e)}
+            className="px-2 py-1 rounded-lg bg-teal-950/60 border border-teal-800/80 text-teal-300 hover:bg-teal-900 text-[11px] font-bold transition-colors flex items-center gap-1"
+            title="Adjust Channel Balance"
+          >
+            <Coins className="w-3 h-3" />
+            <span>Adjust</span>
+          </button>
           <button
             type="button"
             onClick={() => handleOpenEdit(c)}
@@ -360,12 +426,28 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
                   <span className="text-slate-400">Limits:</span>
                   <span className="font-mono text-emerald-400 font-semibold">{formatPKR(c.minDeposit)} - {formatPKR(c.maxDeposit)}</span>
                 </div>
+                <div className="pt-2 border-t border-slate-800/60 flex justify-between items-baseline">
+                  <span className="text-slate-400 font-semibold">Channel Balance:</span>
+                  <div className="text-right">
+                    <span className="font-mono font-black text-amber-400 text-sm">{formatPKR(c.currentBalance || 0)}</span>
+                    {c.manualAdjustment !== undefined && c.manualAdjustment !== 0 && (
+                      <span className={`block text-[10px] font-mono ${c.manualAdjustment > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        Adj: {c.manualAdjustment > 0 ? '+' : ''}{formatPKR(c.manualAdjustment)}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] font-semibold text-slate-400 group-hover:text-amber-400 transition-colors">
-                  Click to inspect details →
-                </span>
+                <button
+                  type="button"
+                  onClick={(e) => handleOpenAdjust(c, e)}
+                  className="px-2.5 py-1 rounded-lg bg-teal-950/80 border border-teal-800/80 text-teal-300 hover:bg-teal-900 text-xs font-bold transition-colors flex items-center gap-1.5"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Adjust Balance</span>
+                </button>
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
@@ -532,6 +614,137 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
                   className="py-2 px-5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-md shadow-amber-950/40"
                 >
                   {isSaving ? 'Saving...' : 'Save Channel'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Channel Balance Adjustment Modal */}
+      {isAdjustModalOpen && adjustTargetChannel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 my-8 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+                  <Coins className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Adjust Channel Balance
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Fix discrepancies or errors for <strong className="text-amber-400">{adjustTargetChannel.gateway}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdjustModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Current Balance State Info */}
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400">Account Title & Number:</span>
+                <p className="font-bold text-white mt-0.5 truncate">{adjustTargetChannel.accountTitle}</p>
+                <p className="font-mono text-amber-400 text-[11px]">{adjustTargetChannel.accountNumber}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-slate-400">Current Balance:</span>
+                <p className="text-base font-black font-mono text-emerald-400 mt-0.5">
+                  {formatPKR(adjustTargetChannel.currentBalance || 0)}
+                </p>
+                {adjustTargetChannel.manualAdjustment !== undefined && adjustTargetChannel.manualAdjustment !== 0 && (
+                  <p className="text-[10px] text-slate-400">
+                    Existing Adj: {adjustTargetChannel.manualAdjustment > 0 ? '+' : ''}{formatPKR(adjustTargetChannel.manualAdjustment)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleAdjustSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-300">Adjustment Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('increase')}
+                    className={`py-2.5 px-3 rounded-xl font-bold border transition-all text-xs flex items-center justify-center gap-1.5 ${
+                      adjustType === 'increase'
+                        ? 'bg-emerald-950 border-emerald-600 text-emerald-300 shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>+ Add Money (Increase)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('decrease')}
+                    className={`py-2.5 px-3 rounded-xl font-bold border transition-all text-xs flex items-center justify-center gap-1.5 ${
+                      adjustType === 'decrease'
+                        ? 'bg-rose-950 border-rose-600 text-rose-300 shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>- Deduct Money (Decrease)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-300">Adjustment Amount (PKR)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={adjustAmount}
+                  onChange={(e) => setAdjustAmount(e.target.value)}
+                  placeholder="e.g. 30000"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono font-bold text-sm"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-300">Reason / Reference for Audit Ledger</label>
+                <input
+                  type="text"
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  placeholder="e.g. Discrepancy correction, bank statement reconciliation"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
+                  required
+                />
+                <p className="text-[10px] text-slate-500">
+                  This adjustment will be recorded in the audit log and immediately reflect in dashboard liquidity.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsAdjustModalOpen(false)}
+                  className="py-2 px-4 rounded-xl bg-slate-800 text-slate-300 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAdjusting || !adjustAmount}
+                  className={`py-2 px-5 rounded-xl text-white font-bold transition-all shadow-md ${
+                    adjustType === 'increase'
+                      ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/40'
+                      : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/40'
+                  }`}
+                >
+                  {isAdjusting ? 'Applying...' : `Confirm ${adjustType === 'increase' ? 'Addition' : 'Deduction'}`}
                 </button>
               </div>
             </form>

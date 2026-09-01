@@ -13,6 +13,7 @@ import {
   DatabaseStatus,
   ReferralNetworkData,
   UserNotification,
+  DailyRewardTier,
 } from '../types';
 import { INITIAL_PLANS, LIVE_PAYOUT_FEED, OFFICIAL_DEPOSIT_CHANNELS } from '../data/mockData';
 import { fireConfetti } from '../utils/formatters';
@@ -37,6 +38,8 @@ interface AppContextType {
   officialChannels: OfficialDepositChannel[];
   transactions: Transaction[];
   savedPaymentAccounts: PaymentAccount[];
+  dailyRewardTiers: DailyRewardTier[];
+  fetchRewardTiers: () => Promise<void>;
   notifications: UserNotification[];
   unreadNotificationsCount: number;
   livePayouts: LivePayoutNotification[];
@@ -65,6 +68,8 @@ interface AppContextType {
   setIsAdminModalOpen: (open: boolean) => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
+  plansTabSection: 'plans' | 'active';
+  setPlansTabSection: (section: 'plans' | 'active') => void;
   pendingAdminCount: number;
 
   // Auth & Database Actions
@@ -167,6 +172,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [officialChannels, setOfficialChannels] = useState<OfficialDepositChannel[]>(OFFICIAL_DEPOSIT_CHANNELS);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [savedPaymentAccounts, setSavedPaymentAccounts] = useState<PaymentAccount[]>([]);
+  const [dailyRewardTiers, setDailyRewardTiers] = useState<DailyRewardTier[]>([
+    { day: 1, reward: 250 },
+    { day: 2, reward: 300 },
+    { day: 3, reward: 350 },
+    { day: 4, reward: 400 },
+    { day: 5, reward: 450 },
+    { day: 6, reward: 500 },
+    { day: 7, reward: 1000 },
+  ]);
   const [livePayouts, setLivePayouts] = useState<LivePayoutNotification[]>(LIVE_PAYOUT_FEED);
   const [referralNetwork, setReferralNetwork] = useState<ReferralNetworkData>(INITIAL_REFERRAL_NETWORK);
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
@@ -191,6 +205,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [plansTabSection, setPlansTabSection] = useState<'plans' | 'active'>('plans');
 
   // Sync theme
   useEffect(() => {
@@ -244,11 +259,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {}
 
-      // 2. Fetch plans & deposit channels (public)
+      // 2. Fetch plans & deposit channels & daily reward tiers (public)
       try {
-        const [plansRes, channelsRes] = await Promise.all([
+        const [plansRes, channelsRes, tiersRes] = await Promise.all([
           fetch(getApiUrl('/api/plans')),
           fetch(getApiUrl('/api/deposit-channels')),
+          fetch(getApiUrl('/api/streak/tiers')),
         ]);
 
         const { ok: plansOk, data: plansData } = await safeParseJson(plansRes);
@@ -259,6 +275,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { ok: chanOk, data: chanData } = await safeParseJson(channelsRes);
         if (chanOk && chanData?.success && chanData?.channels) {
           setOfficialChannels(chanData.channels);
+        }
+
+        const { ok: tiersOk, data: tiersData } = await safeParseJson(tiersRes);
+        if (tiersOk && tiersData?.success && Array.isArray(tiersData?.tiers) && tiersData.tiers.length > 0) {
+          setDailyRewardTiers(tiersData.tiers);
         }
       } catch {}
 
@@ -335,17 +356,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
         const { ok: refOk, data: refData } = await safeParseJson(refRes);
         if (refOk && refData?.success) {
+          const combinedMembers = Array.isArray(refData.members) && refData.members.length > 0
+            ? refData.members
+            : [
+                ...(refData.tier1Members || []),
+                ...(refData.tier2Members || []),
+                ...(refData.tier3Members || []),
+              ];
+
           setReferralNetwork({
             referralCode: refData.referralCode || user.referralCode,
             referralTier: refData.referralTier || 1,
             referralEarnings: refData.referralEarnings || 0,
             unclaimedReferralEarnings: refData.unclaimedReferralEarnings || 0,
-            totalTeamMembers: refData.totalTeamMembers || 0,
+            totalTeamMembers: refData.totalTeamMembers || combinedMembers.length,
             totalTeamVolume: refData.totalTeamVolume || 0,
-            tier1Count: refData.tier1Count || 0,
-            tier2Count: refData.tier2Count || 0,
-            tier3Count: refData.tier3Count || 0,
-            members: refData.members || [],
+            tier1Count: refData.tier1Count || (refData.tier1Members?.length || 0),
+            tier2Count: refData.tier2Count || (refData.tier2Members?.length || 0),
+            tier3Count: refData.tier3Count || (refData.tier3Members?.length || 0),
+            members: combinedMembers,
           });
         }
       } catch {}
@@ -856,6 +885,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Fetch daily reward tiers
+  const fetchRewardTiers = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/streak/tiers'));
+      const { ok, data } = await safeParseJson<{ success: boolean; tiers: DailyRewardTier[] }>(res);
+      if (ok && data?.success && Array.isArray(data.tiers)) {
+        setDailyRewardTiers(data.tiers);
+      }
+    } catch (err) {
+      console.error('Failed to fetch reward tiers:', err);
+    }
+  };
+
   // Claim daily streak
   const claimDailyStreak = async () => {
     if (!isAuthenticated) {
@@ -869,7 +911,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         method: 'POST',
         headers: getAuthHeaders(),
       });
-      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; dailyStreak: number; reward: number; transaction?: Transaction; error?: string }>(res);
+      const { ok, data } = await safeParseJson<{
+        success?: boolean;
+        balance: number;
+        dailyStreak: number;
+        reward: number;
+        streakBroken?: boolean;
+        message?: string;
+        transaction?: Transaction;
+        error?: string;
+      }>(res);
       if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
@@ -881,7 +932,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
         fireConfetti();
-        showToast('Check-in Bonus Claimed! 🎁', `Earned Rs. ${data.reward} for Day ${data.dailyStreak} streak!`, 'success');
+        if (data.streakBroken) {
+          showToast('Streak Reset to Day 1 🔄', `Previous check-in was missed! Started fresh at Day 1 and earned Rs. ${data.reward}.`, 'info');
+        } else {
+          showToast('Check-in Bonus Claimed! 🎁', `Earned Rs. ${data.reward} for Day ${data.dailyStreak} streak!`, 'success');
+        }
       } else {
         showToast('Already Claimed', data?.error || 'Already claimed today', 'info');
       }
@@ -1104,6 +1159,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         officialChannels,
         transactions,
         savedPaymentAccounts,
+        dailyRewardTiers,
+        fetchRewardTiers,
         notifications,
         unreadNotificationsCount,
         livePayouts,
@@ -1130,6 +1187,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsAdminModalOpen,
         isAuthModalOpen,
         setIsAuthModalOpen,
+        plansTabSection,
+        setPlansTabSection,
         pendingAdminCount,
         login,
         register,

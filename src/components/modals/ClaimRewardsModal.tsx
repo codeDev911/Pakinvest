@@ -5,22 +5,31 @@ import { X, Flame, Sparkles, Gift, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const ClaimRewardsModal: React.FC = () => {
-  const { isStreakModalOpen, setIsStreakModalOpen, user, claimDailyStreak } = useApp();
+  const { isStreakModalOpen, setIsStreakModalOpen, user, claimDailyStreak, dailyRewardTiers } = useApp();
 
   if (!isStreakModalOpen) return null;
 
   const currentStreak = user.dailyStreak;
   const isAlreadyClaimedToday = user.lastCheckInDate === new Date().toISOString().split('T')[0];
 
-  const streakDays = [
-    { day: 1, reward: 250 },
-    { day: 2, reward: 300 },
-    { day: 3, reward: 350 },
-    { day: 4, reward: 400 },
-    { day: 5, reward: 450 },
-    { day: 6, reward: 500 },
-    { day: 7, reward: 1000 },
-  ];
+  // Use dynamic reward tiers from server/admin, fallback if empty
+  const streakDays = (dailyRewardTiers && dailyRewardTiers.length > 0)
+    ? dailyRewardTiers
+    : [
+        { day: 1, reward: 250 },
+        { day: 2, reward: 300 },
+        { day: 3, reward: 350 },
+        { day: 4, reward: 400 },
+        { day: 5, reward: 450 },
+        { day: 6, reward: 500 },
+        { day: 7, reward: 1000 },
+      ];
+
+  // Find next tier reward to claim
+  const nextStreakDay = currentStreak >= 7 ? 1 : currentStreak + 1;
+  const currentTier = streakDays.find((t) => t.day === (isAlreadyClaimedToday ? currentStreak : nextStreakDay))
+    || streakDays[0];
+  const nextRewardAmount = currentTier ? currentTier.reward : 250;
 
   return (
     <AnimatePresence>
@@ -118,7 +127,7 @@ export const ClaimRewardsModal: React.FC = () => {
                 <span>
                   {isAlreadyClaimedToday
                     ? 'Claimed for Today! Check back tomorrow'
-                    : `Claim Today's Bonus (Rs. ${200 + currentStreak * 50})`}
+                    : `Claim Today's Bonus (Rs. ${nextRewardAmount})`}
                 </span>
               </button>
             </div>

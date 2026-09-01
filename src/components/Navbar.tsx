@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Moon, Sun, Bell, LogIn } from 'lucide-react';
+import { Moon, Sun, Bell, LogIn, ShieldCheck, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Navbar: React.FC = () => {
@@ -11,43 +11,40 @@ export const Navbar: React.FC = () => {
     unreadNotificationsCount,
     setIsNotificationModalOpen,
     setIsAuthModalOpen,
+    setCurrentTab,
   } = useApp();
 
   return (
     <header className="sticky top-0 z-30 w-full backdrop-blur-xl bg-white/90 dark:bg-slate-950/90 border-b border-slate-200/80 dark:border-slate-800/80 transition-colors duration-200">
       <div className="max-w-4xl mx-auto px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between">
-        {/* Brand & User Profile */}
-        <div className="flex items-center gap-2.5">
-          <div
-            onClick={() => setIsAuthModalOpen(true)}
-            className="relative cursor-pointer group"
-            title="Click to Switch User / Login"
-          >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl ring-2 ring-emerald-500/30 dark:ring-emerald-500/50 p-0.5 overflow-hidden bg-gradient-to-tr from-emerald-600 to-teal-500">
-              <img
-                src={user.avatar}
-                alt={user.name}
-                className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition-transform"
-                referrerPolicy="no-referrer"
-              />
+        {/* App Logo & Brand Name */}
+        <div
+          id="app-header-brand"
+          onClick={() => setCurrentTab('home')}
+          className="flex items-center gap-2.5 cursor-pointer group select-none"
+          title="PakInvest - Click to go to Home"
+        >
+          {/* Logo Badge */}
+          <div className="relative">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 p-0.5 shadow-md shadow-emerald-600/20 border border-emerald-400/40 flex items-center justify-center text-white transition-transform group-hover:scale-105">
+              <ShieldCheck className="w-5 h-5 sm:w-5.5 sm:h-5.5 drop-shadow-xs" />
             </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full" />
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
           </div>
 
+          {/* App Title & Tagline */}
           <div>
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1 text-left"
-              >
-                <span className="truncate max-w-[140px] sm:max-w-[180px]">{user.name}</span>
-                <span className="text-[10px] text-slate-400">▾</span>
-              </button>
+              <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight font-display group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1">
+                PakInvest <span className="text-emerald-600 dark:text-emerald-400 font-black">PKR</span>
+              </span>
+              <span className="hidden xs:inline-flex items-center text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                Official
+              </span>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>PakInvest Live • {user.phone}</span>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Daily Profit • Automated Payouts</span>
             </p>
           </div>
         </div>

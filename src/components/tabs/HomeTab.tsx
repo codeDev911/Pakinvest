@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatPKR } from '../../utils/formatters';
-import { ActiveInvestmentCard } from '../ActiveInvestmentCard';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -23,6 +22,9 @@ import {
   Activity,
   Award,
   CalendarCheck,
+  User,
+  Layers,
+  Flame,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -40,6 +42,9 @@ export const HomeTab: React.FC = () => {
     setSelectedPlanForDetail,
     setSelectedTransactionReceipt,
     setIsNotificationModalOpen,
+    setIsStreakModalOpen,
+    setIsAuthModalOpen,
+    setPlansTabSection,
     claimProfit,
     claimAllProfits,
     totalLiveUnclaimedProfit,
@@ -146,49 +151,102 @@ export const HomeTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Quick Actions (ONLY ICONS AND TITLES - NO DESCRIPTION AS REQUESTED) */}
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-        {/* Deposit Button */}
-        <button
-          type="button"
-          onClick={() => setIsDepositModalOpen(true)}
-          className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
-        >
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
-            <ArrowDownLeft className="w-5 h-5" />
-          </div>
-          <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-            Deposit
-          </span>
-        </button>
+      {/* 2. Quick Actions */}
+      <div className="space-y-2.5">
+        {/* Primary Row: Deposit & Withdrawal (Large Hero Action Buttons) */}
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+          {/* Deposit Button */}
+          <button
+            id="home-btn-deposit"
+            type="button"
+            onClick={() => setIsDepositModalOpen(true)}
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-2xs hover:shadow-md transition-all flex items-center justify-center gap-3 active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs">
+              <ArrowDownLeft className="w-5 h-5" />
+            </div>
+            <div className="text-left">
+              <span className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors block">
+                Deposit
+              </span>
+              <span className="text-[10px] text-slate-400 block font-medium">Add funds in PKR</span>
+            </div>
+          </button>
 
-        {/* Withdrawal Button */}
-        <button
-          type="button"
-          onClick={() => setIsWithdrawModalOpen(true)}
-          className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
-        >
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
-            <ArrowUpRight className="w-5 h-5" />
-          </div>
-          <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-            Withdrawal
-          </span>
-        </button>
+          {/* Withdrawal Button */}
+          <button
+            id="home-btn-withdrawal"
+            type="button"
+            onClick={() => setIsWithdrawModalOpen(true)}
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 shadow-2xs hover:shadow-md transition-all flex items-center justify-center gap-3 active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs">
+              <ArrowUpRight className="w-5 h-5" />
+            </div>
+            <div className="text-left">
+              <span className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors block">
+                Withdrawal
+              </span>
+              <span className="text-[10px] text-slate-400 block font-medium">Instant Cashout</span>
+            </div>
+          </button>
+        </div>
 
-        {/* Transactions Button */}
-        <button
-          type="button"
-          onClick={() => setCurrentTab('transactions')}
-          className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
-        >
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
-            <ReceiptText className="w-5 h-5" />
-          </div>
-          <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            Transactions
-          </span>
-        </button>
+        {/* 3 Quick Action Buttons Below Withdrawal & Deposit (User Requested: My Packages, Profile, Rewards) */}
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+          {/* My Packages Button */}
+          <button
+            id="home-btn-my-packages"
+            type="button"
+            onClick={() => {
+              setPlansTabSection('active');
+              setCurrentTab('plans');
+            }}
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs relative">
+              <Layers className="w-5 h-5" />
+              {activeInvestments.length > 0 && (
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-purple-600 text-white text-[9px] font-black shadow-xs">
+                  {activeInvestments.length}
+                </span>
+              )}
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+              My Packages
+            </span>
+          </button>
+
+          {/* Profile Button */}
+          <button
+            id="home-btn-profile"
+            type="button"
+            onClick={() => setCurrentTab('settings')}
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-teal-500 dark:hover:border-teal-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
+              <User className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+              Profile
+            </span>
+          </button>
+
+          {/* Daily Check-in / Rewards Button */}
+          <button
+            id="home-btn-rewards"
+            type="button"
+            onClick={() => setIsStreakModalOpen(true)}
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-rose-500 dark:hover:border-rose-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
+              <Flame className="w-5 h-5 fill-rose-500 text-rose-500" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+              Rewards
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* 3. Live Activity & Notifications Alert Box */}
@@ -229,51 +287,7 @@ export const HomeTab: React.FC = () => {
         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
       </div>
 
-      {/* 4. Active Investments Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white font-display">
-              My Active Portfolios ({activeInvestments.length})
-            </h3>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setCurrentTab('plans')}
-            className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
-          >
-            <span>Explore All</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {activeInvestments.length === 0 ? (
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center space-y-2.5 shadow-2xs">
-            <TrendingUp className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">No Active Investment Plans</h4>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-              Activate an investment package starting at Rs. 1,000 to begin receiving daily 24-hour automated returns.
-            </p>
-            <button
-              type="button"
-              onClick={() => setCurrentTab('plans')}
-              className="py-2 px-4 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition-colors"
-            >
-              Browse Packages
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {activeInvestments.map((inv) => (
-              <ActiveInvestmentCard key={inv.id} investment={inv} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 5. Featured Investment Packages Carousel */}
+      {/* 4. Featured Investment Packages Carousel */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

@@ -29,12 +29,15 @@ export const PlansTab: React.FC = () => {
     setSelectedPlanForDetail,
     claimProfit,
     user,
+    plansTabSection,
+    setPlansTabSection,
   } = useApp();
 
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [calcPlan, setCalcPlan] = useState<InvestmentPlan>(plans[1] || plans[0]);
   const [calcAmount, setCalcAmount] = useState<number>(calcPlan.fixedAmount || calcPlan.minAmount);
-  const [viewSection, setViewSection] = useState<'plans' | 'active'>('plans');
+  const viewSection = plansTabSection;
+  const setViewSection = setPlansTabSection;
 
   const categories = ['All', 'Starter', 'Solar Energy', 'Agro Yield', 'CPEC Logistics', 'Real Estate', 'VIP Bluechip'];
 

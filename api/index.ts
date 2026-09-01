@@ -225,6 +225,22 @@ async function ensureInitialDatabaseData() {
         await prisma.depositChannel.create({ data: c });
       }
     }
+
+    const tiersCount = await prisma.dailyRewardTier.count();
+    if (tiersCount === 0) {
+      const defaultTiers = [
+        { day: 1, reward: 250, title: 'Starter Spark', badge: 'Day 1 Bonus', description: 'Kickstart your daily earning journey in PKR' },
+        { day: 2, reward: 300, title: 'Bronze Momentum', badge: '+Rs. 50 Jump', description: 'Consistent loyalty pays compounding dividends' },
+        { day: 3, reward: 350, title: 'Silver Streak', badge: '+Rs. 50 Jump', description: 'Mid-week investor loyalty payout' },
+        { day: 4, reward: 400, title: 'Gold Tier', badge: '+Rs. 50 Jump', description: 'Four consecutive active days reward' },
+        { day: 5, reward: 450, title: 'Platinum Velocity', badge: '+Rs. 50 Jump', description: 'Five-day check-in loyalty achievement' },
+        { day: 6, reward: 500, title: 'Diamond Milestone', badge: '+Rs. 50 Jump', description: 'Almost at weekly grand jackpot!' },
+        { day: 7, reward: 1000, title: 'Crown Mega Bonus', badge: '🎁 Grand Jackpot', description: 'Complete 7-day streak grand reward!' },
+      ];
+      for (const t of defaultTiers) {
+        await prisma.dailyRewardTier.create({ data: t });
+      }
+    }
     dbInitDone = true;
   } catch (err) {
     console.error('[Prisma Seed/Init Error]:', err);
@@ -1562,21 +1578,75 @@ router.post('/referrals/claim', authenticate, async (req, res) => {
 });
 
 // ----------------------------------------------------
-// DAILY CHECK-IN / STREAK API
+// DAILY CHECK-IN / STREAK API (Dynamic Day 1 - Day 7 Tiers & Secure Daily Validation)
 // ----------------------------------------------------
+router.get('/streak/tiers', async (req, res) => {
+  try {
+    await ensureInitialDatabaseData();
+    const tiers = await prisma.dailyRewardTier.findMany({
+      orderBy: { day: 'asc' },
+    });
+    res.json({ success: true, tiers });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch reward tiers' });
+  }
+});
+
 router.post('/streak/checkin', authenticate, async (req, res) => {
   try {
+    await ensureInitialDatabaseData();
     const user = (req as any).user;
     const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
     if (!liveUser) return res.status(404).json({ error: 'User not found' });
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    // Check if already claimed today
     if (liveUser.lastCheckInDate === todayStr) {
-      return res.status(400).json({ error: 'You have already checked in today! Come back tomorrow for your next reward.' });
+      return res.status(400).json({
+        error: 'You have already checked in today! Come back tomorrow for your next reward.',
+        alreadyClaimed: true,
+      });
     }
 
-    const nextStreak = (liveUser.dailyStreak % 7) + 1;
-    const bonusAmounts: Record<number, number> = {
+    // Determine if streak was maintained or missed
+    // If the user checked in yesterday, the streak continues.
+    // If missed (more than 1 day difference), streak breaks and resets to Day 1.
+    let nextStreak = 1;
+    let streakBroken = false;
+
+    if (liveUser.lastCheckInDate) {
+      const lastDateParts = liveUser.lastCheckInDate.split('-').map(Number);
+      const lastDate = new Date(Date.UTC(lastDateParts[0], lastDateParts[1] - 1, lastDateParts[2]));
+      const todayParts = todayStr.split('-').map(Number);
+      const todayDate = new Date(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]));
+
+      const diffMs = todayDate.getTime() - lastDate.getTime();
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        // Consecutive day: advance streak 1 -> 7 (wraps after completing 7-day cycle)
+        nextStreak = (liveUser.dailyStreak % 7) + 1;
+      } else if (diffDays > 1) {
+        // Missed at least 1 day: RESET to Day 1!
+        nextStreak = 1;
+        streakBroken = true;
+      } else {
+        // Same day (handled earlier, but fallback)
+        return res.status(400).json({ error: 'Already claimed today!' });
+      }
+    } else {
+      // First time check-in
+      nextStreak = 1;
+    }
+
+    // Fetch dynamic reward tier from database
+    const tierConfig = await prisma.dailyRewardTier.findUnique({
+      where: { day: nextStreak },
+    });
+
+    const fallbackAmounts: Record<number, number> = {
       1: 250,
       2: 300,
       3: 350,
@@ -1585,7 +1655,7 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
       6: 500,
       7: 1000,
     };
-    const reward = bonusAmounts[nextStreak] || 250;
+    const reward = (tierConfig && tierConfig.isActive !== false) ? tierConfig.reward : (fallbackAmounts[nextStreak] || 250);
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
     const [updatedUser, tx] = await prisma.$transaction([
@@ -1612,7 +1682,7 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
           gateway: 'Loyalty_Bonus',
           referenceCode: `STREAK-D${nextStreak}`,
           timestamp: getFormattedNow(),
-          notes: `Day ${nextStreak} Loyalty Check-in Cash Bonus`,
+          notes: `Day ${nextStreak} Loyalty Check-in Cash Bonus${streakBroken ? ' (Streak Reset after Inactivity)' : ''}`,
         },
       }),
     ]);
@@ -1620,7 +1690,7 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
     await createUserNotification(
       user.id,
       `Day ${nextStreak} Streak Bonus Credited! 🔥`,
-      `Rs. ${reward.toLocaleString()} cash bonus was credited for checking in today!`,
+      `Rs. ${reward.toLocaleString()} cash bonus was credited for checking in today!${streakBroken ? ' Your streak restarted at Day 1 after missed day.' : ''}`,
       'system',
       reward
     );
@@ -1631,6 +1701,10 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
       reward,
       balance: updatedUser.balance,
       transaction: tx,
+      streakBroken,
+      message: streakBroken
+        ? `Streak restarted at Day 1! Earned Rs. ${reward}`
+        : `Day ${nextStreak} Check-in claimed! Earned Rs. ${reward}`,
     });
   } catch (err: any) {
     console.error('[Streak Error]:', err);
@@ -1881,6 +1955,11 @@ router.get('/admin/stats', async (req, res) => {
       pendingWithdrawals,
       activeInvestments,
       paidProfits,
+      streakTiers,
+      streakRewardsTx,
+      referralBonusesTx,
+      dailyProfitsTx,
+      adminBonusTx,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.transaction.findMany({ where: { type: 'deposit', status: 'completed' }, select: { amount: true } }),
@@ -1892,12 +1971,61 @@ router.get('/admin/stats', async (req, res) => {
         where: { type: { in: ['daily_profit', 'referral_bonus', 'streak_reward'] }, status: 'completed' },
         select: { amount: true },
       }),
+      prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } }),
+      prisma.transaction.findMany({ where: { type: 'streak_reward', status: 'completed' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'referral_bonus', status: 'completed' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'daily_profit', status: 'completed' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'admin_adjustment', status: 'completed' }, select: { amount: true } }),
     ]);
 
     const totalDeposited = completedDeposits.reduce((sum, t) => sum + t.amount, 0);
     const totalWithdrawn = completedWithdrawals.reduce((sum, t) => sum + t.amount, 0);
     const totalLockedCapital = activeInvestments.reduce((sum, i) => sum + i.investedAmount, 0);
     const totalPaidProfits = paidProfits.reduce((sum, t) => sum + t.amount, 0);
+
+    const streakRewardsTotal = streakRewardsTx.reduce((sum, t) => sum + t.amount, 0);
+    const referralBonusesTotal = referralBonusesTx.reduce((sum, t) => sum + t.amount, 0);
+    const dailyYieldDividendsTotal = dailyProfitsTx.reduce((sum, t) => sum + t.amount, 0);
+    const adminBonusesTotal = adminBonusTx.reduce((sum, t) => sum + t.amount, 0);
+    const totalRewardsGiven = streakRewardsTotal + referralBonusesTotal + dailyYieldDividendsTotal + adminBonusesTotal;
+
+    // Channel Balances calculation (from channel balance records & completed deposits)
+    const depositChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
+    const depositsByGateway = await prisma.transaction.groupBy({
+      by: ['gateway'],
+      where: { type: 'deposit', status: 'completed' },
+      _sum: { amount: true },
+      _count: { id: true },
+    });
+
+    const depositsMap = new Map<string, { total: number; count: number }>();
+    depositsByGateway.forEach((g) => {
+      if (g.gateway) {
+        depositsMap.set(g.gateway, {
+          total: g._sum.amount || 0,
+          count: g._count.id || 0,
+        });
+      }
+    });
+
+    const channelBalances = depositChannels.map((c) => {
+      const stats = depositsMap.get(c.gateway) || { total: 0, count: 0 };
+      const currentBal = typeof c.currentBalance === 'number' ? c.currentBalance : stats.total + (c.manualAdjustment || 0);
+      return {
+        id: c.id,
+        gateway: c.gateway,
+        accountTitle: c.accountTitle,
+        accountNumber: c.accountNumber,
+        bankName: c.bankName,
+        balance: currentBal,
+        manualAdjustment: c.manualAdjustment || 0,
+        totalDeposited: stats.total,
+        completedCount: stats.count,
+        isActive: c.isActive,
+      };
+    });
+
+    const totalChannelsBalance = channelBalances.reduce((sum, c) => sum + c.balance, 0);
 
     res.json({
       success: true,
@@ -1912,6 +2040,23 @@ router.get('/admin/stats', async (req, res) => {
         activeInvestmentsCount: activeInvestments.length,
         totalLockedCapital,
         totalPaidProfits,
+        totalChannelsBalance,
+        channelBalances,
+        totalRewardsGiven,
+        streakRewardsTotal,
+        referralBonusesTotal,
+        dailyYieldDividendsTotal,
+        adminBonusesTotal,
+        rewardsSummary: {
+          totalRewardsGiven,
+          streakRewardsCount: streakRewardsTx.length,
+          streakRewardsTotal,
+          referralBonusesCount: referralBonusesTx.length,
+          referralBonusesTotal,
+          dailyYieldDividendsTotal,
+          adminBonusesTotal,
+          dailyTiers: streakTiers,
+        },
       },
     });
   } catch (err: any) {
@@ -1946,9 +2091,9 @@ router.post('/admin/approve-deposit', async (req, res) => {
     const user = tx.userId ? await prisma.user.findUnique({ where: { id: tx.userId } }) : null;
     if (!user) return res.status(404).json({ error: 'User associated with transaction not found' });
 
-    // Mark completed & credit balance
+    // Mark completed, credit user balance & increment payment channel balance
     const notes = `Deposit verified & approved (${tx.gateway} TID: ${tx.referenceCode})`;
-    const [updatedTx, updatedUser] = await prisma.$transaction([
+    const operations: any[] = [
       prisma.transaction.update({
         where: { id: tx.id },
         data: { status: 'completed', notes },
@@ -1957,7 +2102,18 @@ router.post('/admin/approve-deposit', async (req, res) => {
         where: { id: user.id },
         data: { balance: { increment: tx.amount } },
       }),
-    ]);
+    ];
+
+    if (tx.gateway) {
+      operations.push(
+        prisma.depositChannel.updateMany({
+          where: { gateway: { equals: tx.gateway, mode: 'insensitive' } },
+          data: { currentBalance: { increment: tx.amount } },
+        })
+      );
+    }
+
+    const [updatedTx, updatedUser] = await prisma.$transaction(operations);
 
     await createUserNotification(
       user.id,
@@ -2336,7 +2492,36 @@ router.delete('/admin/plans/:id', async (req, res) => {
 router.get('/admin/deposit-channels', async (req, res) => {
   try {
     const channels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
-    res.json({ success: true, channels });
+    const depositsByGateway = await prisma.transaction.groupBy({
+      by: ['gateway'],
+      where: { type: 'deposit', status: 'completed' },
+      _sum: { amount: true },
+      _count: { id: true },
+    });
+
+    const depositsMap = new Map<string, { total: number; count: number }>();
+    depositsByGateway.forEach((g) => {
+      if (g.gateway) {
+        depositsMap.set(g.gateway, {
+          total: g._sum.amount || 0,
+          count: g._count.id || 0,
+        });
+      }
+    });
+
+    const enriched = channels.map((c) => {
+      const stats = depositsMap.get(c.gateway) || { total: 0, count: 0 };
+      const currentBal = typeof c.currentBalance === 'number' ? c.currentBalance : stats.total + (c.manualAdjustment || 0);
+      return {
+        ...c,
+        currentBalance: currentBal,
+        manualAdjustment: c.manualAdjustment || 0,
+        totalDeposited: stats.total,
+        completedCount: stats.count,
+      };
+    });
+
+    res.json({ success: true, channels: enriched });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch deposit channels' });
   }
@@ -2359,11 +2544,13 @@ router.post('/admin/deposit-channels', async (req, res) => {
             minDeposit: Number(c.minDeposit) || 1000,
             maxDeposit: Number(c.maxDeposit) || 1000000,
             processingTime: c.processingTime || 'Instant 24/7 verification',
+            currentBalance: Number(c.currentBalance) || 0,
+            manualAdjustment: Number(c.manualAdjustment) || 0,
             isActive: c.isActive !== false,
           },
         });
       }
-      const updatedChannels = await prisma.depositChannel.findMany();
+      const updatedChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
       return res.json({ success: true, message: 'Deposit channels updated successfully', channels: updatedChannels });
     }
 
@@ -2372,37 +2559,105 @@ router.post('/admin/deposit-channels', async (req, res) => {
       return res.status(400).json({ error: 'Gateway type, account title, and account number are required.' });
     }
 
+    const updateData: any = {
+      accountTitle: rawChannel.accountTitle,
+      accountNumber: rawChannel.accountNumber,
+      bankName: rawChannel.bankName || null,
+      branchCode: rawChannel.branchCode || null,
+      instructions: rawChannel.instructions || 'Send money to this official account.',
+      minDeposit: Number(rawChannel.minDeposit) || 1000,
+      maxDeposit: Number(rawChannel.maxDeposit) || 1000000,
+      processingTime: rawChannel.processingTime || 'Instant 24/7 verification',
+      isActive: rawChannel.isActive !== false,
+    };
+    if (rawChannel.currentBalance !== undefined) {
+      updateData.currentBalance = Number(rawChannel.currentBalance);
+    }
+    if (rawChannel.manualAdjustment !== undefined) {
+      updateData.manualAdjustment = Number(rawChannel.manualAdjustment);
+    }
+
+    const createData: any = {
+      gateway: rawChannel.gateway,
+      ...updateData,
+      currentBalance: Number(rawChannel.currentBalance) || 0,
+      manualAdjustment: Number(rawChannel.manualAdjustment) || 0,
+    };
+
     const savedChannel = await prisma.depositChannel.upsert({
       where: { gateway: rawChannel.gateway },
-      create: {
-        gateway: rawChannel.gateway,
-        accountTitle: rawChannel.accountTitle,
-        accountNumber: rawChannel.accountNumber,
-        bankName: rawChannel.bankName || null,
-        branchCode: rawChannel.branchCode || null,
-        instructions: rawChannel.instructions || 'Send money to this official account.',
-        minDeposit: Number(rawChannel.minDeposit) || 1000,
-        maxDeposit: Number(rawChannel.maxDeposit) || 1000000,
-        processingTime: rawChannel.processingTime || 'Instant 24/7 verification',
-        isActive: rawChannel.isActive !== false,
-      },
-      update: {
-        accountTitle: rawChannel.accountTitle,
-        accountNumber: rawChannel.accountNumber,
-        bankName: rawChannel.bankName || null,
-        branchCode: rawChannel.branchCode || null,
-        instructions: rawChannel.instructions || 'Send money to this official account.',
-        minDeposit: Number(rawChannel.minDeposit) || 1000,
-        maxDeposit: Number(rawChannel.maxDeposit) || 1000000,
-        processingTime: rawChannel.processingTime || 'Instant 24/7 verification',
-        isActive: rawChannel.isActive !== false,
-      },
+      create: createData,
+      update: updateData,
     });
 
-    const allChannels = await prisma.depositChannel.findMany();
+    const allChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
     res.json({ success: true, message: 'Channel saved successfully', channel: savedChannel, channels: allChannels });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to save channel' });
+  }
+});
+
+// Adjust Channel Money (Correct errors, manual top-up, or withdrawal deductions)
+router.post('/admin/deposit-channels/adjust', async (req, res) => {
+  try {
+    const { channelId, gateway, type, amount, reason } = req.body;
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Please enter a valid positive adjustment amount.' });
+    }
+
+    const channel = await prisma.depositChannel.findFirst({
+      where: {
+        OR: [
+          ...(channelId ? [{ id: channelId }] : []),
+          ...(gateway ? [{ gateway: { equals: gateway, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+    });
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Payment channel not found' });
+    }
+
+    const delta = type === 'decrease' ? -numAmount : numAmount;
+    const newBalance = Math.max(0, (channel.currentBalance || 0) + delta);
+    const newAdjustment = (channel.manualAdjustment || 0) + delta;
+
+    const updated = await prisma.depositChannel.update({
+      where: { id: channel.id },
+      data: {
+        currentBalance: newBalance,
+        manualAdjustment: newAdjustment,
+      },
+    });
+
+    // Create a record in transactions for audit ledger
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+    await prisma.transaction.create({
+      data: {
+        id: txId,
+        type: 'admin_adjustment',
+        amount: numAmount,
+        fee: 0,
+        netAmount: numAmount,
+        status: 'completed',
+        gateway: channel.gateway,
+        referenceCode: `ADJ-CH-${Date.now().toString().slice(-6)}`,
+        timestamp: getFormattedNow(),
+        notes: `Channel ${channel.gateway} balance ${type === 'decrease' ? 'deduction' : 'addition'} of Rs. ${numAmount.toLocaleString()} (${reason || 'Channel Error Correction'})`,
+      },
+    });
+
+    const allChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
+    res.json({
+      success: true,
+      message: `Channel ${channel.gateway} adjusted by ${delta > 0 ? '+' : ''}Rs. ${delta.toLocaleString()}. New Balance: Rs. ${newBalance.toLocaleString()}`,
+      channel: updated,
+      channels: allChannels,
+    });
+  } catch (err: any) {
+    console.error('[Channel Adjust Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to adjust channel balance' });
   }
 });
 
@@ -2561,6 +2816,128 @@ router.post('/admin/active-investments/cancel', async (req, res) => {
     res.json({ success: true, message: 'Investment package cancelled successfully' });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to cancel investment' });
+  }
+});
+
+// Admin Rewards Management Endpoints
+router.get('/admin/rewards/tiers', async (req, res) => {
+  try {
+    await ensureInitialDatabaseData();
+    const tiers = await prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } });
+    res.json({ success: true, tiers });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch reward tiers' });
+  }
+});
+
+router.post('/admin/rewards/tiers', async (req, res) => {
+  try {
+    await ensureInitialDatabaseData();
+    const { tiers } = req.body;
+    if (Array.isArray(tiers)) {
+      for (const t of tiers) {
+        const day = Number(t.day);
+        const reward = Number(t.reward);
+        if (day >= 1 && day <= 7 && !isNaN(reward) && reward >= 0) {
+          await prisma.dailyRewardTier.upsert({
+            where: { day },
+            create: {
+              day,
+              reward,
+              title: t.title || `Day ${day} Reward`,
+              badge: t.badge || `Day ${day}`,
+              description: t.description || `Daily check-in reward for day ${day}`,
+              isActive: t.isActive !== false,
+            },
+            update: {
+              reward,
+              title: t.title !== undefined ? t.title : undefined,
+              badge: t.badge !== undefined ? t.badge : undefined,
+              description: t.description !== undefined ? t.description : undefined,
+              isActive: t.isActive !== undefined ? t.isActive : true,
+            },
+          });
+        }
+      }
+    } else if (req.body.day && req.body.reward !== undefined) {
+      const day = Number(req.body.day);
+      const reward = Number(req.body.reward);
+      await prisma.dailyRewardTier.upsert({
+        where: { day },
+        create: {
+          day,
+          reward,
+          title: req.body.title || `Day ${day} Reward`,
+          badge: req.body.badge || `Day ${day}`,
+          description: req.body.description || `Daily check-in reward for day ${day}`,
+          isActive: req.body.isActive !== false,
+        },
+        update: {
+          reward,
+          title: req.body.title,
+          badge: req.body.badge,
+          description: req.body.description,
+          isActive: req.body.isActive,
+        },
+      });
+    }
+
+    const updated = await prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } });
+    res.json({ success: true, message: 'Daily reward tiers updated successfully', tiers: updated });
+  } catch (err: any) {
+    console.error('[Update Tiers Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update reward tiers' });
+  }
+});
+
+// Admin Rewards & Inflow/Outflow Breakdown Endpoint
+router.get('/admin/rewards/breakdown', async (req, res) => {
+  try {
+    const [
+      streakTiers,
+      streakTx,
+      referralTx,
+      dailyProfitsTx,
+      adminBonusTx,
+      recentTxs,
+    ] = await Promise.all([
+      prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } }),
+      prisma.transaction.findMany({ where: { type: 'streak_reward', status: 'completed' } }),
+      prisma.transaction.findMany({ where: { type: 'referral_bonus', status: 'completed' } }),
+      prisma.transaction.findMany({ where: { type: 'daily_profit', status: 'completed' } }),
+      prisma.transaction.findMany({ where: { type: 'admin_adjustment', status: 'completed' } }),
+      prisma.transaction.findMany({
+        where: {
+          type: { in: ['streak_reward', 'referral_bonus', 'daily_profit', 'admin_adjustment'] },
+          status: 'completed',
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+
+    const streakRewardsTotal = streakTx.reduce((s, t) => s + t.amount, 0);
+    const referralBonusesTotal = referralTx.reduce((s, t) => s + t.amount, 0);
+    const dailyYieldDividendsTotal = dailyProfitsTx.reduce((s, t) => s + t.amount, 0);
+    const adminBonusesTotal = adminBonusTx.reduce((s, t) => s + t.amount, 0);
+    const totalRewardsGiven = streakRewardsTotal + referralBonusesTotal + dailyYieldDividendsTotal + adminBonusesTotal;
+
+    res.json({
+      success: true,
+      data: {
+        totalRewardsGiven,
+        streakRewardsCount: streakTx.length,
+        streakRewardsTotal,
+        referralBonusesCount: referralTx.length,
+        referralBonusesTotal,
+        dailyYieldDividendsTotal,
+        adminBonusesTotal,
+        dailyTiers: streakTiers,
+        recentRewardsTransactions: recentTxs,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch rewards breakdown' });
   }
 });
 

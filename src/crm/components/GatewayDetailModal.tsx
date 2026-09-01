@@ -92,6 +92,46 @@ export const GatewayDetailModal: React.FC<GatewayDetailModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+          {/* Channel Accumulated Balance & Inflow Card */}
+          <div
+            className={`p-5 rounded-2xl border space-y-3 ${
+              isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500">
+                Channel Financial Ledger & Current Balance
+              </h4>
+              <span className="text-[10px] text-slate-400">Auto-incremented on verified deposits</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Current Channel Money:</span>
+                <p className="text-xl font-mono font-black text-emerald-400 mt-1">
+                  {formatPKR(channel.currentBalance || 0)}
+                </p>
+                <span className="text-[10px] text-slate-500">Ready in account</span>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Total Verified Deposits:</span>
+                <p className="text-base font-mono font-bold text-white mt-1">
+                  {formatPKR(channel.totalDepositsVolume || 0)}
+                </p>
+                <span className="text-[10px] text-slate-500">{channel.completedDepositsCount || 0} completed transactions</span>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Manual Adjustments:</span>
+                <p className={`text-base font-mono font-bold mt-1 ${(channel.manualAdjustment || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {(channel.manualAdjustment || 0) > 0 ? '+' : ''}{formatPKR(channel.manualAdjustment || 0)}
+                </p>
+                <span className="text-[10px] text-slate-500">Error fixes & corrections</span>
+              </div>
+            </div>
+          </div>
+
           {/* Account Coordinates Card */}
           <div
             className={`p-5 rounded-2xl border space-y-3 ${

@@ -345,6 +345,28 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
     }
   };
 
+  const handleAdjustChannel = async (channelId: string, gateway: string, amount: number, type: 'increase' | 'decrease', reason: string) => {
+    try {
+      const res = await fetch(getApiUrl('/api/admin/deposit-channels/adjust'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId, gateway, amount, type, reason }),
+      });
+      const data = await safeJson(res);
+      if (data?.success) {
+        showToast('Channel Adjusted', data.message || `Channel balance updated: ${type === 'increase' ? '+' : '-'}Rs. ${amount.toLocaleString()}`, 'success');
+        await loadCrmData();
+        return true;
+      } else {
+        showToast('Error', data?.error || 'Failed to adjust channel.', 'error');
+        return false;
+      }
+    } catch (err) {
+      showToast('Error', 'Network error adjusting channel balance.', 'error');
+      return false;
+    }
+  };
+
   const handleDeleteChannel = async (channelId: string) => {
     try {
       const res = await fetch(getApiUrl(`/api/admin/deposit-channels/${encodeURIComponent(channelId)}`), {
@@ -430,6 +452,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           <CrmGatewaysView
             channels={allChannels}
             onSaveChannel={handleSaveChannel}
+            onAdjustChannel={handleAdjustChannel}
             onDeleteChannel={handleDeleteChannel}
           />
         );

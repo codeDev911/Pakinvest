@@ -63,7 +63,7 @@ export const CrmOverviewView: React.FC<CrmOverviewViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
-      {/* 1. Top High-Level Financial Metrics Grid */}
+      {/* Top High-Level Financial Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Inflows */}
         <div
@@ -138,30 +138,124 @@ export const CrmOverviewView: React.FC<CrmOverviewViewProps> = ({
           </div>
         </div>
 
-        {/* Total Users */}
+        {/* Total Channel Reserves */}
         <div
-          className={`p-5 rounded-3xl border shadow-sm relative overflow-hidden transition-all ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          onClick={() => onNavigate('gateways')}
+          className={`p-5 rounded-3xl border shadow-sm relative overflow-hidden transition-all cursor-pointer group ${
+            isDark ? 'bg-slate-900 border-slate-800 hover:border-emerald-500/50' : 'bg-white border-slate-200 hover:border-emerald-500/50'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Investor Community
+              Payment Channels Balance
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
-              <Users className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
+              <Coins className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <h3 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              {stats.totalUsersCount} Investors
+            <h3 className="text-2xl font-black tracking-tight text-emerald-400">
+              {formatPKR(stats.totalChannelsBalance !== undefined ? stats.totalChannelsBalance : stats.totalDeposited)}
             </h3>
-            <p className="text-[11px] text-purple-400 mt-0.5 font-semibold">
-              Total Yield Paid: {formatPKR(stats.totalPaidProfits)}
+            <p className="text-[11px] text-teal-400 mt-0.5 font-semibold flex items-center justify-between">
+              <span>{stats.channelBalances?.length || 4} Receiving Gateways</span>
+              <span className="text-[10px] underline group-hover:text-emerald-300">Manage & Adjust →</span>
             </p>
           </div>
         </div>
       </div>
+
+      {/* Payment Channels Live Balance Breakdown */}
+      {stats.channelBalances && stats.channelBalances.length > 0 && (
+        <div
+          className={`p-5 rounded-3xl border space-y-3.5 ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className={`text-sm font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Payment Channels Money & Receiving Till Balances
+                </h3>
+                <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Real-time funds accumulated per payment channel from approved deposits (with manual adjustment support)
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('gateways')}
+              className="text-xs text-amber-500 hover:text-amber-400 font-bold flex items-center gap-1"
+            >
+              <span>Adjust Channels</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {stats.channelBalances.map((cb) => (
+              <div
+                key={cb.gateway}
+                onClick={() => onNavigate('gateways')}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer group ${
+                  isDark
+                    ? 'bg-slate-950 border-slate-800/80 hover:border-amber-500/40'
+                    : 'bg-slate-50 border-slate-200 hover:border-amber-500/40'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs">
+                      {cb.gateway === 'JazzCash' && <Smartphone className="w-3.5 h-3.5" />}
+                      {cb.gateway === 'EasyPaisa' && <CreditCard className="w-3.5 h-3.5" />}
+                      {cb.gateway === 'Raast' && <Sparkles className="w-3.5 h-3.5" />}
+                      {cb.gateway === 'Bank_Transfer' && <Building2 className="w-3.5 h-3.5" />}
+                      {!['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer'].includes(cb.gateway) && <Coins className="w-3.5 h-3.5" />}
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs text-white group-hover:text-amber-300 transition-colors">
+                        {cb.gateway}
+                      </span>
+                      <p className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">
+                        {cb.accountNumber}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                      cb.isActive !== false
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                        : 'bg-rose-950 text-rose-300 border border-rose-800'
+                    }`}
+                  >
+                    {cb.isActive !== false ? 'LIVE' : 'OFF'}
+                  </span>
+                </div>
+
+                <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-baseline justify-between">
+                  <span className="text-[10px] text-slate-400 font-semibold">Current Money:</span>
+                  <span className="font-mono font-black text-amber-400 text-sm">
+                    {formatPKR(cb.balance)}
+                  </span>
+                </div>
+
+                <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+                  <span>{cb.completedCount} deposits</span>
+                  {cb.manualAdjustment !== 0 && (
+                    <span className={cb.manualAdjustment > 0 ? 'text-emerald-400 font-mono' : 'text-rose-400 font-mono'}>
+                      Adj: {cb.manualAdjustment > 0 ? '+' : ''}{formatPKR(cb.manualAdjustment)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 2. Action Required Queues (Deposits & Withdrawals) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
