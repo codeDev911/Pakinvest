@@ -382,14 +382,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (inv.status !== 'active') return inv;
           const nextClaim = inv.nextClaimTimestamp || (inv.lastClaimTimestamp + 86400000);
           const isReady = now >= nextClaim;
-          let readyCycles = 0;
-          if (isReady) {
-            readyCycles = Math.min(
-              inv.daysRemaining || 1,
-              Math.max(1, Math.floor((now - (inv.lastClaimTimestamp || now)) / 86400000))
-            );
-          }
-          const availableProfit = isReady ? readyCycles * inv.dailyProfitAmount : 0;
+          const availableProfit = isReady ? inv.dailyProfitAmount : 0;
           if (inv.unclaimedProfit === availableProfit && inv.nextClaimTimestamp === nextClaim) {
             return inv;
           }
@@ -464,7 +457,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ identifier, phone: identifier, password }),
       });
       const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
       if (ok && data?.success && data?.token && data?.user) {
@@ -730,6 +723,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }));
         if (data.investments) {
           setActiveInvestments(data.investments);
+        } else if ((data as any).investment) {
+          const updatedInv = (data as any).investment;
+          setActiveInvestments((prev) =>
+            prev.map((i) =>
+              i.id === investmentId
+                ? {
+                    ...i,
+                    ...updatedInv,
+                    unclaimedProfit: 0,
+                    lastClaimTimestamp: Number(updatedInv.lastClaimTimestamp || Date.now()),
+                    nextClaimTimestamp: Number(updatedInv.lastClaimTimestamp || Date.now()) + 86400000,
+                  }
+                : i
+            )
+          );
         } else {
           setActiveInvestments((prev) =>
             prev.map((i) =>
@@ -769,26 +777,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     try {
-      const res = await fetch(getApiUrl('/api/investments/claim'), {
+      const res = await fetch(getApiUrl('/api/investments/claim-all'), {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ investmentId: 'all' }),
       });
       const { ok, data } = await safeParseJson<{
         success?: boolean;
         balance: number;
         totalEarnedProfit: number;
-        claimedAmount: number;
+        totalClaimed: number;
+        claimedAmount?: number;
         transaction?: Transaction;
         investments?: ActiveInvestment[];
         error?: string;
       }>(res);
 
       if (ok && data?.success) {
+        const amt = data.totalClaimed || data.claimedAmount || 0;
         setUser((prev) => ({
           ...prev,
-          balance: data.balance,
-          totalEarnedProfit: data.totalEarnedProfit,
+          balance: data.balance !== undefined ? data.balance : prev.balance + amt,
+          totalEarnedProfit: data.totalEarnedProfit !== undefined ? data.totalEarnedProfit : prev.totalEarnedProfit + amt,
         }));
         if (data.investments) {
           setActiveInvestments(data.investments);
@@ -808,7 +817,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         fireConfetti();
         showToast(
           'All Daily Profits Claimed! 💰',
-          `Transferred Rs. ${Math.round(data.claimedAmount).toLocaleString()} to your main balance!`,
+          `Transferred Rs. ${Math.round(amt).toLocaleString()} to your main balance!`,
           'success'
         );
       } else {

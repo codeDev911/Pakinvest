@@ -456,13 +456,15 @@ router.post('/auth/register', async (req, res) => {
 
 router.post('/auth/login', async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const rawIdentifier = req.body.identifier || req.body.phone || req.body.email || req.body.username;
+    const password = req.body.password;
 
-    if (!phone || !password) {
-      return res.status(400).json({ error: 'Mobile number and password are required.' });
+    if (!rawIdentifier || !password) {
+      return res.status(400).json({ error: 'Mobile number or username and password are required.' });
     }
 
-    let cleanPhone = phone.replace(/[^0-9]/g, '');
+    const trimmed = String(rawIdentifier).trim();
+    let cleanPhone = trimmed.replace(/[^0-9]/g, '');
     if (cleanPhone.startsWith('92') && cleanPhone.length === 12) {
       cleanPhone = '0' + cleanPhone.slice(2);
     } else if (cleanPhone.startsWith('0092') && cleanPhone.length === 14) {
@@ -471,12 +473,30 @@ router.post('/auth/login', async (req, res) => {
       cleanPhone = '0' + cleanPhone;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { phone: cleanPhone },
-    });
+    // Try finding by clean phone first
+    let user = null;
+    if (cleanPhone && cleanPhone.length >= 10) {
+      user = await prisma.user.findUnique({
+        where: { phone: cleanPhone },
+      });
+    }
+
+    // If not found by exact clean phone, search by phone variations, email or name
+    if (!user) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { phone: trimmed },
+            ...(cleanPhone ? [{ phone: cleanPhone }] : []),
+            { email: { equals: trimmed, mode: 'insensitive' } },
+            { name: { equals: trimmed, mode: 'insensitive' } },
+          ],
+        },
+      });
+    }
 
     if (!user) {
-      return res.status(401).json({ error: 'No registered account found with this mobile number. Please sign up.' });
+      return res.status(401).json({ error: 'No registered account found. Please check your mobile number or sign up.' });
     }
 
     const isMatch = bcrypt.compareSync(password, user.password);
@@ -728,17 +748,14 @@ router.get('/investments', authenticate, async (req, res) => {
     const now = Date.now();
     const mapped = investments.map((inv) => {
       const lastClaim = Number(inv.lastClaimTimestamp);
-      let calculatedUnclaimed = 0;
-      if (inv.status === 'active' && lastClaim > 0) {
-        const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
-        const profitPerSec = inv.hourlyProfitAmount / 3600;
-        calculatedUnclaimed = elapsedSecs * profitPerSec;
-      }
+      const nextClaimTimestamp = lastClaim > 0 ? lastClaim + 86400000 : now;
+      const isReady = now >= nextClaimTimestamp && inv.status === 'active';
 
       return {
         ...inv,
         lastClaimTimestamp: lastClaim,
-        unclaimedProfit: Number((inv.unclaimedProfit + calculatedUnclaimed).toFixed(2)),
+        nextClaimTimestamp,
+        unclaimedProfit: isReady ? inv.dailyProfitAmount : 0,
         status: inv.status as 'active' | 'completed',
       };
     });
@@ -766,7 +783,7 @@ router.post('/investments/activate', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Selected investment package is no longer available.' });
     }
 
-    const investAmount = Number(amount) || plan.minAmount;
+    const investAmount = Number(amount) || plan.fixedAmount || plan.minAmount;
     if (investAmount < plan.minAmount || investAmount > plan.maxAmount) {
       return res.status(400).json({
         error: `Investment amount must be between Rs. ${plan.minAmount.toLocaleString()} and Rs. ${plan.maxAmount.toLocaleString()}`,
@@ -781,7 +798,11 @@ router.post('/investments/activate', authenticate, async (req, res) => {
       });
     }
 
-    const dailyProfitAmount = (investAmount * plan.dailyProfitPercent) / 100;
+    // Dynamic daily profit amount configured for this plan
+    let dailyProfitAmount = Number(plan.dailyProfitAmount);
+    if (!dailyProfitAmount || dailyProfitAmount <= 0 || (plan.fixedAmount && investAmount !== plan.fixedAmount)) {
+      dailyProfitAmount = Math.round((investAmount * plan.dailyProfitPercent) / 100);
+    }
     const hourlyProfitAmount = dailyProfitAmount / 24;
     const totalExpectedReturn = dailyProfitAmount * plan.durationDays + investAmount;
     const now = Date.now();
@@ -821,7 +842,7 @@ router.post('/investments/activate', authenticate, async (req, res) => {
           hoursRemaining: 24,
           startDate,
           endDate,
-          nextPayoutTime: 'Continuous Real-Time Yield',
+          nextPayoutTime: '24-Hour Cycle Automated Yield',
           status: 'active',
           lastClaimTimestamp: BigInt(now),
           unclaimedProfit: 0,
@@ -850,7 +871,7 @@ router.post('/investments/activate', authenticate, async (req, res) => {
     await createUserNotification(
       user.id,
       'Package Activated Successfully! 🚀',
-      `Your investment of Rs. ${investAmount.toLocaleString()} in ${plan.name} is now generating ${plan.dailyProfitPercent}% daily yield!`,
+      `Your investment of Rs. ${investAmount.toLocaleString()} in ${plan.name} is now active generating Rs. ${dailyProfitAmount.toLocaleString()}/day!`,
       'system',
       investAmount
     );
@@ -880,6 +901,93 @@ router.post('/investments/claim', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Investment ID is required' });
     }
 
+    if (investmentId === 'all') {
+      const activeInvs = await prisma.activeInvestment.findMany({
+        where: { userId: user.id, status: 'active' },
+      });
+
+      if (activeInvs.length === 0) {
+        return res.status(400).json({ error: 'You have no active investment packages earning yield.' });
+      }
+
+      const now = Date.now();
+      let totalDailyProfits = 0;
+      const operations: any[] = [];
+
+      for (const inv of activeInvs) {
+        const exactDaily = Math.round(inv.dailyProfitAmount);
+        totalDailyProfits += exactDaily;
+        const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
+        const isCompleted = newDaysRemaining <= 0;
+
+        operations.push(
+          prisma.activeInvestment.update({
+            where: { id: inv.id },
+            data: {
+              earnedSoFar: { increment: exactDaily },
+              unclaimedProfit: 0,
+              daysRemaining: newDaysRemaining,
+              status: isCompleted ? 'completed' : 'active',
+              lastClaimTimestamp: BigInt(now),
+            },
+          })
+        );
+      }
+
+      const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+      operations.push(
+        prisma.user.update({
+          where: { id: user.id },
+          data: {
+            balance: { increment: totalDailyProfits },
+            totalEarnedProfit: { increment: totalDailyProfits },
+          },
+        })
+      );
+
+      operations.push(
+        prisma.transaction.create({
+          data: {
+            id: txId,
+            userId: user.id,
+            userName: user.name,
+            userPhone: user.phone,
+            type: 'daily_profit',
+            amount: totalDailyProfits,
+            fee: 0,
+            netAmount: totalDailyProfits,
+            status: 'completed',
+            gateway: 'Yield_Payout',
+            referenceCode: `CLAIM-ALL-${Date.now().toString().slice(-6)}`,
+            timestamp: getFormattedNow(),
+            notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${activeInvs.length} packages`,
+          },
+        })
+      );
+
+      await prisma.$transaction(operations);
+
+      const freshUser = await prisma.user.findUnique({ where: { id: user.id } });
+
+      await createUserNotification(
+        user.id,
+        'Batch Yield Claimed! 💰',
+        `Rs. ${totalDailyProfits.toLocaleString()} daily profit yield has been credited to your wallet balance.`,
+        'profit_claimed',
+        totalDailyProfits
+      );
+
+      return res.json({
+        success: true,
+        message: `Successfully collected Rs. ${totalDailyProfits.toLocaleString()} in daily profits!`,
+        claimedAmount: totalDailyProfits,
+        totalClaimed: totalDailyProfits,
+        balance: freshUser?.balance || 0,
+        totalEarnedProfit: freshUser?.totalEarnedProfit || 0,
+      });
+    }
+
     const inv = await prisma.activeInvestment.findFirst({
       where: { id: investmentId, userId: user.id, status: 'active' },
     });
@@ -888,31 +996,36 @@ router.post('/investments/claim', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Active investment package not found' });
     }
 
-    const now = Date.now();
-    const lastClaim = Number(inv.lastClaimTimestamp);
-    const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
-    const profitPerSec = inv.hourlyProfitAmount / 3600;
-    const totalClaimable = Number((inv.unclaimedProfit + elapsedSecs * profitPerSec).toFixed(2));
-
-    if (totalClaimable < 0.5) {
-      return res.status(400).json({ error: 'Minimum claimable amount is Rs. 0.50. Please allow more yield to accrue.' });
+    // Exact daily profit amount configured for this plan
+    const exactDailyProfit = Math.round(inv.dailyProfitAmount);
+    if (exactDailyProfit <= 0) {
+      return res.status(400).json({ error: 'Invalid profit calculation for this package.' });
     }
 
+    const now = Date.now();
+    const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
+    const isCompleted = newDaysRemaining <= 0;
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    // Principal return if contract completed
+    const principalToRefund = isCompleted ? inv.investedAmount : 0;
 
     const [updatedUser, updatedInv, tx] = await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
         data: {
-          balance: { increment: totalClaimable },
-          totalEarnedProfit: { increment: totalClaimable },
+          balance: { increment: exactDailyProfit + principalToRefund },
+          totalEarnedProfit: { increment: exactDailyProfit },
+          ...(isCompleted ? { investedCapital: { decrement: inv.investedAmount } } : {}),
         },
       }),
       prisma.activeInvestment.update({
         where: { id: inv.id },
         data: {
-          earnedSoFar: { increment: totalClaimable },
+          earnedSoFar: { increment: exactDailyProfit },
           unclaimedProfit: 0,
+          daysRemaining: newDaysRemaining,
+          status: isCompleted ? 'completed' : 'active',
           lastClaimTimestamp: BigInt(now),
         },
       }),
@@ -923,14 +1036,14 @@ router.post('/investments/claim', authenticate, async (req, res) => {
           userName: user.name,
           userPhone: user.phone,
           type: 'daily_profit',
-          amount: totalClaimable,
+          amount: exactDailyProfit,
           fee: 0,
-          netAmount: totalClaimable,
+          netAmount: exactDailyProfit,
           status: 'completed',
           gateway: 'Yield_Payout',
           referenceCode: `CLAIM-${Date.now().toString().slice(-6)}`,
           timestamp: getFormattedNow(),
-          notes: `Claimed Rs. ${totalClaimable.toLocaleString()} yield from ${inv.planName}`,
+          notes: `Claimed Rs. ${exactDailyProfit.toLocaleString()} daily yield from ${inv.planName}`,
           planName: inv.planName,
         },
       }),
@@ -939,16 +1052,47 @@ router.post('/investments/claim', authenticate, async (req, res) => {
     await createUserNotification(
       user.id,
       'Profit Yield Claimed! 💰',
-      `Rs. ${totalClaimable.toLocaleString()} daily yield from ${inv.planName} has been credited to your wallet balance.`,
+      `Rs. ${exactDailyProfit.toLocaleString()} daily yield from ${inv.planName} has been credited to your wallet balance.`,
       'profit_claimed',
-      totalClaimable
+      exactDailyProfit
     );
+
+    if (isCompleted && principalToRefund > 0) {
+      const refundTxId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+      await prisma.transaction.create({
+        data: {
+          id: refundTxId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'capital_refund',
+          amount: principalToRefund,
+          fee: 0,
+          netAmount: principalToRefund,
+          status: 'completed',
+          gateway: 'Principal_Return',
+          referenceCode: `REFUND-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Contract maturity: 100% principal capital of Rs. ${principalToRefund.toLocaleString()} returned for ${inv.planName}`,
+          planName: inv.planName,
+        },
+      });
+
+      await createUserNotification(
+        user.id,
+        'Contract Matured & Capital Refunded! 🌟',
+        `Your investment in ${inv.planName} has completed its full ${inv.durationDays}-day cycle. Rs. ${principalToRefund.toLocaleString()} principal capital refunded to your wallet!`,
+        'system',
+        principalToRefund
+      );
+    }
 
     res.json({
       success: true,
-      message: `Rs. ${totalClaimable.toLocaleString()} credited to your balance!`,
-      claimedAmount: totalClaimable,
+      message: `Rs. ${exactDailyProfit.toLocaleString()} credited to your balance!`,
+      claimedAmount: exactDailyProfit,
       balance: updatedUser.balance,
+      totalEarnedProfit: updatedUser.totalEarnedProfit,
       investment: {
         ...updatedInv,
         lastClaimTimestamp: Number(updatedInv.lastClaimTimestamp),
@@ -973,47 +1117,42 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
     }
 
     const now = Date.now();
-    let totalClaimed = 0;
-    const invUpdates: Promise<any>[] = [];
+    let totalDailyProfits = 0;
+    const operations: any[] = [];
 
     for (const inv of activeInvs) {
-      const lastClaim = Number(inv.lastClaimTimestamp);
-      const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
-      const profitPerSec = inv.hourlyProfitAmount / 3600;
-      const claimable = Number((inv.unclaimedProfit + elapsedSecs * profitPerSec).toFixed(2));
+      const exactDaily = Math.round(inv.dailyProfitAmount);
+      totalDailyProfits += exactDaily;
+      const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
+      const isCompleted = newDaysRemaining <= 0;
 
-      if (claimable > 0.05) {
-        totalClaimed += claimable;
-        invUpdates.push(
-          prisma.activeInvestment.update({
-            where: { id: inv.id },
-            data: {
-              earnedSoFar: { increment: claimable },
-              unclaimedProfit: 0,
-              lastClaimTimestamp: BigInt(now),
-            },
-          })
-        );
-      }
+      operations.push(
+        prisma.activeInvestment.update({
+          where: { id: inv.id },
+          data: {
+            earnedSoFar: { increment: exactDaily },
+            unclaimedProfit: 0,
+            daysRemaining: newDaysRemaining,
+            status: isCompleted ? 'completed' : 'active',
+            lastClaimTimestamp: BigInt(now),
+          },
+        })
+      );
     }
 
-    if (totalClaimed < 0.5) {
-      return res.status(400).json({ error: 'Yield is currently accumulating. Please wait a short while to claim.' });
-    }
-
-    totalClaimed = Number(totalClaimed.toFixed(2));
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    await Promise.all(invUpdates);
-
-    const [updatedUser, tx] = await prisma.$transaction([
+    operations.push(
       prisma.user.update({
         where: { id: user.id },
         data: {
-          balance: { increment: totalClaimed },
-          totalEarnedProfit: { increment: totalClaimed },
+          balance: { increment: totalDailyProfits },
+          totalEarnedProfit: { increment: totalDailyProfits },
         },
-      }),
+      })
+    );
+
+    operations.push(
       prisma.transaction.create({
         data: {
           id: txId,
@@ -1021,32 +1160,36 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
           userName: user.name,
           userPhone: user.phone,
           type: 'daily_profit',
-          amount: totalClaimed,
+          amount: totalDailyProfits,
           fee: 0,
-          netAmount: totalClaimed,
+          netAmount: totalDailyProfits,
           status: 'completed',
           gateway: 'Yield_Payout',
           referenceCode: `CLAIM-ALL-${Date.now().toString().slice(-6)}`,
           timestamp: getFormattedNow(),
-          notes: `Batch claimed Rs. ${totalClaimed.toLocaleString()} yield across ${activeInvs.length} packages`,
+          notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${activeInvs.length} packages`,
         },
-      }),
-    ]);
+      })
+    );
+
+    await prisma.$transaction(operations);
+
+    const freshUser = await prisma.user.findUnique({ where: { id: user.id } });
 
     await createUserNotification(
       user.id,
       'Batch Yield Claimed! 💰',
-      `Rs. ${totalClaimed.toLocaleString()} combined profit yield has been credited to your wallet balance.`,
+      `Rs. ${totalDailyProfits.toLocaleString()} daily profit yield has been credited to your wallet balance.`,
       'profit_claimed',
-      totalClaimed
+      totalDailyProfits
     );
 
     res.json({
       success: true,
-      message: `Successfully collected Rs. ${totalClaimed.toLocaleString()} in profit!`,
-      totalClaimed,
-      balance: updatedUser.balance,
-      transaction: tx,
+      message: `Successfully collected Rs. ${totalDailyProfits.toLocaleString()} in daily profits!`,
+      totalClaimed: totalDailyProfits,
+      balance: freshUser?.balance || 0,
+      totalEarnedProfit: freshUser?.totalEarnedProfit || 0,
     });
   } catch (err: any) {
     console.error('[Claim All Error]:', err);
