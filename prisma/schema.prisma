@@ -37,10 +37,27 @@ model User {
   investments               ActiveInvestment[]
   transactions              Transaction[]
   paymentAccounts           PaymentAccount[]
+  notifications             Notification[]
 
   @@index([phone])
   @@index([referralCode])
   @@index([referredBy])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("system")
+  amount    Float?
+  read      Boolean  @default(false)
+  timestamp String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model ActiveInvestment {

@@ -296,8 +296,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           headers: { Authorization: `Bearer ${activeToken}` },
         });
         const { ok: invOk, data: invData } = await safeParseJson(invRes);
-        if (invOk && invData?.success && invData?.investments) {
-          setActiveInvestments(invData.investments);
+        if (invOk && invData?.success && (invData?.activeInvestments || invData?.investments)) {
+          setActiveInvestments(invData.activeInvestments || invData.investments);
         }
       } catch {}
 

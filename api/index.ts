@@ -2,155 +2,15 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
+import { GoogleGenAI } from '@google/genai';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
-interface DBUser {
-  id: string;
-  name: string;
-  phone: string;
-  email?: string;
-  password: string;
-  securityPin: string;
-  referralCode: string;
-  referredBy?: string;
-  referralTier: number;
-  balance: number;
-  investedCapital: number;
-  totalWithdrawn: number;
-  totalEarnedProfit: number;
-  referralEarnings: number;
-  unclaimedReferralEarnings: number;
-  is2faEnabled: boolean;
-  dailyStreak: number;
-  lastCheckInDate?: string;
-  notificationsCount: number;
-  avatar: string;
-  joinedDate: string;
-  isVerified: boolean;
-  isAdmin: boolean;
-}
+// Single Prisma Client Instance connected to PostgreSQL
+export const prisma = new PrismaClient();
 
-interface DBInvestmentPlan {
-  id: string;
-  name: string;
-  category: string;
-  icon: string;
-  badge?: string;
-  minAmount: number;
-  maxAmount: number;
-  fixedAmount?: number;
-  dailyProfitPercent: number;
-  dailyProfitAmount: number;
-  durationDays: number;
-  totalRoiPercent: number;
-  totalReturnAmount: number;
-  payoutFrequency: string;
-  capitalReturnPolicy: string;
-  description: string;
-  highlights: string[];
-  popular?: boolean;
-  accentColor: string;
-}
-
-interface DBActiveInvestment {
-  id: string;
-  userId: string;
-  planId: string;
-  planName: string;
-  planCategory: string;
-  accentColor: string;
-  investedAmount: number;
-  dailyProfitPercent: number;
-  dailyProfitAmount: number;
-  hourlyProfitAmount: number;
-  totalExpectedReturn: number;
-  earnedSoFar: number;
-  durationDays: number;
-  daysRemaining: number;
-  hoursRemaining: number;
-  startTimestamp?: number;
-  startTimeFormatted?: string;
-  startDate: string;
-  endDate: string;
-  nextPayoutTime: string;
-  nextClaimTimestamp?: number;
-  status: 'active' | 'completed';
-  lastClaimTimestamp: number;
-  unclaimedProfit: number;
-}
-
-export interface DBLedgerAuditRecord {
-  ledgerId: string;
-  journalSeq: number;
-  entryType: 'DEBIT' | 'CREDIT';
-  accountType: string;
-  counterpartyAccount?: string;
-  balanceBefore: number;
-  balanceAfter: number;
-  deltaAmount: number;
-  idempotencyKey: string;
-  antiDoubleSpendLock: boolean;
-  fraudRiskScore: number;
-  fraudAuditStatus: 'CLEARED' | 'SUSPICIOUS_FLAGGED' | 'BLOCKED';
-  fraudChecks: {
-    duplicateTidCheck: 'PASSED' | 'FAILED';
-    velocityCheck: 'PASSED' | 'FLAGGED';
-    balanceIntegrityCheck: 'PASSED' | 'FAILED';
-    pinVerification?: 'PASSED' | 'FAILED' | 'BYPASSED';
-  };
-  cryptoChecksum: string;
-  reconciliationStatus: 'MATCHED' | 'DISCREPANCY_FLAGGED';
-  authorizedBy: 'SYSTEM_AUTOPILOT' | 'ADMIN_OFFICER' | 'USER_AUTHENTICATED';
-  timestamp: string;
-}
-
-interface DBTransaction {
-  id: string;
-  userId: string;
-  userName?: string;
-  userPhone?: string;
-  type: string;
-  amount: number;
-  fee: number;
-  netAmount: number;
-  status: 'completed' | 'processing' | 'pending' | 'failed' | 'declined';
-  gateway?: string;
-  accountTitle?: string;
-  accountNumber?: string;
-  bankName?: string;
-  senderPhone?: string;
-  senderTitle?: string;
-  referenceCode: string;
-  timestamp: string;
-  notes?: string;
-  planName?: string;
-  // Bank-Grade Ledger & Fraud Prevention properties
-  ledger?: DBLedgerAuditRecord;
-  ledgerId?: string;
-  journalSeq?: number;
-  balanceBefore?: number;
-  balanceAfter?: number;
-  idempotencyKey?: string;
-  fraudRiskScore?: number;
-  cryptoChecksum?: string;
-  reconciliationStatus?: 'MATCHED' | 'DISCREPANCY_FLAGGED';
-}
-
-interface DBPaymentAccount {
-  id: string;
-  userId: string;
-  gateway: string;
-  accountTitle: string;
-  accountNumber: string;
-  bankName?: string;
-  isDefault: boolean;
-  addedDate: string;
-}
-
-// 6 Official Investment Plans Catalog
-const INITIAL_PLANS: DBInvestmentPlan[] = [
+// Official Initial Investment Plans
+const INITIAL_PLANS = [
   {
     id: 'starter-1000',
     name: 'Pak Starter Spark',
@@ -211,6 +71,7 @@ const INITIAL_PLANS: DBInvestmentPlan[] = [
     capitalReturnPolicy: 'Capital returned on maturity',
     description: 'Support verified modern drip-irrigation cotton and wheat crop cultivation with guaranteed harvest commodity off-take contracts.',
     highlights: ['Earn Rs. 700/day guaranteed', 'Export commodity backed yield', '45 days cycle with 315% total return', 'VIP Priority Withdrawal Status'],
+    popular: false,
     accentColor: '#22c55e',
   },
   {
@@ -231,6 +92,7 @@ const INITIAL_PLANS: DBInvestmentPlan[] = [
     capitalReturnPolicy: 'Capital returned on maturity',
     description: 'Fleet leasing and container freight routing between Gwadar Port, Karachi Port Trust, and northern corridor trade hubs.',
     highlights: ['Rs. 2,000 credited every 24 hours', 'CPEC commercial transit contracts', 'Highest daily dividend rate (8.0%)', 'Dedicated 24/7 Account Officer'],
+    popular: false,
     accentColor: '#3b82f6',
   },
   {
@@ -249,16 +111,17 @@ const INITIAL_PLANS: DBInvestmentPlan[] = [
     totalReturnAmount: 320000,
     payoutFrequency: 'daily',
     capitalReturnPolicy: 'Capital returned on maturity',
-    description: 'Premium fractional commercial development in Blue Area & Gulberg Islamabad with high-yield retail tenancy agreements.',
-    highlights: ['Rs. 4,500 daily passive revenue', 'Capital real-estate asset collateral', 'Unlimited withdrawal allowance', 'Instant VIP bank settlement'],
+    description: 'Fractional ownership in commercial retail plazas and IT park towers in Islamabad Blue Area and DHA Phase 2 commercial hub.',
+    highlights: ['Rs. 4,500 daily passive rental income', 'Capital appreciation bonus on maturity', 'Monthly corporate audit reports', 'Dedicated Portfolio Manager'],
+    popular: false,
     accentColor: '#8b5cf6',
   },
   {
-    id: 'vip-100000',
-    name: 'Executive Wealth Crown VIP',
-    category: 'VIP Bluechip',
-    icon: 'ShieldCheck',
-    badge: 'Exclusive VIP Tier',
+    id: 'tech-100000',
+    name: 'PakTech Unicorn Venture Fund',
+    category: 'Tech Venture',
+    icon: 'Rocket',
+    badge: 'Institutional Grade',
     minAmount: 100000,
     maxAmount: 100000,
     fixedAmount: 100000,
@@ -269,91 +132,40 @@ const INITIAL_PLANS: DBInvestmentPlan[] = [
     totalReturnAmount: 1000000,
     payoutFrequency: 'daily',
     capitalReturnPolicy: 'Capital returned on maturity',
-    description: 'The premier institutional package delivering Rs. 10,000 daily. Direct treasury bond and bluechip portfolio allocation.',
-    highlights: ['Rs. 10,000 cash dividend daily', 'Total Rs. 1,000,000 payout over 90 days', '0% withdrawal fee on all gateways', 'Personal wealth advisor assigned'],
-    accentColor: '#eab308',
+    description: 'High-growth fintech and software export ventures backed by top Pakistani tech incubators and venture capital syndicates.',
+    highlights: ['Rs. 10,000 daily payout', '900% ROI milestone', 'Guaranteed exit liquidation', 'VIP Executive Club & Direct CEO Desk'],
+    popular: false,
+    accentColor: '#ec4899',
   },
 ];
 
-// In-Memory Store
-let memoryUsers: DBUser[] = [];
-let memoryInvestments: DBActiveInvestment[] = [];
-let memoryTransactions: DBTransaction[] = [];
-let memoryPaymentAccounts: DBPaymentAccount[] = [];
-let memoryPlans: DBInvestmentPlan[] = [...INITIAL_PLANS];
-let memoryNotifications: DBNotification[] = [];
-
-export interface DBNotification {
-  id: string;
-  userId: string;
-  title: string;
-  message: string;
-  type:
-    | 'deposit_approved'
-    | 'deposit_declined'
-    | 'withdrawal_approved'
-    | 'withdrawal_declined'
-    | 'profit_unlocked'
-    | 'profit_claimed'
-    | 'referral_reward'
-    | 'system';
-  amount?: number;
-  read: boolean;
-  timestamp: string;
-  createdAt: number;
-}
-
-export interface DBOfficialChannel {
-  id: string;
-  gateway: string;
-  accountTitle: string;
-  accountNumber: string;
-  bankName?: string;
-  branchCode?: string;
-  instructions: string;
-  minDeposit: number;
-  maxDeposit: number;
-  processingTime: string;
-  isActive: boolean;
-}
-
-let memoryDepositChannels: DBOfficialChannel[] = [
+// Official Initial Deposit Channels
+const INITIAL_CHANNELS = [
   {
-    id: 'ch_jazzcash_01',
     gateway: 'JazzCash',
-    accountTitle: 'PakInvest Digital Operations',
-    accountNumber: '03049876543',
-    instructions: 'Send money via JazzCash App or *786# to Till/Mobile account. Copy the 12-digit TID from SMS/App and submit it below.',
-    minDeposit: 1000,
-    maxDeposit: 500000,
-    processingTime: '5-15 mins manual verification',
-    isActive: true,
-  },
-  {
-    id: 'ch_easypaisa_01',
-    gateway: 'EasyPaisa',
-    accountTitle: 'PakInvest Treasury',
-    accountNumber: '03451234890',
-    instructions: 'Transfer via EasyPaisa App to EasyPaisa Account. Enter the 11-digit TRX ID received via 3737 in the field below.',
-    minDeposit: 1000,
-    maxDeposit: 500000,
-    processingTime: '5-15 mins manual verification',
-    isActive: true,
-  },
-  {
-    id: 'ch_raast_01',
-    gateway: 'Raast',
-    accountTitle: 'PakInvest Instant Escrow',
-    accountNumber: '03009988776',
-    bankName: 'State Bank Raast Gateway',
-    instructions: 'Instant zero-fee transfer via any Pakistani banking app using Raast Mobile ID or IBAN.',
+    accountTitle: 'PakInvest Official Treasury',
+    accountNumber: '03045645642',
+    bankName: 'JazzCash (Mobilink Microfinance Bank)',
+    branchCode: '001',
+    instructions: 'Send money to this official JazzCash mobile account. Once sent, copy the 12-digit TID from the SMS or app and enter below.',
     minDeposit: 1000,
     maxDeposit: 1000000,
     processingTime: 'Instant 24/7 verification',
     isActive: true,
   },
   {
-    id: 'ch_bank_meezan',
+    gateway: 'EasyPaisa',
+    accountTitle: 'PakInvest Official Treasury',
+    accountNumber: '03451234567',
+    bankName: 'EasyPaisa (Telenor Microfinance Bank)',
+    branchCode: '002',
+    instructions: 'Transfer to this EasyPaisa mobile wallet account. Enter your Transaction ID (TID) received via 3737 SMS as payment proof.',
+    minDeposit: 1000,
+    maxDeposit: 1000000,
+    processingTime: 'Instant 24/7 verification',
+    isActive: true,
+  },
+  {
     gateway: 'Bank_Transfer',
     accountTitle: 'PakInvest Global Technologies Ltd',
     accountNumber: '01020304050607',
@@ -366,11 +178,11 @@ let memoryDepositChannels: DBOfficialChannel[] = [
     isActive: true,
   },
   {
-    id: 'ch_usdt_trc20',
     gateway: 'USDT_TRC20',
     accountTitle: 'TRC-20 Treasury Wallet',
     accountNumber: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
     bankName: 'Binance / Tron Network (TRC20)',
+    branchCode: '',
     instructions: 'Send USDT (TRC-20). 1 USDT = Rs. 280 PKR fixed conversion rate.',
     minDeposit: 2800,
     maxDeposit: 5000000,
@@ -379,164 +191,7 @@ let memoryDepositChannels: DBOfficialChannel[] = [
   },
 ];
 
-// Prisma Client Instance
-let prisma: PrismaClient | null = null;
-let isPostgresConnected = false;
-let dbConnectionError: string | null = null;
-
-async function syncFromPrisma() {
-  if (!isPostgresConnected || !prisma) return;
-  try {
-    const plansCount = await prisma.investmentPlan.count();
-    if (plansCount === 0) {
-      for (const p of INITIAL_PLANS) {
-        await prisma.investmentPlan.create({
-          data: {
-            id: p.id,
-            name: p.name,
-            category: p.category,
-            icon: p.icon,
-            badge: p.badge,
-            minAmount: p.minAmount,
-            maxAmount: p.maxAmount,
-            fixedAmount: p.fixedAmount,
-            dailyProfitPercent: p.dailyProfitPercent,
-            dailyProfitAmount: p.dailyProfitAmount,
-            durationDays: p.durationDays,
-            totalRoiPercent: p.totalRoiPercent,
-            totalReturnAmount: p.totalReturnAmount,
-            payoutFrequency: p.payoutFrequency,
-            capitalReturnPolicy: p.capitalReturnPolicy,
-            description: p.description,
-            highlights: p.highlights,
-            popular: Boolean(p.popular),
-            accentColor: p.accentColor,
-          },
-        });
-      }
-    }
-
-    const channelsCount = await prisma.depositChannel.count();
-    if (channelsCount === 0) {
-      for (const c of memoryDepositChannels) {
-        await prisma.depositChannel.create({
-          data: {
-            gateway: c.gateway,
-            accountTitle: c.accountTitle,
-            accountNumber: c.accountNumber,
-            bankName: c.bankName,
-            branchCode: c.branchCode,
-            instructions: c.instructions,
-            minDeposit: c.minDeposit,
-            maxDeposit: c.maxDeposit,
-            processingTime: c.processingTime,
-            isActive: c.isActive,
-          },
-        });
-      }
-    }
-
-    const dbUsers = await prisma.user.findMany();
-    if (dbUsers.length > 0) {
-      memoryUsers = dbUsers.map((u) => ({
-        ...u,
-        email: u.email || undefined,
-        referredBy: u.referredBy || undefined,
-        lastCheckInDate: u.lastCheckInDate || undefined,
-        avatar: u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      }));
-    }
-
-    const dbPlans = await prisma.investmentPlan.findMany();
-    if (dbPlans.length > 0) {
-      memoryPlans = dbPlans.map((p) => ({
-        ...p,
-        badge: p.badge || undefined,
-        fixedAmount: p.fixedAmount || undefined,
-      }));
-    }
-
-    const dbChannels = await prisma.depositChannel.findMany();
-    if (dbChannels.length > 0) {
-      memoryDepositChannels = dbChannels.map((c) => ({
-        ...c,
-        bankName: c.bankName || undefined,
-        branchCode: c.branchCode || undefined,
-      }));
-    }
-
-    const dbInvs = await prisma.activeInvestment.findMany();
-    if (dbInvs.length > 0) {
-      memoryInvestments = dbInvs.map((i) => ({
-        ...i,
-        lastClaimTimestamp: Number(i.lastClaimTimestamp),
-        status: i.status as 'active' | 'completed',
-      }));
-    }
-
-    const dbTx = await prisma.transaction.findMany({ orderBy: { createdAt: 'desc' } });
-    if (dbTx.length > 0) {
-      memoryTransactions = dbTx.map((t) => ({
-        ...t,
-        userId: t.userId || '',
-        userName: t.userName || undefined,
-        userPhone: t.userPhone || undefined,
-        gateway: t.gateway || undefined,
-        accountTitle: t.accountTitle || undefined,
-        accountNumber: t.accountNumber || undefined,
-        bankName: t.bankName || undefined,
-        senderPhone: t.senderPhone || undefined,
-        senderTitle: t.senderTitle || undefined,
-        notes: t.notes || undefined,
-        planName: t.planName || undefined,
-        status: t.status as any,
-      }));
-    }
-
-    const dbAccs = await prisma.paymentAccount.findMany();
-    if (dbAccs.length > 0) {
-      memoryPaymentAccounts = dbAccs.map((a) => ({
-        ...a,
-        bankName: a.bankName || undefined,
-      }));
-    }
-  } catch (err) {
-    console.error('[Prisma Sync Error]:', err);
-  }
-}
-
-async function tryConnectPrisma(customUrl?: string) {
-  const url = customUrl || process.env.DATABASE_URL;
-  if (!url || url.trim() === '' || url.includes('localhost:5432/mydb')) {
-    console.log('[Prisma] No active DATABASE_URL provided. Operating in in-memory state.');
-    isPostgresConnected = false;
-    return false;
-  }
-
-  try {
-    if (prisma) {
-      await prisma.$disconnect();
-    }
-    prisma = new PrismaClient({
-      datasources: {
-        db: { url: url.trim() },
-      },
-    });
-    await prisma.$connect();
-    isPostgresConnected = true;
-    dbConnectionError = null;
-    console.log('[Prisma] Connected successfully to PostgreSQL database!');
-    await syncFromPrisma();
-    return true;
-  } catch (err: any) {
-    console.error('[Prisma] Database connection error:', err?.message || err);
-    dbConnectionError = err?.message || 'Could not connect to PostgreSQL';
-    isPostgresConnected = false;
-    prisma = null;
-    return false;
-  }
-}
-
+// Helper: Format Pakistan Timestamp
 const getFormattedNow = () => {
   const d = new Date();
   return (
@@ -546,242 +201,74 @@ const getFormattedNow = () => {
   );
 };
 
+// Helper: Mask phone numbers for public/referrals privacy
 const maskPhone = (phone: string) => {
-  if (phone.length < 8) return phone;
+  if (!phone || phone.length < 8) return phone;
   return phone.slice(0, 4) + '•••' + phone.slice(-3);
 };
 
-// ----------------------------------------------------
-// BANK-LEVEL LEDGER & FRAUD PREVENTION ENGINE
-// ----------------------------------------------------
-let globalJournalSeq = 10450;
-let lastCryptoHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-const activeOperationLocks = new Set<string>(); // Lock per userId to prevent race condition double deductions
-const processedIdempotencyKeys = new Map<string, { txId: string; timestamp: number }>();
-
-function generateIdempotencyKey(userId: string, type: string, amount: number, refOrTid?: string): string {
-  const seed = `${userId}:${type}:${amount}:${refOrTid || Date.now()}`;
-  return 'IDEMP-' + crypto.createHash('md5').update(seed).digest('hex').substring(0, 14).toUpperCase();
-}
-
-function createLedgerRecord(params: {
-  userId: string;
-  type: string;
-  amount: number;
-  entryType: 'DEBIT' | 'CREDIT';
-  accountType: string;
-  counterpartyAccount?: string;
-  balanceBefore: number;
-  balanceAfter: number;
-  idempotencyKey?: string;
-  referenceCode: string;
-  authorizedBy?: 'SYSTEM_AUTOPILOT' | 'ADMIN_OFFICER' | 'USER_AUTHENTICATED';
-  riskScoreOverride?: number;
-  duplicateTidPassed?: boolean;
-}): { ledger: DBLedgerAuditRecord; cryptoChecksum: string; ledgerId: string; journalSeq: number } {
-  globalJournalSeq += 1;
-  const journalSeq = globalJournalSeq;
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const ledgerId = `LDG-${dateStamp}-${journalSeq}`;
-
-  const delta = params.entryType === 'CREDIT' ? params.amount : -params.amount;
-  const isMathBalanced = Math.abs((params.balanceBefore + delta) - params.balanceAfter) < 0.001;
-
-  // Cryptographic Audit Hash Chained to Previous Block
-  const hashPayload = `${journalSeq}|${lastCryptoHash}|${params.userId}|${params.type}|${delta}|${params.balanceAfter}|${Date.now()}`;
-  const cryptoChecksum = crypto.createHash('sha256').update(hashPayload).digest('hex');
-  lastCryptoHash = cryptoChecksum;
-
-  // Calculate Fraud Risk Score (0-100)
-  let fraudRiskScore = params.riskScoreOverride ?? 5;
-  if (params.duplicateTidPassed === false) {
-    fraudRiskScore = 95;
-  }
-  if (!isMathBalanced) {
-    fraudRiskScore = 99;
-  }
-
-  const fraudAuditStatus = fraudRiskScore >= 70 ? 'BLOCKED' : fraudRiskScore >= 30 ? 'SUSPICIOUS_FLAGGED' : 'CLEARED';
-
-  const ledgerRecord: DBLedgerAuditRecord = {
-    ledgerId,
-    journalSeq,
-    entryType: params.entryType,
-    accountType: params.accountType,
-    counterpartyAccount: params.counterpartyAccount || 'TREASURY_ESCROW',
-    balanceBefore: params.balanceBefore,
-    balanceAfter: params.balanceAfter,
-    deltaAmount: delta,
-    idempotencyKey: params.idempotencyKey || generateIdempotencyKey(params.userId, params.type, params.amount, params.referenceCode),
-    antiDoubleSpendLock: true,
-    fraudRiskScore,
-    fraudAuditStatus,
-    fraudChecks: {
-      duplicateTidCheck: params.duplicateTidPassed !== false ? 'PASSED' : 'FAILED',
-      velocityCheck: 'PASSED',
-      balanceIntegrityCheck: isMathBalanced ? 'PASSED' : 'FAILED',
-      pinVerification: 'PASSED',
-    },
-    cryptoChecksum,
-    reconciliationStatus: isMathBalanced ? 'MATCHED' : 'DISCREPANCY_FLAGGED',
-    authorizedBy: params.authorizedBy || 'SYSTEM_AUTOPILOT',
-    timestamp: getFormattedNow(),
-  };
-
-  return {
-    ledger: ledgerRecord,
-    cryptoChecksum,
-    ledgerId,
-    journalSeq,
-  };
-}
-
-async function persistUserUpdate(userId: string, data: any) {
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.user.update({ where: { id: userId }, data });
-    } catch (e) {
-      console.error('[Prisma User Update Error]:', e);
+// Database Initialization & Seed Check
+let dbInitDone = false;
+async function ensureInitialDatabaseData() {
+  if (dbInitDone) return;
+  try {
+    const plansCount = await prisma.investmentPlan.count();
+    if (plansCount === 0) {
+      for (const p of INITIAL_PLANS) {
+        await prisma.investmentPlan.create({ data: p });
+      }
     }
-  }
-}
 
-async function persistTx(tx: DBTransaction) {
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.transaction.create({
-        data: {
-          id: tx.id,
-          userId: tx.userId,
-          userName: tx.userName,
-          userPhone: tx.userPhone,
-          type: tx.type,
-          amount: tx.amount,
-          fee: tx.fee,
-          netAmount: tx.netAmount,
-          status: tx.status,
-          gateway: tx.gateway,
-          accountTitle: tx.accountTitle,
-          accountNumber: tx.accountNumber,
-          bankName: tx.bankName,
-          senderPhone: tx.senderPhone,
-          senderTitle: tx.senderTitle,
-          referenceCode: tx.referenceCode,
-          timestamp: tx.timestamp,
-          notes: tx.notes,
-          planName: tx.planName,
-        },
-      });
-    } catch (e) {
-      console.error('[Prisma Tx Create Error]:', e);
+    const channelsCount = await prisma.depositChannel.count();
+    if (channelsCount === 0) {
+      for (const c of INITIAL_CHANNELS) {
+        await prisma.depositChannel.create({ data: c });
+      }
     }
+    dbInitDone = true;
+  } catch (err) {
+    console.error('[Prisma Seed/Init Error]:', err);
   }
 }
 
-async function persistTxUpdate(txId: string, status: string, notes?: string) {
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.transaction.update({
-        where: { id: txId },
-        data: { status, notes },
-      });
-    } catch (e) {
-      console.error('[Prisma Tx Update Error]:', e);
-    }
-  }
-}
-
-async function persistInvestment(inv: DBActiveInvestment) {
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.activeInvestment.create({
-        data: {
-          id: inv.id,
-          userId: inv.userId,
-          planId: inv.planId,
-          planName: inv.planName,
-          planCategory: inv.planCategory,
-          accentColor: inv.accentColor,
-          investedAmount: inv.investedAmount,
-          dailyProfitPercent: inv.dailyProfitPercent,
-          dailyProfitAmount: inv.dailyProfitAmount,
-          hourlyProfitAmount: inv.hourlyProfitAmount,
-          totalExpectedReturn: inv.totalExpectedReturn,
-          earnedSoFar: inv.earnedSoFar,
-          durationDays: inv.durationDays,
-          daysRemaining: inv.daysRemaining,
-          hoursRemaining: inv.hoursRemaining,
-          startDate: inv.startDate,
-          endDate: inv.endDate,
-          nextPayoutTime: inv.nextPayoutTime,
-          status: inv.status,
-          lastClaimTimestamp: BigInt(inv.lastClaimTimestamp),
-          unclaimedProfit: inv.unclaimedProfit,
-        },
-      });
-    } catch (e) {
-      console.error('[Prisma Investment Create Error]:', e);
-    }
-  }
-}
-
-async function persistInvestmentUpdate(invId: string, data: any) {
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.activeInvestment.update({
-        where: { id: invId },
-        data: {
-          ...data,
-          lastClaimTimestamp: data.lastClaimTimestamp !== undefined ? BigInt(data.lastClaimTimestamp) : undefined,
-        },
-      });
-    } catch (e) {
-      console.error('[Prisma Investment Update Error]:', e);
-    }
-  }
-}
-
-function addNotification(
+// Database helper for creating a user notification
+async function createUserNotification(
   userId: string,
-  params: {
-    title: string;
-    message: string;
-    type: DBNotification['type'];
-    amount?: number;
-  }
+  title: string,
+  message: string,
+  type = 'system',
+  amount?: number
 ) {
-  const notif: DBNotification = {
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    userId,
-    title: params.title,
-    message: params.message,
-    type: params.type,
-    amount: params.amount,
-    read: false,
-    timestamp: getFormattedNow(),
-    createdAt: Date.now(),
-  };
-  memoryNotifications.unshift(notif);
-
-  // Keep max 100 recent notifications in memory
-  if (memoryNotifications.length > 200) {
-    memoryNotifications = memoryNotifications.slice(0, 200);
+  try {
+    const notif = await prisma.notification.create({
+      data: {
+        userId,
+        title,
+        message,
+        type,
+        amount: amount || null,
+        timestamp: getFormattedNow(),
+      },
+    });
+    // Increment unread notifications count on user
+    const unreadCount = await prisma.notification.count({
+      where: { userId, read: false },
+    });
+    await prisma.user.update({
+      where: { id: userId },
+      data: { notificationsCount: unreadCount },
+    });
+    return notif;
+  } catch (e) {
+    console.error('[Notification Create Error]:', e);
+    return null;
   }
-
-  // update user's unread notifications counter
-  const u = memoryUsers.find((user) => user.id === userId);
-  if (u) {
-    u.notificationsCount = memoryNotifications.filter((n) => n.userId === userId && !n.read).length;
-    persistUserUpdate(u.id, { notificationsCount: u.notificationsCount });
-  }
-
-  return notif;
 }
 
 export const app = express();
 app.use(express.json());
 
-// CORS & Preflight Handling for Standalone Mobile APK and External Clients
+// CORS & Preflight
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -792,19 +279,15 @@ app.use((req, res, next) => {
   next();
 });
 
-let dbInitPromise: Promise<boolean> | null = null;
+// Middleware to ensure DB seed is ready
 app.use(async (req, res, next) => {
-  if (!dbInitPromise) {
-    dbInitPromise = tryConnectPrisma();
+  if (!dbInitDone) {
+    await ensureInitialDatabaseData();
   }
-  await dbInitPromise;
   next();
 });
 
-// Router that can be mounted at both /api and / root for complete compatibility
-const router = express.Router();
-
-// Auth Middleware
+// JWT Authentication Middleware
 const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -814,31 +297,12 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    
-    let user: DBUser | null = null;
-    if (isPostgresConnected && prisma) {
-      try {
-        const dbU = await prisma.user.findUnique({ where: { id: decoded.userId } });
-        if (dbU) {
-          user = {
-            ...dbU,
-            email: dbU.email || undefined,
-            referredBy: dbU.referredBy || undefined,
-            lastCheckInDate: dbU.lastCheckInDate || undefined,
-            avatar: dbU.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-          };
-        }
-      } catch {
-        // fallback to memory
-      }
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+    });
 
     if (!user) {
-      user = memoryUsers.find((u) => u.id === decoded.userId) || null;
-    }
-
-    if (!user) {
-      return res.status(401).json({ error: 'User session expired or not found. Please log in again.' });
+      return res.status(401).json({ error: 'User account not found or session expired. Please log in again.' });
     }
 
     (req as any).user = user;
@@ -848,23 +312,39 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
   }
 };
 
+const router = express.Router();
+
 // ----------------------------------------------------
-// DATABASE STATUS
+// SYSTEM & DATABASE STATUS
 // ----------------------------------------------------
-router.get('/database/status', (req, res) => {
-  res.json({
-    success: true,
-    isPostgresConnected,
-    hasDatabaseUrl: Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== ''),
-    databaseUrlMasked: process.env.DATABASE_URL
-      ? process.env.DATABASE_URL.replace(/:\/\/.*@/, '://****:****@')
-      : null,
-    error: dbConnectionError,
-  });
+router.get('/database/status', async (req, res) => {
+  try {
+    const userCount = await prisma.user.count();
+    const txCount = await prisma.transaction.count();
+    const invCount = await prisma.activeInvestment.count();
+
+    res.json({
+      success: true,
+      status: 'online',
+      provider: 'PostgreSQL (Prisma ORM)',
+      databaseConnected: true,
+      stats: {
+        users: userCount,
+        transactions: txCount,
+        activeInvestments: invCount,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      status: 'error',
+      error: err?.message || 'Database query error',
+    });
+  }
 });
 
 // ----------------------------------------------------
-// AUTH API
+// AUTHENTICATION API
 // ----------------------------------------------------
 router.post('/auth/register', async (req, res) => {
   try {
@@ -889,64 +369,36 @@ router.post('/auth/register', async (req, res) => {
       });
     }
 
-    let existingUser = memoryUsers.find((u) => u.phone === cleanPhone);
-    if (!existingUser && isPostgresConnected && prisma) {
-      try {
-        const dbU = await prisma.user.findFirst({ where: { phone: cleanPhone } });
-        if (dbU) existingUser = dbU as any;
-      } catch (e) {
-        console.error('[Prisma Unique Phone Check Error]:', e);
-      }
-    }
+    const existingPhoneUser = await prisma.user.findUnique({
+      where: { phone: cleanPhone },
+    });
 
-    if (existingUser) {
+    if (existingPhoneUser) {
       return res.status(409).json({
-        error: `The mobile number (${cleanPhone}) is already registered with an existing account. Please sign in or use a different number.`,
+        error: `The mobile number (${cleanPhone}) is already registered. Please sign in with your password.`,
       });
     }
 
     if (email && email.trim()) {
       const cleanEmail = email.trim().toLowerCase();
-      let existingEmailUser = memoryUsers.find((u) => u.email && u.email.toLowerCase() === cleanEmail);
-      if (!existingEmailUser && isPostgresConnected && prisma) {
-        try {
-          const dbEmailU = await prisma.user.findFirst({ where: { email: cleanEmail } });
-          if (dbEmailU) existingEmailUser = dbEmailU as any;
-        } catch {}
-      }
-      if (existingEmailUser) {
+      const existingEmail = await prisma.user.findFirst({
+        where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+      });
+      if (existingEmail) {
         return res.status(409).json({
-          error: `An account is already registered with this email (${cleanEmail}).`,
+          error: `An account is already registered with email (${cleanEmail}).`,
         });
       }
     }
 
-    let validReferredBy: string | undefined = undefined;
+    let validReferredBy: string | null = null;
     if (referralCode && typeof referralCode === 'string' && referralCode.trim()) {
       const cleanRef = referralCode.trim().toUpperCase();
-      const parent = memoryUsers.find((u) => u.referralCode && u.referralCode.trim().toUpperCase() === cleanRef);
+      const parent = await prisma.user.findFirst({
+        where: { referralCode: { equals: cleanRef, mode: 'insensitive' } },
+      });
       if (parent) {
         validReferredBy = parent.referralCode;
-      } else if (isPostgresConnected && prisma) {
-        try {
-          const dbParent = await prisma.user.findFirst({
-            where: {
-              referralCode: {
-                equals: cleanRef,
-                mode: 'insensitive',
-              },
-            },
-          });
-          if (dbParent) {
-            validReferredBy = dbParent.referralCode;
-          } else {
-            validReferredBy = cleanRef;
-          }
-        } catch {
-          validReferredBy = cleanRef;
-        }
-      } else {
-        validReferredBy = cleanRef;
       }
     }
 
@@ -954,824 +406,1033 @@ router.post('/auth/register', async (req, res) => {
     const hashedPassword = bcrypt.hashSync(password, 10);
     const joinedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    const newUser: DBUser = {
-      id: `user_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      name: name.trim(),
-      phone: cleanPhone,
-      email: email ? email.trim() : undefined,
-      password: hashedPassword,
-      securityPin: securityPin ? String(securityPin) : '1234',
-      referralCode: newRefCode,
-      referredBy: validReferredBy,
-      referralTier: 1,
-      balance: 0,
-      investedCapital: 0,
-      totalWithdrawn: 0,
-      totalEarnedProfit: 0,
-      referralEarnings: 0,
-      unclaimedReferralEarnings: 0,
-      is2faEnabled: false,
-      dailyStreak: 1,
-      lastCheckInDate: undefined,
-      notificationsCount: 1,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      joinedDate,
-      isVerified: true,
-      isAdmin: false,
-    };
+    const newUser = await prisma.user.create({
+      data: {
+        name: name.trim(),
+        phone: cleanPhone,
+        email: email ? email.trim() : null,
+        password: hashedPassword,
+        securityPin: securityPin ? String(securityPin) : '1234',
+        referralCode: newRefCode,
+        referredBy: validReferredBy,
+        referralTier: 1,
+        balance: 0,
+        investedCapital: 0,
+        totalWithdrawn: 0,
+        totalEarnedProfit: 0,
+        referralEarnings: 0,
+        unclaimedReferralEarnings: 0,
+        is2faEnabled: false,
+        dailyStreak: 1,
+        notificationsCount: 1,
+        joinedDate,
+        isVerified: true,
+        isAdmin: false,
+      },
+    });
 
-    if (isPostgresConnected && prisma) {
-      try {
-        await prisma.user.create({
-          data: {
-            id: newUser.id,
-            name: newUser.name,
-            phone: newUser.phone,
-            email: newUser.email,
-            password: newUser.password,
-            securityPin: newUser.securityPin,
-            referralCode: newUser.referralCode,
-            referredBy: newUser.referredBy,
-            referralTier: newUser.referralTier,
-            balance: 0,
-            investedCapital: 0,
-            totalWithdrawn: 0,
-            totalEarnedProfit: 0,
-            referralEarnings: 0,
-            unclaimedReferralEarnings: 0,
-            is2faEnabled: false,
-            dailyStreak: 1,
-            notificationsCount: 1,
-            avatar: newUser.avatar,
-            joinedDate: newUser.joinedDate,
-            isVerified: true,
-            isAdmin: false,
-          },
-        });
-      } catch (dbErr: any) {
-        console.error('[Prisma Error on Register]:', dbErr);
-      }
-    }
+    // Create welcome notification
+    await createUserNotification(
+      newUser.id,
+      'Welcome to PakInvest Official! 🇵🇰',
+      `Assalam-o-Alaikum ${newUser.name}! Your account is active. Deposit via JazzCash / EasyPaisa to activate high-yield plans.`,
+      'system'
+    );
 
-    memoryUsers.push(newUser);
-
-    const defaultAccount: DBPaymentAccount = {
-      id: `acc_${Date.now()}`,
-      userId: newUser.id,
-      gateway: 'JazzCash',
-      accountTitle: newUser.name,
-      accountNumber: newUser.phone,
-      isDefault: true,
-      addedDate: newUser.joinedDate,
-    };
-    memoryPaymentAccounts.push(defaultAccount);
-
-    const token = jwt.sign({ userId: newUser.id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: newUser.id, phone: newUser.phone }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = newUser;
 
-    res.json({
+    res.status(201).json({
       success: true,
+      message: 'Account registered successfully!',
       token,
       user: safeUser,
-      message: 'Account created successfully! Welcome to PakInvest.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Server error during registration' });
+    console.error('[Register Error]:', err);
+    res.status(500).json({ error: err?.message || 'Registration failed. Please try again.' });
   }
 });
 
 router.post('/auth/login', async (req, res) => {
   try {
-    const { identifier, password } = req.body;
-    if (!identifier || !password) {
-      return res.status(400).json({ error: 'Please enter your mobile number/email and password.' });
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({ error: 'Mobile number and password are required.' });
     }
 
-    const cleanPhone = identifier.replace(/[^0-9]/g, '');
-    const cleanLower = identifier.trim().toLowerCase();
-
-    let user: DBUser | null = null;
-
-    if (isPostgresConnected && prisma) {
-      try {
-        const dbU = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { phone: cleanPhone },
-              { email: cleanLower },
-              { name: identifier.trim() },
-            ],
-          },
-        });
-        if (dbU) {
-          user = {
-            ...dbU,
-            email: dbU.email || undefined,
-            referredBy: dbU.referredBy || undefined,
-            lastCheckInDate: dbU.lastCheckInDate || undefined,
-            avatar: dbU.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-          };
-        }
-      } catch (dbErr) {
-        console.error('[Prisma Login Error]:', dbErr);
-      }
+    let cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('92') && cleanPhone.length === 12) {
+      cleanPhone = '0' + cleanPhone.slice(2);
+    } else if (cleanPhone.startsWith('0092') && cleanPhone.length === 14) {
+      cleanPhone = '0' + cleanPhone.slice(4);
+    } else if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) {
+      cleanPhone = '0' + cleanPhone;
     }
+
+    const user = await prisma.user.findUnique({
+      where: { phone: cleanPhone },
+    });
 
     if (!user) {
-      user =
-        memoryUsers.find(
-          (u) =>
-            u.phone === cleanPhone ||
-            (u.email && u.email.toLowerCase() === cleanLower) ||
-            u.name.toLowerCase() === cleanLower
-        ) || null;
+      return res.status(401).json({ error: 'No registered account found with this mobile number. Please sign up.' });
     }
 
-    if (!user) {
-      return res.status(401).json({ error: 'No account found with this phone number or email. Please register.' });
+    const isMatch = bcrypt.compareSync(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Incorrect password. Please verify your credentials and try again.' });
     }
 
-    const isPasswordValid =
-      bcrypt.compareSync(password, user.password) || user.password === password;
+    const unreadNotifs = await prisma.notification.count({
+      where: { userId: user.id, read: false },
+    });
 
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Incorrect password. Please try again.' });
-    }
-
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = user;
 
     res.json({
       success: true,
+      message: 'Signed in successfully!',
       token,
-      user: safeUser,
+      user: {
+        ...safeUser,
+        notificationsCount: unreadNotifs,
+      },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Server error during login' });
+    console.error('[Login Error]:', err);
+    res.status(500).json({ error: err?.message || 'Login failed. Please try again.' });
   }
 });
 
-router.get('/auth/me', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
+router.get('/auth/me', authenticate, async (req, res) => {
+  const user = (req as any).user;
+  const unreadNotifs = await prisma.notification.count({
+    where: { userId: user.id, read: false },
+  });
   const { password: _, ...safeUser } = user;
-  res.json({ success: true, user: safeUser });
-});
-
-router.post('/auth/logout', (req, res) => {
-  res.json({ success: true, message: 'Logged out successfully' });
+  res.json({
+    success: true,
+    user: {
+      ...safeUser,
+      notificationsCount: unreadNotifs,
+    },
+  });
 });
 
 router.post('/auth/change-password', authenticate, async (req, res) => {
   try {
-    const user = (req as any).user as DBUser;
-    const { oldPassword, newPassword, confirmPassword } = req.body;
+    const user = (req as any).user;
+    const { currentPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      return res.status(400).json({ error: 'Please fill in current password, new password, and confirmation.' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
     }
 
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({ error: 'New password and confirmation password do not match.' });
+    const isMatch = bcrypt.compareSync(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Current password does not match.' });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
     }
 
-    // Check old password
-    const isOldPasswordCorrect =
-      bcrypt.compareSync(oldPassword, user.password) || user.password === oldPassword;
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
 
-    if (!isOldPasswordCorrect) {
-      return res.status(400).json({ error: 'Incorrect current password. Please enter your valid current password.' });
-    }
+    await createUserNotification(user.id, 'Password Changed 🔒', 'Your account login password has been updated securely.');
 
-    if (oldPassword === newPassword) {
-      return res.status(400).json({ error: 'New password cannot be the same as your current password.' });
-    }
+    res.json({ success: true, message: 'Password updated successfully!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update password' });
+  }
+});
 
-    const hashedNewPassword = bcrypt.hashSync(newPassword, 10);
-    user.password = hashedNewPassword;
-
-    // Update in memory and database
-    const memIndex = memoryUsers.findIndex((u) => u.id === user.id);
-    if (memIndex !== -1) {
-      memoryUsers[memIndex].password = hashedNewPassword;
-    }
-
-    await persistUserUpdate(user.id, { password: hashedNewPassword });
-
-    addNotification(user.id, {
-      title: 'Security Notice: Password Changed 🔒',
-      message: 'Your account login password has been changed successfully. If you did not make this change, please contact support immediately.',
-      type: 'system',
+router.post('/auth/toggle-2fa', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { enabled } = req.body;
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { is2faEnabled: Boolean(enabled) },
     });
 
     res.json({
       success: true,
-      message: 'Password changed successfully! Your account credentials have been updated.',
+      is2faEnabled: updatedUser.is2faEnabled,
+      message: `Two-factor authentication ${updatedUser.is2faEnabled ? 'enabled' : 'disabled'}`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Server error while updating password' });
+    res.status(500).json({ error: err?.message || 'Failed to toggle 2FA' });
   }
 });
 
 // ----------------------------------------------------
-// PLANS & INVESTMENTS API
+// USER SYNC API (Full Real State from DB)
 // ----------------------------------------------------
-router.get('/plans', (req, res) => {
-  res.json({ success: true, plans: memoryPlans });
-});
-
-router.get('/deposit-channels', (req, res) => {
-  res.json({ success: true, channels: memoryDepositChannels.filter((c) => c.isActive) });
-});
-
-router.get('/investments', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const now = Date.now();
-  const userInvestments = memoryInvestments.filter((inv) => inv.userId === user.id);
-  
-  // Calculate exact 24-hour cycle readiness
-  const withTiming = userInvestments.map((inv) => {
-    const startMs = inv.startTimestamp || Number(inv.lastClaimTimestamp) || now;
-    const lastClaim = Number(inv.lastClaimTimestamp) || startMs;
-    const nextClaim = inv.nextClaimTimestamp ? Number(inv.nextClaimTimestamp) : lastClaim + 86400000;
-    
-    // Check if 24 hours have elapsed
-    const isReady = now >= nextClaim && inv.status === 'active';
-    let readyCycles = 0;
-    if (isReady) {
-      readyCycles = Math.max(1, Math.floor((now - lastClaim) / 86400000));
-      readyCycles = Math.min(readyCycles, inv.daysRemaining || 1);
-    }
-    
-    const unclaimed = isReady ? readyCycles * inv.dailyProfitAmount : 0;
-    
-    return {
-      ...inv,
-      startTimestamp: startMs,
-      lastClaimTimestamp: lastClaim,
-      nextClaimTimestamp: nextClaim,
-      unclaimedProfit: unclaimed,
-    };
-  });
-
-  res.json({ success: true, investments: withTiming });
-});
-
-router.post('/investments/activate', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { planId, amount } = req.body;
-
-  const plan = memoryPlans.find((p) => p.id === planId);
-  if (!plan) return res.status(404).json({ error: 'Investment plan not found' });
-
-  const investAmount = Number(amount) || plan.fixedAmount || plan.minAmount;
-
-  if (user.balance < investAmount) {
-    return res.status(400).json({
-      error: `Insufficient balance! You need Rs. ${investAmount.toLocaleString()} but currently have Rs. ${user.balance.toLocaleString()}. Please make a deposit first.`,
-    });
-  }
-
-  user.balance -= investAmount;
-  user.investedCapital += investAmount;
-
-  const now = Date.now();
-  const startDate = new Date(now);
-  const endDate = new Date(now);
-  endDate.setDate(startDate.getDate() + plan.durationDays);
-
-  const startTimeFormatted = startDate.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-
-  const nextClaimTimestamp = now + 86400000; // 24-hour cycle completes in 24 hours from activation
-  const dailyProfit = (investAmount * plan.dailyProfitPercent) / 100;
-  const hourlyProfit = dailyProfit / 24;
-
-  const newInvestment: DBActiveInvestment = {
-    id: `inv_${Date.now()}`,
-    userId: user.id,
-    planId: plan.id,
-    planName: plan.name,
-    planCategory: plan.category,
-    accentColor: plan.accentColor,
-    investedAmount: investAmount,
-    dailyProfitPercent: plan.dailyProfitPercent,
-    dailyProfitAmount: dailyProfit,
-    hourlyProfitAmount: hourlyProfit,
-    totalExpectedReturn: dailyProfit * plan.durationDays + investAmount,
-    earnedSoFar: 0,
-    durationDays: plan.durationDays,
-    daysRemaining: plan.durationDays,
-    hoursRemaining: 24,
-    startTimestamp: now,
-    startTimeFormatted: startTimeFormatted,
-    startDate: startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-    endDate: endDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-    nextPayoutTime: `Daily at ${startTimeFormatted}`,
-    nextClaimTimestamp: nextClaimTimestamp,
-    status: 'active',
-    lastClaimTimestamp: now,
-    unclaimedProfit: 0,
-  };
-
-  memoryInvestments.unshift(newInvestment);
-
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'plan_investment',
-    amount: investAmount,
-    fee: 0,
-    netAmount: investAmount,
-    status: 'completed',
-    planName: plan.name,
-    referenceCode: `INV-${Date.now().toString().slice(-6)}`,
-    timestamp: getFormattedNow(),
-    notes: `Activated ${plan.name} (${plan.dailyProfitPercent}% Daily ROI, Rs. ${dailyProfit.toFixed(0)}/day at ${startTimeFormatted})`,
-  };
-  memoryTransactions.unshift(tx);
-
-  persistUserUpdate(user.id, { balance: user.balance, investedCapital: user.investedCapital });
-  persistInvestment(newInvestment);
-  persistTx(tx);
-
-  res.json({
-    success: true,
-    investment: newInvestment,
-    user: { balance: user.balance, investedCapital: user.investedCapital },
-    transaction: tx,
-  });
-});
-
-router.post('/investments/claim', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { investmentId } = req.body;
-  const now = Date.now();
-
-  const lockKey = `${user.id}:claim_profit`;
-  if (activeOperationLocks.has(lockKey)) {
-    return res.status(429).json({ error: 'A claim request is already in progress. Please wait a moment.' });
-  }
-
-  activeOperationLocks.add(lockKey);
-
+router.get('/user/sync', authenticate, async (req, res) => {
   try {
-    let claimedTotal = 0;
-    const updatedInvs: DBActiveInvestment[] = [];
+    const user = (req as any).user;
+    const [freshUser, activeInvestments, transactions, notifications] = await Promise.all([
+      prisma.user.findUnique({ where: { id: user.id } }),
+      prisma.activeInvestment.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } }),
+      prisma.transaction.findMany({
+        where: {
+          OR: [{ userId: user.id }, { userPhone: user.phone }],
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.notification.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+    ]);
 
-    if (investmentId === 'all') {
-      const userInvs = memoryInvestments.filter((inv) => inv.userId === user.id && inv.status === 'active');
-      for (const inv of userInvs) {
-        const lastClaim = Number(inv.lastClaimTimestamp) || inv.startTimestamp || now;
-        const nextClaim = inv.nextClaimTimestamp ? Number(inv.nextClaimTimestamp) : lastClaim + 86400000;
-        
-        if (now >= nextClaim && inv.daysRemaining > 0) {
-          const elapsed = now - lastClaim;
-          const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor(elapsed / 86400000)));
-          
-          if (readyCycles > 0) {
-            const profit = readyCycles * inv.dailyProfitAmount;
-            claimedTotal += profit;
-            inv.earnedSoFar = (inv.earnedSoFar || 0) + profit;
-            inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
-            // Advance timestamp cleanly by exact cycle duration to avoid clock drift
-            inv.lastClaimTimestamp = lastClaim + (readyCycles * 86400000);
-            inv.nextClaimTimestamp = inv.lastClaimTimestamp + 86400000;
-            inv.unclaimedProfit = 0;
-
-            if (inv.daysRemaining <= 0) {
-              inv.status = 'completed';
-              user.balance += inv.investedAmount; // Capital return on maturity
-            }
-            updatedInvs.push(inv);
-          }
-        }
-      }
-      if (claimedTotal === 0) {
-        return res.status(400).json({
-          error: 'No investments have completed their 24-hour cycle yet. Please wait for the daily countdown timer to reach 00:00:00.',
-        });
-      }
-    } else {
-      const inv = memoryInvestments.find((i) => i.id === investmentId && i.userId === user.id);
-      if (!inv) return res.status(404).json({ error: 'Investment plan not found.' });
-      if (inv.status !== 'active' || inv.daysRemaining <= 0) {
-        return res.status(400).json({ error: 'This investment plan is already completed.' });
-      }
-
-      const lastClaim = Number(inv.lastClaimTimestamp) || inv.startTimestamp || now;
-      const nextClaim = inv.nextClaimTimestamp ? Number(inv.nextClaimTimestamp) : lastClaim + 86400000;
-
-      if (now < nextClaim) {
-        const msLeft = nextClaim - now;
-        const hours = Math.floor(msLeft / (1000 * 60 * 60));
-        const mins = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
-        const secs = Math.floor((msLeft % (1000 * 60)) / 1000);
-        const timeStr = `${hours}h ${mins}m ${secs}s`;
-        return res.status(400).json({
-          error: `24-hour cycle is still running! Next daily profit of Rs. ${inv.dailyProfitAmount.toLocaleString()} will unlock in ${timeStr} (${inv.nextPayoutTime || 'at ' + inv.startTimeFormatted}).`,
-        });
-      }
-
-      const elapsed = now - lastClaim;
-      const readyCycles = Math.min(inv.daysRemaining, Math.max(1, Math.floor(elapsed / 86400000)));
-      if (readyCycles <= 0) {
-        return res.status(400).json({ error: '24-hour payout cycle not yet reached.' });
-      }
-
-      const profit = readyCycles * inv.dailyProfitAmount;
-      claimedTotal = profit;
-      inv.earnedSoFar = (inv.earnedSoFar || 0) + profit;
-      inv.daysRemaining = Math.max(0, inv.daysRemaining - readyCycles);
-      inv.lastClaimTimestamp = lastClaim + (readyCycles * 86400000);
-      inv.nextClaimTimestamp = inv.lastClaimTimestamp + 86400000;
-      inv.unclaimedProfit = 0;
-
-      if (inv.daysRemaining <= 0) {
-        inv.status = 'completed';
-        user.balance += inv.investedAmount; // Capital return on maturity
-      }
-      updatedInvs.push(inv);
+    if (!freshUser) {
+      return res.status(404).json({ error: 'User record not found' });
     }
 
-    user.balance += claimedTotal;
-    user.totalEarnedProfit += claimedTotal;
+    const unreadCount = notifications.filter((n) => !n.read).length;
+    const { password: _, ...safeUser } = freshUser;
 
-    const tx: DBTransaction = {
-      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
-      type: 'daily_profit',
-      amount: claimedTotal,
-      fee: 0,
-      netAmount: claimedTotal,
-      status: 'completed',
-      referenceCode: `CLAIM-${Date.now().toString().slice(-6)}`,
-      timestamp: getFormattedNow(),
-      notes: `Claimed 24-hour daily profit payout (+Rs. ${claimedTotal.toLocaleString()})`,
-    };
-    memoryTransactions.unshift(tx);
-
-    persistUserUpdate(user.id, { balance: user.balance, totalEarnedProfit: user.totalEarnedProfit });
-    for (const inv of updatedInvs) {
-      persistInvestmentUpdate(inv.id, {
-        earnedSoFar: inv.earnedSoFar,
-        daysRemaining: inv.daysRemaining,
-        status: inv.status,
-        unclaimedProfit: 0,
-        lastClaimTimestamp: inv.lastClaimTimestamp,
-        nextClaimTimestamp: inv.nextClaimTimestamp,
-      });
-    }
-    persistTx(tx);
-
-    addNotification(user.id, {
-      title: 'Daily ROI Profit Claimed! ✨',
-      message: `+Rs. ${claimedTotal.toLocaleString()} 24-hour daily return credited to your wallet balance.`,
-      type: 'profit_claimed',
-      amount: claimedTotal,
-    });
+    const mappedInvestments = activeInvestments.map((i) => ({
+      ...i,
+      lastClaimTimestamp: Number(i.lastClaimTimestamp),
+      status: i.status as 'active' | 'completed',
+    }));
 
     res.json({
       success: true,
-      claimedAmount: claimedTotal,
-      balance: user.balance,
-      totalEarnedProfit: user.totalEarnedProfit,
-      transaction: tx,
-      investments: memoryInvestments.filter((i) => i.userId === user.id),
+      user: {
+        ...safeUser,
+        notificationsCount: unreadCount,
+      },
+      activeInvestments: mappedInvestments,
+      transactions,
+      notifications,
+      unreadNotificationsCount: unreadCount,
     });
-  } finally {
-    activeOperationLocks.delete(lockKey);
+  } catch (err: any) {
+    console.error('[User Sync Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to sync user state' });
+  }
+});
+
+// ----------------------------------------------------
+// PLANS & DEPOSIT CHANNELS CATALOG
+// ----------------------------------------------------
+router.get('/plans', async (req, res) => {
+  try {
+    const plans = await prisma.investmentPlan.findMany({
+      orderBy: { minAmount: 'asc' },
+    });
+    res.json({ success: true, plans });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch investment plans' });
+  }
+});
+
+router.get('/deposit-channels', async (req, res) => {
+  try {
+    const channels = await prisma.depositChannel.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ success: true, channels });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch deposit channels' });
+  }
+});
+
+// ----------------------------------------------------
+// PAYMENT ACCOUNTS API
+// ----------------------------------------------------
+router.get('/payment-accounts', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const accounts = await prisma.paymentAccount.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, accounts });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch payment accounts' });
+  }
+});
+
+router.post('/payment-accounts', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { gateway, accountTitle, accountNumber, bankName, isDefault } = req.body;
+
+    if (!gateway || !accountTitle || !accountNumber) {
+      return res.status(400).json({ error: 'Gateway, account title, and account number are required.' });
+    }
+
+    if (isDefault) {
+      await prisma.paymentAccount.updateMany({
+        where: { userId: user.id },
+        data: { isDefault: false },
+      });
+    }
+
+    const addedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const newAccount = await prisma.paymentAccount.create({
+      data: {
+        userId: user.id,
+        gateway,
+        accountTitle: accountTitle.trim(),
+        accountNumber: accountNumber.trim(),
+        bankName: bankName ? bankName.trim() : null,
+        isDefault: Boolean(isDefault),
+        addedDate,
+      },
+    });
+
+    res.json({ success: true, account: newAccount });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to save payment account' });
+  }
+});
+
+router.delete('/payment-accounts/:id', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { id } = req.params;
+    await prisma.paymentAccount.deleteMany({
+      where: { id, userId: user.id },
+    });
+    res.json({ success: true, message: 'Account removed successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete payment account' });
+  }
+});
+
+// ----------------------------------------------------
+// ACTIVE INVESTMENTS & REAL-TIME ACCRUAL
+// ----------------------------------------------------
+router.get('/investments', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const investments = await prisma.activeInvestment.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const now = Date.now();
+    const mapped = investments.map((inv) => {
+      const lastClaim = Number(inv.lastClaimTimestamp);
+      let calculatedUnclaimed = 0;
+      if (inv.status === 'active' && lastClaim > 0) {
+        const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
+        const profitPerSec = inv.hourlyProfitAmount / 3600;
+        calculatedUnclaimed = elapsedSecs * profitPerSec;
+      }
+
+      return {
+        ...inv,
+        lastClaimTimestamp: lastClaim,
+        unclaimedProfit: Number((inv.unclaimedProfit + calculatedUnclaimed).toFixed(2)),
+        status: inv.status as 'active' | 'completed',
+      };
+    });
+
+    res.json({ success: true, activeInvestments: mapped, investments: mapped });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch investments' });
+  }
+});
+
+router.post('/investments/activate', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { planId, amount } = req.body;
+
+    if (!planId) {
+      return res.status(400).json({ error: 'Please select an investment plan to activate.' });
+    }
+
+    const plan = await prisma.investmentPlan.findUnique({
+      where: { id: planId },
+    });
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Selected investment package is no longer available.' });
+    }
+
+    const investAmount = Number(amount) || plan.minAmount;
+    if (investAmount < plan.minAmount || investAmount > plan.maxAmount) {
+      return res.status(400).json({
+        error: `Investment amount must be between Rs. ${plan.minAmount.toLocaleString()} and Rs. ${plan.maxAmount.toLocaleString()}`,
+      });
+    }
+
+    // Check balance in real-time
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!liveUser || liveUser.balance < investAmount) {
+      return res.status(400).json({
+        error: `Insufficient wallet balance (Current: Rs. ${Number(liveUser?.balance || 0).toLocaleString()}). Please deposit at least Rs. ${investAmount.toLocaleString()} to activate this package.`,
+      });
+    }
+
+    const dailyProfitAmount = (investAmount * plan.dailyProfitPercent) / 100;
+    const hourlyProfitAmount = dailyProfitAmount / 24;
+    const totalExpectedReturn = dailyProfitAmount * plan.durationDays + investAmount;
+    const now = Date.now();
+    const startDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const endDate = new Date(Date.now() + plan.durationDays * 86400000).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    // Execute atomic package purchase in DB
+    const [updatedUser, newInvestment, newTx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: { decrement: investAmount },
+          investedCapital: { increment: investAmount },
+        },
+      }),
+      prisma.activeInvestment.create({
+        data: {
+          userId: user.id,
+          planId: plan.id,
+          planName: plan.name,
+          planCategory: plan.category,
+          accentColor: plan.accentColor,
+          investedAmount: investAmount,
+          dailyProfitPercent: plan.dailyProfitPercent,
+          dailyProfitAmount,
+          hourlyProfitAmount,
+          totalExpectedReturn,
+          earnedSoFar: 0,
+          durationDays: plan.durationDays,
+          daysRemaining: plan.durationDays,
+          hoursRemaining: 24,
+          startDate,
+          endDate,
+          nextPayoutTime: 'Continuous Real-Time Yield',
+          status: 'active',
+          lastClaimTimestamp: BigInt(now),
+          unclaimedProfit: 0,
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'investment_buy',
+          amount: investAmount,
+          fee: 0,
+          netAmount: investAmount,
+          status: 'completed',
+          gateway: 'Wallet_Balance',
+          referenceCode: `PKG-${plan.id.toUpperCase().slice(0, 6)}-${Date.now().toString().slice(-4)}`,
+          timestamp: getFormattedNow(),
+          notes: `Activated ${plan.name} package for Rs. ${investAmount.toLocaleString()}`,
+          planName: plan.name,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Package Activated Successfully! 🚀',
+      `Your investment of Rs. ${investAmount.toLocaleString()} in ${plan.name} is now generating ${plan.dailyProfitPercent}% daily yield!`,
+      'system',
+      investAmount
+    );
+
+    res.json({
+      success: true,
+      message: `Package ${plan.name} activated successfully!`,
+      investment: {
+        ...newInvestment,
+        lastClaimTimestamp: Number(newInvestment.lastClaimTimestamp),
+      },
+      balance: updatedUser.balance,
+      transaction: newTx,
+    });
+  } catch (err: any) {
+    console.error('[Activate Package Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to activate package' });
+  }
+});
+
+router.post('/investments/claim', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { investmentId } = req.body;
+
+    if (!investmentId) {
+      return res.status(400).json({ error: 'Investment ID is required' });
+    }
+
+    const inv = await prisma.activeInvestment.findFirst({
+      where: { id: investmentId, userId: user.id, status: 'active' },
+    });
+
+    if (!inv) {
+      return res.status(404).json({ error: 'Active investment package not found' });
+    }
+
+    const now = Date.now();
+    const lastClaim = Number(inv.lastClaimTimestamp);
+    const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
+    const profitPerSec = inv.hourlyProfitAmount / 3600;
+    const totalClaimable = Number((inv.unclaimedProfit + elapsedSecs * profitPerSec).toFixed(2));
+
+    if (totalClaimable < 0.5) {
+      return res.status(400).json({ error: 'Minimum claimable amount is Rs. 0.50. Please allow more yield to accrue.' });
+    }
+
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const [updatedUser, updatedInv, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: { increment: totalClaimable },
+          totalEarnedProfit: { increment: totalClaimable },
+        },
+      }),
+      prisma.activeInvestment.update({
+        where: { id: inv.id },
+        data: {
+          earnedSoFar: { increment: totalClaimable },
+          unclaimedProfit: 0,
+          lastClaimTimestamp: BigInt(now),
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'daily_profit',
+          amount: totalClaimable,
+          fee: 0,
+          netAmount: totalClaimable,
+          status: 'completed',
+          gateway: 'Yield_Payout',
+          referenceCode: `CLAIM-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Claimed Rs. ${totalClaimable.toLocaleString()} yield from ${inv.planName}`,
+          planName: inv.planName,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Profit Yield Claimed! 💰',
+      `Rs. ${totalClaimable.toLocaleString()} daily yield from ${inv.planName} has been credited to your wallet balance.`,
+      'profit_claimed',
+      totalClaimable
+    );
+
+    res.json({
+      success: true,
+      message: `Rs. ${totalClaimable.toLocaleString()} credited to your balance!`,
+      claimedAmount: totalClaimable,
+      balance: updatedUser.balance,
+      investment: {
+        ...updatedInv,
+        lastClaimTimestamp: Number(updatedInv.lastClaimTimestamp),
+      },
+      transaction: tx,
+    });
+  } catch (err: any) {
+    console.error('[Claim Profit Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to claim profit' });
+  }
+});
+
+router.post('/investments/claim-all', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const activeInvs = await prisma.activeInvestment.findMany({
+      where: { userId: user.id, status: 'active' },
+    });
+
+    if (activeInvs.length === 0) {
+      return res.status(400).json({ error: 'You have no active investment packages earning yield.' });
+    }
+
+    const now = Date.now();
+    let totalClaimed = 0;
+    const invUpdates: Promise<any>[] = [];
+
+    for (const inv of activeInvs) {
+      const lastClaim = Number(inv.lastClaimTimestamp);
+      const elapsedSecs = Math.max(0, (now - lastClaim) / 1000);
+      const profitPerSec = inv.hourlyProfitAmount / 3600;
+      const claimable = Number((inv.unclaimedProfit + elapsedSecs * profitPerSec).toFixed(2));
+
+      if (claimable > 0.05) {
+        totalClaimed += claimable;
+        invUpdates.push(
+          prisma.activeInvestment.update({
+            where: { id: inv.id },
+            data: {
+              earnedSoFar: { increment: claimable },
+              unclaimedProfit: 0,
+              lastClaimTimestamp: BigInt(now),
+            },
+          })
+        );
+      }
+    }
+
+    if (totalClaimed < 0.5) {
+      return res.status(400).json({ error: 'Yield is currently accumulating. Please wait a short while to claim.' });
+    }
+
+    totalClaimed = Number(totalClaimed.toFixed(2));
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    await Promise.all(invUpdates);
+
+    const [updatedUser, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: { increment: totalClaimed },
+          totalEarnedProfit: { increment: totalClaimed },
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'daily_profit',
+          amount: totalClaimed,
+          fee: 0,
+          netAmount: totalClaimed,
+          status: 'completed',
+          gateway: 'Yield_Payout',
+          referenceCode: `CLAIM-ALL-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Batch claimed Rs. ${totalClaimed.toLocaleString()} yield across ${activeInvs.length} packages`,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Batch Yield Claimed! 💰',
+      `Rs. ${totalClaimed.toLocaleString()} combined profit yield has been credited to your wallet balance.`,
+      'profit_claimed',
+      totalClaimed
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully collected Rs. ${totalClaimed.toLocaleString()} in profit!`,
+      totalClaimed,
+      balance: updatedUser.balance,
+      transaction: tx,
+    });
+  } catch (err: any) {
+    console.error('[Claim All Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to claim all profits' });
   }
 });
 
 // ----------------------------------------------------
 // TRANSACTIONS & DEPOSIT / WITHDRAWAL API
 // ----------------------------------------------------
-router.get('/transactions', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const userTx = memoryTransactions.filter((t) => t.userId === user.id);
-  res.json({ success: true, transactions: userTx });
-});
-
-router.post('/deposit', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { amount, gateway, referenceCode, senderPhone, senderTitle } = req.body;
-
-  const depositAmount = Number(amount);
-  if (!depositAmount || depositAmount < 500) {
-    return res.status(400).json({ error: 'Minimum deposit is Rs. 500' });
-  }
-  if (!referenceCode || !referenceCode.trim()) {
-    return res.status(400).json({ error: 'Please enter transaction ID / Reference TID proof from your payment app.' });
-  }
-
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'deposit',
-    amount: depositAmount,
-    fee: 0,
-    netAmount: depositAmount,
-    status: 'pending',
-    gateway: gateway || 'JazzCash',
-    senderPhone: senderPhone || user.phone,
-    senderTitle: senderTitle || user.name,
-    referenceCode: referenceCode.trim(),
-    timestamp: getFormattedNow(),
-    notes: `Deposit submitted via ${gateway}. Awaiting verification.`,
-  };
-
-  memoryTransactions.unshift(tx);
-  persistTx(tx);
-
-  addNotification(user.id, {
-    title: 'Deposit Proof Submitted ⏳',
-    message: `Rs. ${depositAmount.toLocaleString()} deposit via ${gateway} (TID: ${referenceCode.trim()}) is under manual verification.`,
-    type: 'system',
-    amount: depositAmount,
-  });
-
-  res.json({
-    success: true,
-    message: 'Deposit submitted! Your transaction is currently Pending. It will be credited once verified.',
-    transaction: tx,
-  });
-});
-
-router.post('/withdraw', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { amount, gateway, accountTitle, accountNumber, bankName, pin } = req.body;
-
-  if (!pin || pin !== user.securityPin) {
-    return res.status(400).json({ error: 'Incorrect 4-digit Security PIN. Please enter your valid PIN.' });
-  }
-
-  const withdrawAmount = Number(amount);
-  if (!withdrawAmount || withdrawAmount < 500) {
-    return res.status(400).json({ error: 'Minimum withdrawal is Rs. 500' });
-  }
-
-  if (user.balance < withdrawAmount) {
-    return res.status(400).json({
-      error: `Insufficient withdrawable balance! Requested Rs. ${withdrawAmount.toLocaleString()}, but available is Rs. ${user.balance.toLocaleString()}.`,
-    });
-  }
-
-  user.balance -= withdrawAmount;
-
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: 'withdrawal',
-    amount: withdrawAmount,
-    fee: 0,
-    netAmount: withdrawAmount,
-    status: 'pending',
-    gateway: gateway || 'JazzCash',
-    accountTitle: accountTitle || user.name,
-    accountNumber: accountNumber || user.phone,
-    bankName: bankName,
-    referenceCode: `WD-${Date.now().toString().slice(-6)}`,
-    timestamp: getFormattedNow(),
-    notes: `Withdrawal to ${gateway} (${accountNumber}). Awaiting disbursement approval.`,
-  };
-
-  memoryTransactions.unshift(tx);
-  persistUserUpdate(user.id, { balance: user.balance });
-  persistTx(tx);
-
-  addNotification(user.id, {
-    title: 'Withdrawal Request Queued ⏳',
-    message: `Rs. ${withdrawAmount.toLocaleString()} withdrawal to ${gateway} (${accountNumber}) is awaiting dispatch approval.`,
-    type: 'system',
-    amount: withdrawAmount,
-  });
-
-  res.json({
-    success: true,
-    message: 'Withdrawal request submitted! Status is Pending approval.',
-    transaction: tx,
-    balance: user.balance,
-  });
-});
-
-// ----------------------------------------------------
-// REFERRAL NETWORK API (3 Tiers)
-// ----------------------------------------------------
-router.get('/referrals', authenticate, async (req, res) => {
-  const user = (req as any).user as DBUser;
-
-  let allUsersList: DBUser[] = memoryUsers;
-  let allTxList: DBTransaction[] = memoryTransactions;
-
-  if (isPostgresConnected && prisma) {
-    try {
-      const dbUsers = await prisma.user.findMany();
-      if (dbUsers.length > 0) {
-        allUsersList = dbUsers.map((u) => ({
-          ...u,
-          email: u.email || undefined,
-          referredBy: u.referredBy || undefined,
-          lastCheckInDate: u.lastCheckInDate || undefined,
-          avatar: u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        }));
-        // Merge with memoryUsers
-        const existingIds = new Set(allUsersList.map((u) => u.id));
-        const memoryOnlyUsers = memoryUsers.filter((u) => !existingIds.has(u.id));
-        memoryUsers = [...allUsersList, ...memoryOnlyUsers];
-      }
-      const dbTx = await prisma.transaction.findMany();
-      if (dbTx.length > 0) {
-        const mappedDbTx: DBTransaction[] = dbTx.map((t) => ({
-          ...t,
-          userId: t.userId || '',
-          userName: t.userName || undefined,
-          userPhone: t.userPhone || undefined,
-          gateway: t.gateway || undefined,
-          accountTitle: t.accountTitle || undefined,
-          accountNumber: t.accountNumber || undefined,
-          bankName: t.bankName || undefined,
-          senderPhone: t.senderPhone || undefined,
-          senderTitle: t.senderTitle || undefined,
-          notes: t.notes || undefined,
-          planName: t.planName || undefined,
-          status: t.status as any,
-        }));
-        // Merge without overwriting fresh in-memory transactions
-        const dbTxIds = new Set(mappedDbTx.map((t) => t.id));
-        const memOnlyTx = memoryTransactions.filter((t) => !dbTxIds.has(t.id));
-        allTxList = [...memOnlyTx, ...mappedDbTx];
-        memoryTransactions = allTxList;
-      }
-    } catch (err) {
-      console.error('[Prisma Referrals Fetch Error]:', err);
-    }
-  }
-
-  const myCode = (user.referralCode || '').trim().toUpperCase();
-
-  // Tier 1 (Direct Referrals)
-  const tier1Users = allUsersList.filter((u) => u.referredBy && u.referredBy.trim().toUpperCase() === myCode);
-  const tier1Members = tier1Users.map((u) => {
-    const deposits = allTxList
-      .filter((t) => t.userId === u.id && t.type === 'deposit' && t.status === 'completed')
-      .reduce((sum, t) => sum + t.amount, 0);
-    return {
-      id: u.id,
-      name: u.name,
-      phoneMasked: maskPhone(u.phone),
-      joinedDate: u.joinedDate,
-      status: (deposits > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
-      totalDeposited: deposits,
-      commissionEarned: Math.round(deposits * 0.1),
-      tier: 1 as const,
-    };
-  });
-
-  const tier1RefCodes = tier1Users.map((u) => (u.referralCode || '').trim().toUpperCase());
-  // Tier 2 (Referrals of Tier 1)
-  const tier2Users = allUsersList.filter(
-    (u) => u.referredBy && tier1RefCodes.includes(u.referredBy.trim().toUpperCase())
-  );
-  const tier2Members = tier2Users.map((u) => {
-    const deposits = allTxList
-      .filter((t) => t.userId === u.id && t.type === 'deposit' && t.status === 'completed')
-      .reduce((sum, t) => sum + t.amount, 0);
-    return {
-      id: u.id,
-      name: u.name,
-      phoneMasked: maskPhone(u.phone),
-      joinedDate: u.joinedDate,
-      status: (deposits > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
-      totalDeposited: deposits,
-      commissionEarned: Math.round(deposits * 0.04),
-      tier: 2 as const,
-    };
-  });
-
-  const tier2RefCodes = tier2Users.map((u) => (u.referralCode || '').trim().toUpperCase());
-  // Tier 3 (Referrals of Tier 2)
-  const tier3Users = allUsersList.filter(
-    (u) => u.referredBy && tier2RefCodes.includes(u.referredBy.trim().toUpperCase())
-  );
-  const tier3Members = tier3Users.map((u) => {
-    const deposits = allTxList
-      .filter((t) => t.userId === u.id && t.type === 'deposit' && t.status === 'completed')
-      .reduce((sum, t) => sum + t.amount, 0);
-    return {
-      id: u.id,
-      name: u.name,
-      phoneMasked: maskPhone(u.phone),
-      joinedDate: u.joinedDate,
-      status: (deposits > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
-      totalDeposited: deposits,
-      commissionEarned: Math.round(deposits * 0.01),
-      tier: 3 as const,
-    };
-  });
-
-  const allMembers = [...tier1Members, ...tier2Members, ...tier3Members];
-  const totalTeamVolume = allMembers.reduce((sum, m) => sum + m.totalDeposited, 0);
-
-  res.json({
-    success: true,
-    referralCode: user.referralCode,
-    referralTier: user.referralTier,
-    referralEarnings: user.referralEarnings,
-    unclaimedReferralEarnings: user.unclaimedReferralEarnings,
-    totalTeamMembers: allMembers.length,
-    totalTeamVolume,
-    tier1Count: tier1Members.length,
-    tier2Count: tier2Members.length,
-    tier3Count: tier3Members.length,
-    members: allMembers,
-  });
-});
-
-router.post('/referrals/claim', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const lockKey = `${user.id}:claim_referrals`;
-  if (activeOperationLocks.has(lockKey)) {
-    return res.status(429).json({ error: 'Referral commission claim is already in progress.' });
-  }
-
-  activeOperationLocks.add(lockKey);
-
+router.get('/transactions', authenticate, async (req, res) => {
   try {
-    const unclaimed = user.unclaimedReferralEarnings;
-    if (unclaimed <= 0) {
-      return res.status(400).json({ error: 'No unclaimed referral commission available at this time.' });
+    const user = (req as any).user;
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        OR: [{ userId: user.id }, { userPhone: user.phone }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, transactions });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch transactions' });
+  }
+});
+
+router.post('/deposit', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { amount, gateway, referenceCode, senderPhone, senderTitle } = req.body;
+
+    const depositAmount = Number(amount);
+    if (isNaN(depositAmount) || depositAmount < 1000) {
+      return res.status(400).json({ error: 'Minimum deposit amount is Rs. 1,000.' });
     }
 
-    user.balance += unclaimed;
-    user.unclaimedReferralEarnings = 0;
+    if (!referenceCode || typeof referenceCode !== 'string' || referenceCode.trim().length < 4) {
+      return res.status(400).json({ error: 'Please enter transaction ID / Reference TID proof from your payment app.' });
+    }
 
-    const tx: DBTransaction = {
-      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
-      type: 'referral_bonus',
-      amount: unclaimed,
-      fee: 0,
-      netAmount: unclaimed,
-      status: 'completed',
-      referenceCode: `REF-CLAIM-${Date.now().toString().slice(-6)}`,
-      timestamp: getFormattedNow(),
-      notes: 'Multi-tier team commission claimed to main wallet balance',
-    };
-    memoryTransactions.unshift(tx);
+    const cleanRef = referenceCode.trim().toUpperCase();
 
-    persistUserUpdate(user.id, { balance: user.balance, unclaimedReferralEarnings: 0 });
-    persistTx(tx);
+    // Check for duplicate reference code
+    const existingTid = await prisma.transaction.findFirst({
+      where: {
+        referenceCode: { equals: cleanRef, mode: 'insensitive' },
+        type: 'deposit',
+      },
+    });
+
+    if (existingTid) {
+      return res.status(409).json({
+        error: `Transaction ID (${cleanRef}) has already been submitted. Please check your transaction history.`,
+      });
+    }
+
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+    const tx = await prisma.transaction.create({
+      data: {
+        id: txId,
+        userId: user.id,
+        userName: user.name,
+        userPhone: user.phone,
+        type: 'deposit',
+        amount: depositAmount,
+        fee: 0,
+        netAmount: depositAmount,
+        status: 'pending',
+        gateway: gateway || 'JazzCash',
+        senderPhone: senderPhone || user.phone,
+        senderTitle: senderTitle || user.name,
+        referenceCode: cleanRef,
+        timestamp: getFormattedNow(),
+        notes: `Deposit submitted via ${gateway || 'JazzCash'}. Awaiting manual verification.`,
+      },
+    });
+
+    await createUserNotification(
+      user.id,
+      'Deposit Proof Submitted ⏳',
+      `Rs. ${depositAmount.toLocaleString()} deposit via ${gateway || 'JazzCash'} (TID: ${cleanRef}) is under manual verification.`,
+      'system',
+      depositAmount
+    );
 
     res.json({
       success: true,
-      claimedAmount: unclaimed,
-      balance: user.balance,
-      unclaimedReferralEarnings: 0,
+      message: 'Deposit request submitted successfully! Funds will be credited once verified.',
       transaction: tx,
     });
-  } finally {
-    activeOperationLocks.delete(lockKey);
+  } catch (err: any) {
+    console.error('[Deposit Submit Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to submit deposit request' });
+  }
+});
+
+router.post('/withdraw', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { amount, gateway, accountTitle, accountNumber, bankName, pin } = req.body;
+
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!liveUser) return res.status(404).json({ error: 'User not found' });
+
+    if (!pin || String(pin).trim() !== String(liveUser.securityPin).trim()) {
+      return res.status(400).json({ error: 'Incorrect 4-digit Security PIN. Please enter your valid PIN.' });
+    }
+
+    const withdrawAmount = Number(amount);
+    if (isNaN(withdrawAmount) || withdrawAmount < 500) {
+      return res.status(400).json({ error: 'Minimum withdrawal amount is Rs. 500.' });
+    }
+
+    if (liveUser.balance < withdrawAmount) {
+      return res.status(400).json({
+        error: `Insufficient balance. Available: Rs. ${liveUser.balance.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}`,
+      });
+    }
+
+    if (!accountTitle || !accountNumber) {
+      return res.status(400).json({ error: 'Account title and account number are required for withdrawal.' });
+    }
+
+    const fee = Math.round(withdrawAmount * 0.05); // 5% processing fee
+    const netAmount = withdrawAmount - fee;
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const [updatedUser, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: { decrement: withdrawAmount },
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'withdrawal',
+          amount: withdrawAmount,
+          fee,
+          netAmount,
+          status: 'pending',
+          gateway: gateway || 'JazzCash',
+          accountTitle: accountTitle.trim(),
+          accountNumber: accountNumber.trim(),
+          bankName: bankName ? bankName.trim() : null,
+          referenceCode: `WD-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Withdrawal to ${gateway} (${accountNumber}). Awaiting disbursement approval.`,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Withdrawal Request Queued ⏳',
+      `Rs. ${withdrawAmount.toLocaleString()} withdrawal to ${gateway} (${accountNumber}) is awaiting dispatch approval.`,
+      'system',
+      withdrawAmount
+    );
+
+    res.json({
+      success: true,
+      message: 'Withdrawal request submitted! Status is Pending approval.',
+      transaction: tx,
+      balance: updatedUser.balance,
+    });
+  } catch (err: any) {
+    console.error('[Withdraw Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to submit withdrawal request' });
+  }
+});
+
+// ----------------------------------------------------
+// REFERRAL NETWORK API (Real 3-Tier Multi-Level Calculation)
+// ----------------------------------------------------
+router.get('/referrals', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const myCode = (user.referralCode || '').trim().toUpperCase();
+
+    // Tier 1 (Direct Referrals)
+    const tier1Users = await prisma.user.findMany({
+      where: { referredBy: { equals: myCode, mode: 'insensitive' } },
+      select: { id: true, name: true, phone: true, joinedDate: true, referralCode: true },
+    });
+
+    const tier1Ids = tier1Users.map((u) => u.id);
+    const tier1Codes = tier1Users.map((u) => u.referralCode.trim().toUpperCase());
+
+    // Tier 2 (Referrals of Tier 1)
+    const tier2Users = tier1Codes.length > 0
+      ? await prisma.user.findMany({
+          where: { referredBy: { in: tier1Codes, mode: 'insensitive' } },
+          select: { id: true, name: true, phone: true, joinedDate: true, referralCode: true },
+        })
+      : [];
+
+    const tier2Ids = tier2Users.map((u) => u.id);
+    const tier2Codes = tier2Users.map((u) => u.referralCode.trim().toUpperCase());
+
+    // Tier 3 (Referrals of Tier 2)
+    const tier3Users = tier2Codes.length > 0
+      ? await prisma.user.findMany({
+          where: { referredBy: { in: tier2Codes, mode: 'insensitive' } },
+          select: { id: true, name: true, phone: true, joinedDate: true, referralCode: true },
+        })
+      : [];
+
+    const tier3Ids = tier3Users.map((u) => u.id);
+    const allDownlineIds = [...tier1Ids, ...tier2Ids, ...tier3Ids];
+
+    // Fetch all completed deposit volume for downline
+    const downlineDeposits = allDownlineIds.length > 0
+      ? await prisma.transaction.findMany({
+          where: {
+            userId: { in: allDownlineIds },
+            type: 'deposit',
+            status: 'completed',
+          },
+          select: { userId: true, amount: true },
+        })
+      : [];
+
+    const depositMap = new Map<string, number>();
+    for (const d of downlineDeposits) {
+      if (d.userId) {
+        depositMap.set(d.userId, (depositMap.get(d.userId) || 0) + d.amount);
+      }
+    }
+
+    const tier1Members = tier1Users.map((u) => {
+      const dep = depositMap.get(u.id) || 0;
+      return {
+        id: u.id,
+        name: u.name,
+        phoneMasked: maskPhone(u.phone),
+        joinedDate: u.joinedDate,
+        status: (dep > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
+        totalDeposited: dep,
+        commissionEarned: Math.round(dep * 0.1),
+        tier: 1 as const,
+      };
+    });
+
+    const tier2Members = tier2Users.map((u) => {
+      const dep = depositMap.get(u.id) || 0;
+      return {
+        id: u.id,
+        name: u.name,
+        phoneMasked: maskPhone(u.phone),
+        joinedDate: u.joinedDate,
+        status: (dep > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
+        totalDeposited: dep,
+        commissionEarned: Math.round(dep * 0.04),
+        tier: 2 as const,
+      };
+    });
+
+    const tier3Members = tier3Users.map((u) => {
+      const dep = depositMap.get(u.id) || 0;
+      return {
+        id: u.id,
+        name: u.name,
+        phoneMasked: maskPhone(u.phone),
+        joinedDate: u.joinedDate,
+        status: (dep > 0 ? 'Active' : 'Registered') as 'Active' | 'Registered',
+        totalDeposited: dep,
+        commissionEarned: Math.round(dep * 0.01),
+        tier: 3 as const,
+      };
+    });
+
+    const totalTeamMembers = tier1Members.length + tier2Members.length + tier3Members.length;
+    const activeTeamMembers = [...tier1Members, ...tier2Members, ...tier3Members].filter((m) => m.status === 'Active').length;
+    const totalTeamVolume = [...tier1Members, ...tier2Members, ...tier3Members].reduce((s, m) => s + m.totalDeposited, 0);
+
+    const commissionHistory = await prisma.transaction.findMany({
+      where: {
+        userId: user.id,
+        type: 'referral_bonus',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    res.json({
+      success: true,
+      referralCode: user.referralCode,
+      referralEarnings: user.referralEarnings,
+      unclaimedReferralEarnings: user.unclaimedReferralEarnings,
+      tier1Count: tier1Members.length,
+      tier2Count: tier2Members.length,
+      tier3Count: tier3Members.length,
+      totalTeamMembers,
+      activeTeamMembers,
+      totalTeamVolume,
+      tier1Members,
+      tier2Members,
+      tier3Members,
+      commissionHistory,
+    });
+  } catch (err: any) {
+    console.error('[Referrals API Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch referral network' });
+  }
+});
+
+router.post('/referrals/claim', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!liveUser) return res.status(404).json({ error: 'User not found' });
+
+    if (liveUser.unclaimedReferralEarnings <= 0) {
+      return res.status(400).json({ error: 'You have no unclaimed referral commissions at this time.' });
+    }
+
+    const claimAmount = liveUser.unclaimedReferralEarnings;
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const [updatedUser, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: { increment: claimAmount },
+          unclaimedReferralEarnings: 0,
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'referral_bonus',
+          amount: claimAmount,
+          fee: 0,
+          netAmount: claimAmount,
+          status: 'completed',
+          gateway: 'Referral_Commission',
+          referenceCode: `REF-CLAIM-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Claimed Rs. ${claimAmount.toLocaleString()} multi-tier team referral commissions into wallet balance`,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Referral Commission Credited! 👥',
+      `Rs. ${claimAmount.toLocaleString()} team commission has been transferred to your wallet balance.`,
+      'referral_bonus',
+      claimAmount
+    );
+
+    res.json({
+      success: true,
+      message: `Rs. ${claimAmount.toLocaleString()} referral commission claimed into your balance!`,
+      claimedAmount: claimAmount,
+      balance: updatedUser.balance,
+      transaction: tx,
+    });
+  } catch (err: any) {
+    console.error('[Referrals Claim Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to claim referral earnings' });
   }
 });
 
 // ----------------------------------------------------
 // DAILY CHECK-IN / STREAK API
 // ----------------------------------------------------
-router.post('/streak/checkin', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const lockKey = `${user.id}:streak_checkin`;
-  if (activeOperationLocks.has(lockKey)) {
-    return res.status(429).json({ error: 'Check-in is already in progress.' });
-  }
-
-  activeOperationLocks.add(lockKey);
-
+router.post('/streak/checkin', authenticate, async (req, res) => {
   try {
+    const user = (req as any).user;
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!liveUser) return res.status(404).json({ error: 'User not found' });
+
     const todayStr = new Date().toISOString().split('T')[0];
-    if (user.lastCheckInDate === todayStr) {
+    if (liveUser.lastCheckInDate === todayStr) {
       return res.status(400).json({ error: 'You have already checked in today! Come back tomorrow for your next reward.' });
     }
 
-    user.dailyStreak = (user.dailyStreak % 7) + 1;
-    user.lastCheckInDate = todayStr;
-
+    const nextStreak = (liveUser.dailyStreak % 7) + 1;
     const bonusAmounts: Record<number, number> = {
       1: 250,
       2: 300,
@@ -1781,795 +1442,983 @@ router.post('/streak/checkin', authenticate, (req, res) => {
       6: 500,
       7: 1000,
     };
-    const reward = bonusAmounts[user.dailyStreak] || 250;
+    const reward = bonusAmounts[nextStreak] || 250;
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    user.balance += reward;
-    user.totalEarnedProfit += reward;
+    const [updatedUser, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          dailyStreak: nextStreak,
+          lastCheckInDate: todayStr,
+          balance: { increment: reward },
+          totalEarnedProfit: { increment: reward },
+        },
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: 'streak_reward',
+          amount: reward,
+          fee: 0,
+          netAmount: reward,
+          status: 'completed',
+          gateway: 'Loyalty_Bonus',
+          referenceCode: `STREAK-D${nextStreak}`,
+          timestamp: getFormattedNow(),
+          notes: `Day ${nextStreak} Loyalty Check-in Cash Bonus`,
+        },
+      }),
+    ]);
 
-    const tx: DBTransaction = {
-      id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
-      type: 'streak_reward',
-      amount: reward,
-      fee: 0,
-      netAmount: reward,
-      status: 'completed',
-      referenceCode: `STREAK-D${user.dailyStreak}`,
-      timestamp: getFormattedNow(),
-      notes: `Day ${user.dailyStreak} Loyalty Check-in Cash Bonus`,
-    };
-    memoryTransactions.unshift(tx);
-
-    persistUserUpdate(user.id, {
-      balance: user.balance,
-      totalEarnedProfit: user.totalEarnedProfit,
-      dailyStreak: user.dailyStreak,
-      lastCheckInDate: user.lastCheckInDate,
-    });
-    persistTx(tx);
+    await createUserNotification(
+      user.id,
+      `Day ${nextStreak} Streak Bonus Credited! 🔥`,
+      `Rs. ${reward.toLocaleString()} cash bonus was credited for checking in today!`,
+      'system',
+      reward
+    );
 
     res.json({
       success: true,
-      dailyStreak: user.dailyStreak,
+      dailyStreak: updatedUser.dailyStreak,
       reward,
-      balance: user.balance,
+      balance: updatedUser.balance,
       transaction: tx,
     });
-  } finally {
-    activeOperationLocks.delete(lockKey);
+  } catch (err: any) {
+    console.error('[Streak Error]:', err);
+    res.status(500).json({ error: err?.message || 'Check-in failed' });
   }
 });
 
 // ----------------------------------------------------
-// PAYMENT ACCOUNTS API
+// NOTIFICATIONS API (Real Persistent in Database)
 // ----------------------------------------------------
-router.get('/payment-accounts', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const userAccs = memoryPaymentAccounts.filter((a) => a.userId === user.id);
-  res.json({ success: true, accounts: userAccs });
-});
-
-router.post('/payment-accounts', authenticate, async (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { gateway, accountTitle, accountNumber, bankName, isDefault } = req.body;
-
-  if (isDefault) {
-    memoryPaymentAccounts.forEach((a) => {
-      if (a.userId === user.id) a.isDefault = false;
+router.get('/notifications', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const notifications = await prisma.notification.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
     });
-    if (isPostgresConnected && prisma) {
-      try {
-        await prisma.paymentAccount.updateMany({
-          where: { userId: user.id },
-          data: { isDefault: false },
-        });
-      } catch {}
-    }
+    const unreadCount = notifications.filter((n) => !n.read).length;
+    res.json({ success: true, notifications, unreadCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch notifications' });
   }
-
-  const newAcc: DBPaymentAccount = {
-    id: `acc_${Date.now()}`,
-    userId: user.id,
-    gateway,
-    accountTitle,
-    accountNumber,
-    bankName,
-    isDefault: Boolean(isDefault),
-    addedDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-  };
-
-  memoryPaymentAccounts.push(newAcc);
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.paymentAccount.create({ data: newAcc });
-    } catch (e) {
-      console.error('[Prisma Payment Account Create Error]:', e);
-    }
-  }
-
-  res.json({ success: true, account: newAcc });
 });
 
-router.delete('/payment-accounts/:id', authenticate, async (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { id } = req.params;
-  memoryPaymentAccounts = memoryPaymentAccounts.filter((a) => a.id !== id || a.userId !== user.id);
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.paymentAccount.deleteMany({ where: { id, userId: user.id } });
-    } catch (e) {
-      console.error('[Prisma Payment Account Delete Error]:', e);
-    }
-  }
-  res.json({ success: true });
-});
+router.post('/notifications/mark-read', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { notificationId } = req.body;
 
-// ----------------------------------------------------
-// CRM ADMIN ENDPOINTS
-// ----------------------------------------------------
-router.get('/admin/pending', (req, res) => {
-  const pendingTransactions = memoryTransactions.filter((t) => t.status === 'pending');
-  res.json({
-    success: true,
-    pending: pendingTransactions,
-    allUsers: memoryUsers.map(({ password, ...u }) => u),
-  });
-});
-
-router.post('/admin/approve-deposit', (req, res) => {
-  const rawId = req.body.txId || req.body.transactionId || req.body.id;
-  const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
-  if (!txId) {
-    return res.status(400).json({ error: 'Transaction ID is required for approval' });
-  }
-
-  const tx = memoryTransactions.find(
-    (t) =>
-      (t.id === txId ||
-        t.id.toLowerCase() === txId.toLowerCase() ||
-        t.referenceCode === txId ||
-        t.referenceCode?.toLowerCase() === txId.toLowerCase()) &&
-      t.type === 'deposit'
-  );
-  if (!tx) return res.status(404).json({ error: 'Deposit transaction not found' });
-
-  if (tx.status === 'completed') {
-    return res.status(400).json({ error: 'Transaction is already completed' });
-  }
-
-  const user = memoryUsers.find((u) => u.id === tx.userId);
-  if (!user) return res.status(404).json({ error: 'User associated with transaction not found' });
-
-  tx.status = 'completed';
-  tx.notes = `Deposit verified & approved (${tx.gateway} TID: ${tx.referenceCode})`;
-  user.balance += tx.amount;
-
-  persistTxUpdate(tx.id, 'completed', tx.notes);
-  persistUserUpdate(user.id, { balance: user.balance });
-
-  addNotification(user.id, {
-    title: 'Deposit Approved & Credited! 💰',
-    message: `Your deposit of Rs. ${tx.amount.toLocaleString()} via ${tx.gateway} (TID: ${tx.referenceCode}) has been verified. Funds are now in your wallet balance.`,
-    type: 'deposit_approved',
-    amount: tx.amount,
-  });
-
-  if (user.referredBy) {
-    const tier1User = memoryUsers.find((u) => u.referralCode === user.referredBy);
-    if (tier1User) {
-      const comm1 = Math.round(tx.amount * 0.1);
-      tier1User.unclaimedReferralEarnings += comm1;
-      tier1User.referralEarnings += comm1;
-
-      const tx1: DBTransaction = {
-        id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-        userId: tier1User.id,
-        userName: tier1User.name,
-        userPhone: tier1User.phone,
-        type: 'referral_bonus',
-        amount: comm1,
-        fee: 0,
-        netAmount: comm1,
-        status: 'completed',
-        referenceCode: `COMM-T1-${user.referralCode}`,
-        timestamp: getFormattedNow(),
-        notes: `Tier 1 (10%) referral commission from ${user.name}'s Rs. ${tx.amount.toLocaleString()} deposit`,
-      };
-      memoryTransactions.unshift(tx1);
-      persistUserUpdate(tier1User.id, {
-        unclaimedReferralEarnings: tier1User.unclaimedReferralEarnings,
-        referralEarnings: tier1User.referralEarnings,
+    if (notificationId) {
+      await prisma.notification.updateMany({
+        where: { id: notificationId, userId: user.id },
+        data: { read: true },
       });
-      persistTx(tx1);
+    } else {
+      await prisma.notification.updateMany({
+        where: { userId: user.id },
+        data: { read: true },
+      });
+    }
 
-      if (tier1User.referredBy) {
-        const tier2User = memoryUsers.find((u) => u.referralCode === tier1User.referredBy);
-        if (tier2User) {
-          const comm2 = Math.round(tx.amount * 0.04);
-          tier2User.unclaimedReferralEarnings += comm2;
-          tier2User.referralEarnings += comm2;
+    const unreadCount = await prisma.notification.count({
+      where: { userId: user.id, read: false },
+    });
 
-          const tx2: DBTransaction = {
-            id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-            userId: tier2User.id,
-            userName: tier2User.name,
-            userPhone: tier2User.phone,
-            type: 'referral_bonus',
-            amount: comm2,
-            fee: 0,
-            netAmount: comm2,
-            status: 'completed',
-            referenceCode: `COMM-T2-${user.referralCode}`,
-            timestamp: getFormattedNow(),
-            notes: `Tier 2 (4%) team commission from ${user.name}'s deposit`,
-          };
-          memoryTransactions.unshift(tx2);
-          persistUserUpdate(tier2User.id, {
-            unclaimedReferralEarnings: tier2User.unclaimedReferralEarnings,
-            referralEarnings: tier2User.referralEarnings,
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { notificationsCount: unreadCount },
+    });
+
+    res.json({ success: true, unreadCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update notifications' });
+  }
+});
+
+router.post('/notifications/clear', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    await prisma.notification.deleteMany({
+      where: { userId: user.id },
+    });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { notificationsCount: 0 },
+    });
+    res.json({ success: true, message: 'All notifications cleared' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to clear notifications' });
+  }
+});
+
+// ----------------------------------------------------
+// GEMINI AI INVESTMENT ADVISORY
+// ----------------------------------------------------
+router.post('/ai/chat', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Please provide a message for the AI advisor.' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.json({
+        success: true,
+        reply: `Assalam-o-Alaikum ${user.name}! I am your PakInvest Wealth Advisor. You currently have a wallet balance of Rs. ${user.balance.toLocaleString()} and active invested capital of Rs. ${user.investedCapital.toLocaleString()}. Consider our high-performing Starter (5% daily) or Solar Farm (6% daily) packages for guaranteed daily PKR returns to your JazzCash or EasyPaisa wallet.`,
+      });
+    }
+
+    const [userInvestments, userTx] = await Promise.all([
+      prisma.activeInvestment.findMany({ where: { userId: user.id, status: 'active' } }),
+      prisma.transaction.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 5 }),
+    ]);
+
+    const activePackagesSummary = userInvestments
+      .map((i) => `${i.planName} (Invested: Rs. ${i.investedAmount.toLocaleString()}, Daily Yield: ${i.dailyProfitPercent}%)`)
+      .join(', ');
+
+    const promptContext = `
+You are the official Senior Investment Portfolio Consultant for PakInvest, Pakistan's leading digital fixed-yield investment platform.
+User Profile:
+- Name: ${user.name}
+- Wallet Balance: Rs. ${user.balance.toLocaleString()} PKR
+- Invested Capital: Rs. ${user.investedCapital.toLocaleString()} PKR
+- Total Earned Profit: Rs. ${user.totalEarnedProfit.toLocaleString()} PKR
+- Active Packages: ${activePackagesSummary || 'None currently active'}
+- Referral Code: ${user.referralCode} (Earns 10% on Tier 1, 4% on Tier 2, 1% on Tier 3)
+
+PakInvest Official Packages Available:
+1. Pak Starter Spark: Rs. 1,000 (5% daily, 30 days, Rs. 50/day)
+2. Punjab Solar Farm: Rs. 5,000 (6% daily, 30 days, Rs. 300/day)
+3. Sindh Agri Yield: Rs. 10,000 (7% daily, 45 days, Rs. 700/day)
+4. CPEC Logistics: Rs. 25,000 (8% daily, 60 days, Rs. 2,000/day)
+5. Capital Real Estate: Rs. 50,000 (9% daily, 60 days, Rs. 4,500/day)
+6. Tech Unicorn Fund: Rs. 100,000 (10% daily, 90 days, Rs. 10,000/day)
+
+Supported Payment Gateways: JazzCash, EasyPaisa, Meezan Bank (IBFT), USDT (TRC-20).
+
+User Question: "${message}"
+
+Please provide a polite, professional, Urdu-friendly English response (or Urdu Roman phrasing where helpful like "Shukriya", "Assalam-o-Alaikum"). Calculate exact daily earnings if user asks for specific amounts. Keep it concise, helpful, and reassuring.
+`;
+
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: promptContext,
+    });
+
+    const replyText = response.text || 'Assalam-o-Alaikum! Please deposit into your wallet to activate our high-yield investment plans.';
+    res.json({ success: true, reply: replyText });
+  } catch (err: any) {
+    console.error('[AI Advisor Error]:', err);
+    res.json({
+      success: true,
+      reply: 'Assalam-o-Alaikum! Our automated daily dividend packages are actively paying yields. Deposit via JazzCash or EasyPaisa to start earning daily returns directly to your wallet.',
+    });
+  }
+});
+
+// ----------------------------------------------------
+// CRM ADMIN ENDPOINTS (Direct Real Database Operations)
+// ----------------------------------------------------
+router.get('/admin/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { investments: true, transactions: true },
+        },
+      },
+    });
+
+    const enriched = users.map((u) => {
+      const { password: _, ...safeUser } = u;
+      return {
+        ...safeUser,
+        activePackagesCount: u._count.investments,
+      };
+    });
+
+    res.json({ success: true, users: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch CRM users' });
+  }
+});
+
+router.get('/admin/pending', async (req, res) => {
+  try {
+    const [pendingTransactions, allUsers] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          balance: true,
+          investedCapital: true,
+          referralCode: true,
+          isVerified: true,
+          isAdmin: true,
+        },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      pending: pendingTransactions,
+      allUsers,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch pending transactions' });
+  }
+});
+
+router.get('/admin/transactions', async (req, res) => {
+  try {
+    const transactions = await prisma.transaction.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 250,
+    });
+    res.json({ success: true, transactions });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch CRM transactions' });
+  }
+});
+
+router.get('/admin/active-investments', async (req, res) => {
+  try {
+    const investments = await prisma.activeInvestment.findMany({
+      include: {
+        user: {
+          select: { name: true, phone: true, email: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const enriched = investments.map((inv) => ({
+      ...inv,
+      lastClaimTimestamp: Number(inv.lastClaimTimestamp),
+      userName: inv.user?.name || 'Investor',
+      userPhone: inv.user?.phone || '',
+    }));
+
+    res.json({ success: true, activeInvestments: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch active investments' });
+  }
+});
+
+router.get('/admin/stats', async (req, res) => {
+  try {
+    const [
+      totalUsersCount,
+      completedDeposits,
+      completedWithdrawals,
+      pendingDeposits,
+      pendingWithdrawals,
+      activeInvestments,
+      paidProfits,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.transaction.findMany({ where: { type: 'deposit', status: 'completed' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'withdrawal', status: 'completed' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'deposit', status: 'pending' }, select: { amount: true } }),
+      prisma.transaction.findMany({ where: { type: 'withdrawal', status: 'pending' }, select: { amount: true } }),
+      prisma.activeInvestment.findMany({ where: { status: 'active' }, select: { investedAmount: true } }),
+      prisma.transaction.findMany({
+        where: { type: { in: ['daily_profit', 'referral_bonus', 'streak_reward'] }, status: 'completed' },
+        select: { amount: true },
+      }),
+    ]);
+
+    const totalDeposited = completedDeposits.reduce((sum, t) => sum + t.amount, 0);
+    const totalWithdrawn = completedWithdrawals.reduce((sum, t) => sum + t.amount, 0);
+    const totalLockedCapital = activeInvestments.reduce((sum, i) => sum + i.investedAmount, 0);
+    const totalPaidProfits = paidProfits.reduce((sum, t) => sum + t.amount, 0);
+
+    res.json({
+      success: true,
+      stats: {
+        totalDeposited,
+        totalWithdrawn,
+        pendingDepositsCount: pendingDeposits.length,
+        pendingDepositsVolume: pendingDeposits.reduce((s, t) => s + t.amount, 0),
+        pendingWithdrawalsCount: pendingWithdrawals.length,
+        pendingWithdrawalsVolume: pendingWithdrawals.reduce((s, t) => s + t.amount, 0),
+        totalUsersCount,
+        activeInvestmentsCount: activeInvestments.length,
+        totalLockedCapital,
+        totalPaidProfits,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch admin statistics' });
+  }
+});
+
+// Admin Approve Deposit & Credit Referral Network
+router.post('/admin/approve-deposit', async (req, res) => {
+  try {
+    const rawId = req.body.txId || req.body.transactionId || req.body.id;
+    const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
+    if (!txId) {
+      return res.status(400).json({ error: 'Transaction ID is required for approval' });
+    }
+
+    const tx = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id: { equals: txId, mode: 'insensitive' } },
+          { referenceCode: { equals: txId, mode: 'insensitive' } },
+        ],
+        type: 'deposit',
+      },
+    });
+
+    if (!tx) return res.status(404).json({ error: 'Deposit transaction record not found' });
+    if (tx.status === 'completed') {
+      return res.status(400).json({ error: 'Transaction is already completed' });
+    }
+
+    const user = tx.userId ? await prisma.user.findUnique({ where: { id: tx.userId } }) : null;
+    if (!user) return res.status(404).json({ error: 'User associated with transaction not found' });
+
+    // Mark completed & credit balance
+    const notes = `Deposit verified & approved (${tx.gateway} TID: ${tx.referenceCode})`;
+    const [updatedTx, updatedUser] = await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id: tx.id },
+        data: { status: 'completed', notes },
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { balance: { increment: tx.amount } },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      'Deposit Approved & Credited! 💰',
+      `Your deposit of Rs. ${tx.amount.toLocaleString()} via ${tx.gateway} (TID: ${tx.referenceCode}) has been verified. Funds are now in your wallet balance.`,
+      'deposit_approved',
+      tx.amount
+    );
+
+    // Multi-tier commission distribution (Tier 1: 10%, Tier 2: 4%, Tier 3: 1%)
+    if (user.referredBy) {
+      const tier1Parent = await prisma.user.findFirst({
+        where: { referralCode: { equals: user.referredBy, mode: 'insensitive' } },
+      });
+
+      if (tier1Parent) {
+        const comm1 = Math.round(tx.amount * 0.1);
+        const tx1Id = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+        await prisma.$transaction([
+          prisma.user.update({
+            where: { id: tier1Parent.id },
+            data: {
+              unclaimedReferralEarnings: { increment: comm1 },
+              referralEarnings: { increment: comm1 },
+            },
+          }),
+          prisma.transaction.create({
+            data: {
+              id: tx1Id,
+              userId: tier1Parent.id,
+              userName: tier1Parent.name,
+              userPhone: tier1Parent.phone,
+              type: 'referral_bonus',
+              amount: comm1,
+              fee: 0,
+              netAmount: comm1,
+              status: 'completed',
+              referenceCode: `COMM-T1-${tx.referenceCode}`,
+              timestamp: getFormattedNow(),
+              notes: `Tier 1 (10%) referral commission from ${user.name}'s Rs. ${tx.amount.toLocaleString()} deposit`,
+            },
+          }),
+        ]);
+
+        await createUserNotification(
+          tier1Parent.id,
+          'Direct Referral Commission Earned! 👥',
+          `You received Rs. ${comm1.toLocaleString()} (10%) from ${user.name}'s verified deposit.`,
+          'referral_bonus',
+          comm1
+        );
+
+        if (tier1Parent.referredBy) {
+          const tier2Parent = await prisma.user.findFirst({
+            where: { referralCode: { equals: tier1Parent.referredBy, mode: 'insensitive' } },
           });
-          persistTx(tx2);
 
-          if (tier2User.referredBy) {
-            const tier3User = memoryUsers.find((u) => u.referralCode === tier2User.referredBy);
-            if (tier3User) {
-              const comm3 = Math.round(tx.amount * 0.01);
-              tier3User.unclaimedReferralEarnings += comm3;
-              tier3User.referralEarnings += comm3;
+          if (tier2Parent) {
+            const comm2 = Math.round(tx.amount * 0.04);
+            const tx2Id = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
-              const tx3: DBTransaction = {
-                id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-                userId: tier3User.id,
-                userName: tier3User.name,
-                userPhone: tier3User.phone,
-                type: 'referral_bonus',
-                amount: comm3,
-                fee: 0,
-                netAmount: comm3,
-                status: 'completed',
-                referenceCode: `COMM-T3-${user.referralCode}`,
-                timestamp: getFormattedNow(),
-                notes: `Tier 3 (1%) network commission from ${user.name}'s deposit`,
-              };
-              memoryTransactions.unshift(tx3);
-              persistUserUpdate(tier3User.id, {
-                unclaimedReferralEarnings: tier3User.unclaimedReferralEarnings,
-                referralEarnings: tier3User.referralEarnings,
+            await prisma.$transaction([
+              prisma.user.update({
+                where: { id: tier2Parent.id },
+                data: {
+                  unclaimedReferralEarnings: { increment: comm2 },
+                  referralEarnings: { increment: comm2 },
+                },
+              }),
+              prisma.transaction.create({
+                data: {
+                  id: tx2Id,
+                  userId: tier2Parent.id,
+                  userName: tier2Parent.name,
+                  userPhone: tier2Parent.phone,
+                  type: 'referral_bonus',
+                  amount: comm2,
+                  fee: 0,
+                  netAmount: comm2,
+                  status: 'completed',
+                  referenceCode: `COMM-T2-${tx.referenceCode}`,
+                  timestamp: getFormattedNow(),
+                  notes: `Tier 2 (4%) team commission from ${user.name}'s deposit`,
+                },
+              }),
+            ]);
+
+            if (tier2Parent.referredBy) {
+              const tier3Parent = await prisma.user.findFirst({
+                where: { referralCode: { equals: tier2Parent.referredBy, mode: 'insensitive' } },
               });
-              persistTx(tx3);
+
+              if (tier3Parent) {
+                const comm3 = Math.round(tx.amount * 0.01);
+                const tx3Id = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+                await prisma.$transaction([
+                  prisma.user.update({
+                    where: { id: tier3Parent.id },
+                    data: {
+                      unclaimedReferralEarnings: { increment: comm3 },
+                      referralEarnings: { increment: comm3 },
+                    },
+                  }),
+                  prisma.transaction.create({
+                    data: {
+                      id: tx3Id,
+                      userId: tier3Parent.id,
+                      userName: tier3Parent.name,
+                      userPhone: tier3Parent.phone,
+                      type: 'referral_bonus',
+                      amount: comm3,
+                      fee: 0,
+                      netAmount: comm3,
+                      status: 'completed',
+                      referenceCode: `COMM-T3-${tx.referenceCode}`,
+                      timestamp: getFormattedNow(),
+                      notes: `Tier 3 (1%) network commission from ${user.name}'s deposit`,
+                    },
+                  }),
+                ]);
+              }
             }
           }
         }
       }
     }
-  }
 
-  res.json({
-    success: true,
-    message: `Deposit of Rs. ${tx.amount.toLocaleString()} approved! User wallet credited.`,
-    transaction: tx,
-  });
-});
-
-router.post('/admin/decline-deposit', (req, res) => {
-  const rawId = req.body.txId || req.body.transactionId || req.body.id;
-  const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
-  const { reason } = req.body;
-  const tx = memoryTransactions.find(
-    (t) =>
-      (t.id === txId ||
-        t.id.toLowerCase() === txId.toLowerCase() ||
-        t.referenceCode === txId ||
-        t.referenceCode?.toLowerCase() === txId.toLowerCase()) &&
-      t.type === 'deposit'
-  );
-  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
-
-  tx.status = 'declined';
-  tx.notes = reason || 'Deposit declined: Invalid or unverified payment TID proof';
-
-  persistTxUpdate(tx.id, 'declined', tx.notes);
-
-  if (tx.userId) {
-    addNotification(tx.userId, {
-      title: 'Deposit Proof Declined ❌',
-      message: `Deposit of Rs. ${tx.amount.toLocaleString()} (${tx.gateway}) was declined. Reason: ${tx.notes}`,
-      type: 'deposit_declined',
-      amount: tx.amount,
+    res.json({
+      success: true,
+      message: `Deposit of Rs. ${tx.amount.toLocaleString()} approved and credited to ${user.name}'s wallet!`,
+      transaction: updatedTx,
+      balance: updatedUser.balance,
     });
+  } catch (err: any) {
+    console.error('[Admin Approve Deposit Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to approve deposit' });
   }
-
-  res.json({ success: true, message: 'Deposit declined.', transaction: tx });
 });
 
-router.post('/admin/approve-withdrawal', (req, res) => {
-  const rawId = req.body.txId || req.body.transactionId || req.body.id;
-  const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
-  const tx = memoryTransactions.find(
-    (t) =>
-      (t.id === txId ||
-        t.id.toLowerCase() === txId.toLowerCase() ||
-        t.referenceCode === txId ||
-        t.referenceCode?.toLowerCase() === txId.toLowerCase()) &&
-      t.type === 'withdrawal'
-  );
-  if (!tx) return res.status(404).json({ error: 'Withdrawal transaction not found' });
+// Admin Decline Deposit
+router.post('/admin/decline-deposit', async (req, res) => {
+  try {
+    const rawId = req.body.txId || req.body.transactionId || req.body.id;
+    const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
+    const { reason } = req.body;
 
-  if (tx.status === 'completed') {
-    return res.status(400).json({ error: 'Withdrawal is already completed' });
-  }
-
-  const user = memoryUsers.find((u) => u.id === tx.userId);
-  if (user) {
-    user.totalWithdrawn += tx.amount;
-    persistUserUpdate(user.id, { totalWithdrawn: user.totalWithdrawn });
-  }
-
-  tx.status = 'completed';
-  tx.notes = `Dispatched successfully to ${tx.gateway} (${tx.accountNumber})`;
-
-  persistTxUpdate(tx.id, 'completed', tx.notes);
-
-  if (tx.userId) {
-    addNotification(tx.userId, {
-      title: 'Withdrawal Approved & Sent! 🚀',
-      message: `Your withdrawal of Rs. ${tx.amount.toLocaleString()} has been approved and dispatched to ${tx.gateway} (${tx.accountNumber}).`,
-      type: 'withdrawal_approved',
-      amount: tx.amount,
+    const tx = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id: { equals: txId, mode: 'insensitive' } },
+          { referenceCode: { equals: txId, mode: 'insensitive' } },
+        ],
+        type: 'deposit',
+      },
     });
-  }
 
-  res.json({
-    success: true,
-    message: `Withdrawal of Rs. ${tx.amount.toLocaleString()} marked as approved and dispatched!`,
-    transaction: tx,
-  });
-});
+    if (!tx) return res.status(404).json({ error: 'Deposit transaction record not found' });
 
-router.post('/admin/decline-withdrawal', (req, res) => {
-  const rawId = req.body.txId || req.body.transactionId || req.body.id;
-  const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
-  const { reason } = req.body;
-  const tx = memoryTransactions.find(
-    (t) =>
-      (t.id === txId ||
-        t.id.toLowerCase() === txId.toLowerCase() ||
-        t.referenceCode === txId ||
-        t.referenceCode?.toLowerCase() === txId.toLowerCase()) &&
-      t.type === 'withdrawal'
-  );
-  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
-
-  const user = memoryUsers.find((u) => u.id === tx.userId);
-  if (user && tx.status === 'pending') {
-    user.balance += tx.amount;
-    persistUserUpdate(user.id, { balance: user.balance });
-  }
-
-  tx.status = 'declined';
-  tx.notes = reason || 'Withdrawal declined: Account details invalid. Funds refunded to wallet.';
-
-  persistTxUpdate(tx.id, 'declined', tx.notes);
-
-  if (tx.userId) {
-    addNotification(tx.userId, {
-      title: 'Withdrawal Declined & Refunded ⚠️',
-      message: `Your withdrawal of Rs. ${tx.amount.toLocaleString()} was declined (${tx.notes}). Rs. ${tx.amount.toLocaleString()} has been refunded back to your wallet balance.`,
-      type: 'withdrawal_declined',
-      amount: tx.amount,
+    const notes = reason || 'Deposit declined: Invalid Transaction ID proof or funds not received.';
+    const updatedTx = await prisma.transaction.update({
+      where: { id: tx.id },
+      data: { status: 'declined', notes },
     });
+
+    if (tx.userId) {
+      await createUserNotification(
+        tx.userId,
+        'Deposit Verification Declined ⚠️',
+        `Your deposit of Rs. ${tx.amount.toLocaleString()} (${tx.gateway} TID: ${tx.referenceCode}) was declined. Reason: ${notes}`,
+        'deposit_declined',
+        tx.amount
+      );
+    }
+
+    res.json({ success: true, message: 'Deposit declined.', transaction: updatedTx });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to decline deposit' });
   }
-
-  res.json({ success: true, message: 'Withdrawal declined and funds refunded to user.', transaction: tx });
 });
 
-router.get('/admin/stats', (req, res) => {
-  const totalDeposited = memoryTransactions
-    .filter((t) => t.type === 'deposit' && t.status === 'completed')
-    .reduce((sum, t) => sum + t.amount, 0);
+// Admin Approve Withdrawal
+router.post('/admin/approve-withdrawal', async (req, res) => {
+  try {
+    const rawId = req.body.txId || req.body.transactionId || req.body.id;
+    const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
 
-  const totalWithdrawn = memoryTransactions
-    .filter((t) => t.type === 'withdrawal' && t.status === 'completed')
-    .reduce((sum, t) => sum + t.amount, 0);
+    const tx = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id: { equals: txId, mode: 'insensitive' } },
+          { referenceCode: { equals: txId, mode: 'insensitive' } },
+        ],
+        type: 'withdrawal',
+      },
+    });
 
-  const pendingDeposits = memoryTransactions.filter((t) => t.type === 'deposit' && t.status === 'pending');
-  const pendingWithdrawals = memoryTransactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending');
+    if (!tx) return res.status(404).json({ error: 'Withdrawal transaction record not found' });
+    if (tx.status === 'completed') {
+      return res.status(400).json({ error: 'Withdrawal is already completed' });
+    }
 
-  const totalLockedCapital = memoryInvestments
-    .filter((i) => i.status === 'active')
-    .reduce((sum, i) => sum + i.investedAmount, 0);
+    const notes = `Dispatched successfully to ${tx.gateway} (${tx.accountNumber})`;
+    const [updatedTx] = await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id: tx.id },
+        data: { status: 'completed', notes },
+      }),
+      ...(tx.userId
+        ? [
+            prisma.user.update({
+              where: { id: tx.userId },
+              data: { totalWithdrawn: { increment: tx.amount } },
+            }),
+          ]
+        : []),
+    ]);
 
-  const totalPaidProfits = memoryTransactions
-    .filter((t) => (t.type === 'daily_profit' || t.type === 'referral_bonus') && t.status === 'completed')
-    .reduce((sum, t) => sum + t.amount, 0);
+    if (tx.userId) {
+      await createUserNotification(
+        tx.userId,
+        'Withdrawal Approved & Sent! 🚀',
+        `Your withdrawal of Rs. ${tx.amount.toLocaleString()} has been approved and dispatched to ${tx.gateway} (${tx.accountNumber}).`,
+        'withdrawal_approved',
+        tx.amount
+      );
+    }
 
-  res.json({
-    success: true,
-    stats: {
-      totalDeposited,
-      totalWithdrawn,
-      pendingDepositsCount: pendingDeposits.length,
-      pendingDepositsVolume: pendingDeposits.reduce((s, t) => s + t.amount, 0),
-      pendingWithdrawalsCount: pendingWithdrawals.length,
-      pendingWithdrawalsVolume: pendingWithdrawals.reduce((s, t) => s + t.amount, 0),
-      totalUsersCount: memoryUsers.length,
-      activeInvestmentsCount: memoryInvestments.filter((i) => i.status === 'active').length,
-      totalLockedCapital,
-      totalPaidProfits,
-    },
-  });
+    res.json({
+      success: true,
+      message: `Withdrawal of Rs. ${tx.amount.toLocaleString()} marked as approved and dispatched!`,
+      transaction: updatedTx,
+    });
+  } catch (err: any) {
+    console.error('[Admin Approve Withdrawal Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to approve withdrawal' });
+  }
 });
 
-router.get('/admin/plans', (req, res) => {
-  res.json({ success: true, plans: memoryPlans });
+// Admin Decline Withdrawal & Refund User
+router.post('/admin/decline-withdrawal', async (req, res) => {
+  try {
+    const rawId = req.body.txId || req.body.transactionId || req.body.id;
+    const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
+    const { reason } = req.body;
+
+    const tx = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id: { equals: txId, mode: 'insensitive' } },
+          { referenceCode: { equals: txId, mode: 'insensitive' } },
+        ],
+        type: 'withdrawal',
+      },
+    });
+
+    if (!tx) return res.status(404).json({ error: 'Withdrawal transaction record not found' });
+
+    const notes = reason || 'Withdrawal declined: Account details invalid. Funds refunded to wallet.';
+
+    // Refund funds back to user balance if was pending
+    const operations: any[] = [
+      prisma.transaction.update({
+        where: { id: tx.id },
+        data: { status: 'declined', notes },
+      }),
+    ];
+
+    if (tx.userId && tx.status === 'pending') {
+      operations.push(
+        prisma.user.update({
+          where: { id: tx.userId },
+          data: { balance: { increment: tx.amount } },
+        })
+      );
+    }
+
+    const [updatedTx] = await prisma.$transaction(operations);
+
+    if (tx.userId) {
+      await createUserNotification(
+        tx.userId,
+        'Withdrawal Declined & Refunded ⚠️',
+        `Your withdrawal of Rs. ${tx.amount.toLocaleString()} was declined (${notes}). Rs. ${tx.amount.toLocaleString()} has been refunded back to your wallet balance.`,
+        'withdrawal_declined',
+        tx.amount
+      );
+    }
+
+    res.json({ success: true, message: 'Withdrawal declined and funds refunded to user.', transaction: updatedTx });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to decline withdrawal' });
+  }
+});
+
+// Admin Plans Management
+router.get('/admin/plans', async (req, res) => {
+  try {
+    const plans = await prisma.investmentPlan.findMany({ orderBy: { minAmount: 'asc' } });
+    res.json({ success: true, plans });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch plans' });
+  }
 });
 
 router.post('/admin/plans', async (req, res) => {
-  const planData = req.body.plan || req.body;
-  if (!planData.id || !planData.name || !planData.minAmount || !planData.dailyProfitPercent) {
-    return res.status(400).json({ error: 'Missing required plan attributes' });
-  }
-
-  const existingIndex = memoryPlans.findIndex((p) => p.id === planData.id);
-  if (existingIndex >= 0) {
-    memoryPlans[existingIndex] = { ...memoryPlans[existingIndex], ...planData };
-  } else {
-    memoryPlans.push(planData);
-  }
-
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.investmentPlan.upsert({
-        where: { id: planData.id },
-        create: {
-          id: planData.id,
-          name: planData.name,
-          category: planData.category,
-          icon: planData.icon,
-          badge: planData.badge,
-          minAmount: planData.minAmount,
-          maxAmount: planData.maxAmount,
-          fixedAmount: planData.fixedAmount,
-          dailyProfitPercent: planData.dailyProfitPercent,
-          dailyProfitAmount: planData.dailyProfitAmount,
-          durationDays: planData.durationDays,
-          totalRoiPercent: planData.totalRoiPercent,
-          totalReturnAmount: planData.totalReturnAmount,
-          payoutFrequency: planData.payoutFrequency,
-          capitalReturnPolicy: planData.capitalReturnPolicy,
-          description: planData.description,
-          highlights: planData.highlights,
-          popular: Boolean(planData.popular),
-          accentColor: planData.accentColor,
-        },
-        update: planData,
-      });
-    } catch (e) {
-      console.error('[Prisma Plan Upsert Error]:', e);
+  try {
+    const planData = req.body.plan || req.body;
+    if (!planData.id || !planData.name || !planData.minAmount || !planData.dailyProfitPercent) {
+      return res.status(400).json({ error: 'Missing required plan attributes' });
     }
-  }
 
-  res.json({ success: true, message: 'Plan saved successfully', plan: planData });
+    const savedPlan = await prisma.investmentPlan.upsert({
+      where: { id: planData.id },
+      create: {
+        id: planData.id,
+        name: planData.name,
+        category: planData.category,
+        icon: planData.icon,
+        badge: planData.badge || null,
+        minAmount: Number(planData.minAmount),
+        maxAmount: Number(planData.maxAmount || planData.minAmount),
+        fixedAmount: planData.fixedAmount ? Number(planData.fixedAmount) : null,
+        dailyProfitPercent: Number(planData.dailyProfitPercent),
+        dailyProfitAmount: Number(planData.dailyProfitAmount),
+        durationDays: Number(planData.durationDays),
+        totalRoiPercent: Number(planData.totalRoiPercent),
+        totalReturnAmount: Number(planData.totalReturnAmount),
+        payoutFrequency: planData.payoutFrequency || 'daily',
+        capitalReturnPolicy: planData.capitalReturnPolicy || 'Capital returned on maturity',
+        description: planData.description,
+        highlights: Array.isArray(planData.highlights) ? planData.highlights : [],
+        popular: Boolean(planData.popular),
+        accentColor: planData.accentColor || '#10b981',
+      },
+      update: {
+        name: planData.name,
+        category: planData.category,
+        icon: planData.icon,
+        badge: planData.badge || null,
+        minAmount: Number(planData.minAmount),
+        maxAmount: Number(planData.maxAmount || planData.minAmount),
+        fixedAmount: planData.fixedAmount ? Number(planData.fixedAmount) : null,
+        dailyProfitPercent: Number(planData.dailyProfitPercent),
+        dailyProfitAmount: Number(planData.dailyProfitAmount),
+        durationDays: Number(planData.durationDays),
+        totalRoiPercent: Number(planData.totalRoiPercent),
+        totalReturnAmount: Number(planData.totalReturnAmount),
+        payoutFrequency: planData.payoutFrequency || 'daily',
+        capitalReturnPolicy: planData.capitalReturnPolicy || 'Capital returned on maturity',
+        description: planData.description,
+        highlights: Array.isArray(planData.highlights) ? planData.highlights : [],
+        popular: Boolean(planData.popular),
+        accentColor: planData.accentColor || '#10b981',
+      },
+    });
+
+    res.json({ success: true, message: 'Plan saved successfully', plan: savedPlan });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to save plan' });
+  }
 });
 
 router.delete('/admin/plans/:id', async (req, res) => {
-  const { id } = req.params;
-  memoryPlans = memoryPlans.filter((p) => p.id !== id);
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.investmentPlan.delete({ where: { id } });
-    } catch (e) {
-      console.error('[Prisma Plan Delete Error]:', e);
-    }
+  try {
+    const { id } = req.params;
+    await prisma.investmentPlan.delete({ where: { id } });
+    res.json({ success: true, message: 'Plan removed' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete plan' });
   }
-  res.json({ success: true, message: 'Plan removed' });
 });
 
-router.get('/admin/deposit-channels', (req, res) => {
-  res.json({ success: true, channels: memoryDepositChannels });
+// Admin Deposit Channels Management
+router.get('/admin/deposit-channels', async (req, res) => {
+  try {
+    const channels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
+    res.json({ success: true, channels });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch deposit channels' });
+  }
 });
 
 router.post('/admin/deposit-channels', async (req, res) => {
-  const { channels } = req.body;
-  if (Array.isArray(channels)) {
-    memoryDepositChannels = channels.map((c) => ({
-      ...c,
-      id: c.id || `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      isActive: c.isActive !== false,
-    }));
-    if (isPostgresConnected && prisma) {
-      try {
-        await prisma.depositChannel.deleteMany();
-        for (const c of memoryDepositChannels) {
-          await prisma.depositChannel.create({
-            data: {
-              gateway: c.gateway,
-              accountTitle: c.accountTitle,
-              accountNumber: c.accountNumber,
-              bankName: c.bankName,
-              branchCode: c.branchCode,
-              instructions: c.instructions,
-              minDeposit: c.minDeposit,
-              maxDeposit: c.maxDeposit,
-              processingTime: c.processingTime,
-              isActive: c.isActive,
-            },
-          });
-        }
-      } catch (e) {
-        console.error('[Prisma Channels Save Error]:', e);
+  try {
+    const { channels } = req.body;
+    if (Array.isArray(channels)) {
+      await prisma.depositChannel.deleteMany();
+      for (const c of channels) {
+        await prisma.depositChannel.create({
+          data: {
+            gateway: c.gateway,
+            accountTitle: c.accountTitle,
+            accountNumber: c.accountNumber,
+            bankName: c.bankName || null,
+            branchCode: c.branchCode || null,
+            instructions: c.instructions || 'Send money to this official account.',
+            minDeposit: Number(c.minDeposit) || 1000,
+            maxDeposit: Number(c.maxDeposit) || 1000000,
+            processingTime: c.processingTime || 'Instant 24/7 verification',
+            isActive: c.isActive !== false,
+          },
+        });
       }
+      const updatedChannels = await prisma.depositChannel.findMany();
+      return res.json({ success: true, message: 'Deposit channels updated successfully', channels: updatedChannels });
     }
-    return res.json({ success: true, message: 'Deposit channels updated successfully', channels: memoryDepositChannels });
-  }
 
-  const rawChannel = req.body.channel || req.body;
-  if (!rawChannel.gateway || !rawChannel.accountTitle || !rawChannel.accountNumber) {
-    return res.status(400).json({ error: 'Gateway type, account title, and account number are required.' });
-  }
-
-  const channelId = rawChannel.id || `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const channelData: DBOfficialChannel = {
-    id: channelId,
-    gateway: rawChannel.gateway,
-    accountTitle: rawChannel.accountTitle,
-    accountNumber: rawChannel.accountNumber,
-    bankName: rawChannel.bankName || undefined,
-    branchCode: rawChannel.branchCode || undefined,
-    instructions: rawChannel.instructions || 'Send money to this official account and submit the TID.',
-    minDeposit: Number(rawChannel.minDeposit) || 500,
-    maxDeposit: Number(rawChannel.maxDeposit) || 500000,
-    processingTime: rawChannel.processingTime || '5-15 mins manual verification',
-    isActive: rawChannel.isActive !== false,
-  };
-
-  const idx = memoryDepositChannels.findIndex((c) => c.id === channelId || (c.id === rawChannel.id));
-  if (idx >= 0) {
-    memoryDepositChannels[idx] = { ...memoryDepositChannels[idx], ...channelData };
-  } else {
-    // Check if adding with same id or new
-    memoryDepositChannels.push(channelData);
-  }
-
-  if (isPostgresConnected && prisma) {
-    try {
-      await prisma.depositChannel.upsert({
-        where: { gateway: channelData.gateway },
-        create: {
-          gateway: channelData.gateway,
-          accountTitle: channelData.accountTitle,
-          accountNumber: channelData.accountNumber,
-          bankName: channelData.bankName,
-          branchCode: channelData.branchCode,
-          instructions: channelData.instructions,
-          minDeposit: channelData.minDeposit,
-          maxDeposit: channelData.maxDeposit,
-          processingTime: channelData.processingTime,
-          isActive: channelData.isActive,
-        },
-        update: {
-          accountTitle: channelData.accountTitle,
-          accountNumber: channelData.accountNumber,
-          bankName: channelData.bankName,
-          branchCode: channelData.branchCode,
-          instructions: channelData.instructions,
-          minDeposit: channelData.minDeposit,
-          maxDeposit: channelData.maxDeposit,
-          processingTime: channelData.processingTime,
-          isActive: channelData.isActive,
-        },
-      });
-    } catch (e) {
-      console.error('[Prisma Single Channel Save Error]:', e);
+    const rawChannel = req.body.channel || req.body;
+    if (!rawChannel.gateway || !rawChannel.accountTitle || !rawChannel.accountNumber) {
+      return res.status(400).json({ error: 'Gateway type, account title, and account number are required.' });
     }
-  }
 
-  res.json({ success: true, message: 'Channel saved successfully', channel: channelData, channels: memoryDepositChannels });
+    const savedChannel = await prisma.depositChannel.upsert({
+      where: { gateway: rawChannel.gateway },
+      create: {
+        gateway: rawChannel.gateway,
+        accountTitle: rawChannel.accountTitle,
+        accountNumber: rawChannel.accountNumber,
+        bankName: rawChannel.bankName || null,
+        branchCode: rawChannel.branchCode || null,
+        instructions: rawChannel.instructions || 'Send money to this official account.',
+        minDeposit: Number(rawChannel.minDeposit) || 1000,
+        maxDeposit: Number(rawChannel.maxDeposit) || 1000000,
+        processingTime: rawChannel.processingTime || 'Instant 24/7 verification',
+        isActive: rawChannel.isActive !== false,
+      },
+      update: {
+        accountTitle: rawChannel.accountTitle,
+        accountNumber: rawChannel.accountNumber,
+        bankName: rawChannel.bankName || null,
+        branchCode: rawChannel.branchCode || null,
+        instructions: rawChannel.instructions || 'Send money to this official account.',
+        minDeposit: Number(rawChannel.minDeposit) || 1000,
+        maxDeposit: Number(rawChannel.maxDeposit) || 1000000,
+        processingTime: rawChannel.processingTime || 'Instant 24/7 verification',
+        isActive: rawChannel.isActive !== false,
+      },
+    });
+
+    const allChannels = await prisma.depositChannel.findMany();
+    res.json({ success: true, message: 'Channel saved successfully', channel: savedChannel, channels: allChannels });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to save channel' });
+  }
 });
 
 router.delete('/admin/deposit-channels/:id', async (req, res) => {
-  const { id } = req.params;
-  const targetChannel = memoryDepositChannels.find((c) => c.id === id || c.gateway === id);
-  
-  memoryDepositChannels = memoryDepositChannels.filter((c) => c.id !== id && c.gateway !== id);
+  try {
+    const { id } = req.params;
+    await prisma.depositChannel.deleteMany({
+      where: {
+        OR: [{ id }, { gateway: id }],
+      },
+    });
+    const channels = await prisma.depositChannel.findMany();
+    res.json({ success: true, message: 'Channel removed successfully', channels });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete channel' });
+  }
+});
 
-  if (isPostgresConnected && prisma && targetChannel) {
-    try {
-      await prisma.depositChannel.deleteMany({
-        where: {
-          OR: [{ gateway: targetChannel.gateway }, { accountNumber: targetChannel.accountNumber }],
+// Admin User Adjustments (Balance & PIN)
+router.post('/admin/users/adjust-balance', async (req, res) => {
+  try {
+    const { userId, type, amount, reason } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid adjustment amount' });
+    }
+
+    const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const [updatedUser, tx] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          balance: type === 'debit' ? { decrement: numAmount } : { increment: numAmount },
         },
-      });
-    } catch (e) {
-      console.error('[Prisma Channel Delete Error]:', e);
-    }
+      }),
+      prisma.transaction.create({
+        data: {
+          id: txId,
+          userId: user.id,
+          userName: user.name,
+          userPhone: user.phone,
+          type: type === 'debit' ? 'withdrawal' : 'deposit',
+          amount: numAmount,
+          fee: 0,
+          netAmount: numAmount,
+          status: 'completed',
+          gateway: 'System_Balance',
+          referenceCode: `ADJ-${Date.now().toString().slice(-6)}`,
+          timestamp: getFormattedNow(),
+          notes: `Admin Manual ${type === 'debit' ? 'Debit' : 'Credit'}: ${reason || 'Account Balance Correction'}`,
+        },
+      }),
+    ]);
+
+    await createUserNotification(
+      user.id,
+      `Wallet Balance ${type === 'debit' ? 'Debited' : 'Credited'} ⚙️`,
+      `Account balance was adjusted by ${type === 'debit' ? '-' : '+'}Rs. ${numAmount.toLocaleString()}. Reason: ${reason || 'Account Balance Correction'}`,
+      'system',
+      numAmount
+    );
+
+    const { password: _, ...safeUser } = updatedUser;
+    res.json({
+      success: true,
+      message: `Balance adjusted by ${type === 'debit' ? '-' : '+'}Rs. ${numAmount.toLocaleString()}`,
+      user: safeUser,
+      transaction: tx,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to adjust balance' });
   }
-
-  res.json({
-    success: true,
-    message: 'Deposit channel deleted successfully',
-    deletedId: id,
-    channels: memoryDepositChannels,
-  });
 });
 
-router.get('/admin/users', (req, res) => {
-  const usersWithStats = memoryUsers.map((u) => {
-    const { password, ...safeUser } = u;
-    const userActiveInvestments = memoryInvestments.filter((i) => i.userId === u.id && i.status === 'active');
-    const downline = memoryUsers.filter((sub) => sub.referredBy === u.referralCode);
-    return {
-      ...safeUser,
-      activePackagesCount: userActiveInvestments.length,
-      directDownlineCount: downline.length,
-    };
-  });
-  res.json({ success: true, users: usersWithStats });
-});
+router.post('/admin/users/reset-pin', async (req, res) => {
+  try {
+    const { userId, newPin } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-router.post('/admin/users/adjust-balance', (req, res) => {
-  const { userId, type, amount, reason } = req.body;
-  const user = memoryUsers.find((u) => u.id === userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+    const pinToSet = newPin || '1234';
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { securityPin: pinToSet },
+    });
 
-  const numAmount = Number(amount);
-  if (isNaN(numAmount) || numAmount <= 0) {
-    return res.status(400).json({ error: 'Invalid adjustment amount' });
+    res.json({ success: true, message: `Security PIN reset to ${pinToSet}` });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to reset PIN' });
   }
-
-  if (type === 'debit') {
-    user.balance = Math.max(0, user.balance - numAmount);
-  } else {
-    user.balance += numAmount;
-  }
-
-  const tx: DBTransaction = {
-    id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-    userId: user.id,
-    userName: user.name,
-    userPhone: user.phone,
-    type: type === 'debit' ? 'withdrawal' : 'deposit',
-    amount: numAmount,
-    fee: 0,
-    netAmount: numAmount,
-    status: 'completed',
-    gateway: 'System_Balance',
-    referenceCode: `ADJ-${Date.now().toString().slice(-6)}`,
-    timestamp: getFormattedNow(),
-    notes: `Admin Manual ${type === 'debit' ? 'Debit' : 'Credit'}: ${reason || 'Account Balance Correction'}`,
-  };
-
-  memoryTransactions.unshift(tx);
-  persistUserUpdate(user.id, { balance: user.balance });
-  persistTx(tx);
-
-  addNotification(user.id, {
-    title: `Wallet Balance ${type === 'debit' ? 'Debited' : 'Credited'} ⚙️`,
-    message: `Account balance was adjusted by ${type === 'debit' ? '-' : '+'}Rs. ${numAmount.toLocaleString()}. Reason: ${reason || 'Account Balance Correction'}`,
-    type: 'system',
-    amount: numAmount,
-  });
-
-  const { password, ...safeUser } = user;
-  res.json({
-    success: true,
-    message: `Balance adjusted by ${type === 'debit' ? '-' : '+'}Rs. ${numAmount.toLocaleString()}`,
-    user: safeUser,
-  });
 });
 
-router.post('/admin/users/reset-pin', (req, res) => {
-  const { userId, newPin } = req.body;
-  const user = memoryUsers.find((u) => u.id === userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+router.post('/admin/active-investments/cancel', async (req, res) => {
+  try {
+    const { investmentId, reason, refundPrincipal } = req.body;
+    const inv = await prisma.activeInvestment.findUnique({ where: { id: investmentId } });
+    if (!inv) return res.status(404).json({ error: 'Investment record not found' });
 
-  user.securityPin = newPin || '1234';
-  persistUserUpdate(user.id, { securityPin: user.securityPin });
-  res.json({ success: true, message: `Security PIN reset to ${user.securityPin}` });
-});
+    const operations: any[] = [
+      prisma.activeInvestment.update({
+        where: { id: inv.id },
+        data: { status: 'completed' },
+      }),
+    ];
 
-router.get('/admin/transactions', (req, res) => {
-  res.json({ success: true, transactions: memoryTransactions });
-});
-
-router.get('/admin/active-investments', (req, res) => {
-  const enriched = memoryInvestments.map((inv) => {
-    const user = memoryUsers.find((u) => u.id === inv.userId);
-    return {
-      ...inv,
-      userName: user?.name || 'Investor',
-      userPhone: user?.phone || '',
-    };
-  });
-  res.json({ success: true, activeInvestments: enriched });
-});
-
-router.post('/admin/active-investments/cancel', (req, res) => {
-  const { investmentId, reason, refundPrincipal } = req.body;
-  const inv = memoryInvestments.find((i) => i.id === investmentId);
-  if (!inv) return res.status(404).json({ error: 'Investment record not found' });
-
-  inv.status = 'completed';
-  const user = memoryUsers.find((u) => u.id === inv.userId);
-  if (user) {
-    user.investedCapital = Math.max(0, user.investedCapital - inv.investedAmount);
     if (refundPrincipal) {
-      user.balance += inv.investedAmount;
-      const tx: DBTransaction = {
-        id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-        userId: user.id,
-        userName: user.name,
-        userPhone: user.phone,
-        type: 'admin_adjustment',
-        amount: inv.investedAmount,
-        fee: 0,
-        netAmount: inv.investedAmount,
-        status: 'completed',
-        gateway: 'System_Balance',
-        referenceCode: `INV-REFUND-${Date.now().toString().slice(-6)}`,
-        timestamp: getFormattedNow(),
-        notes: `Admin Investment Refund: ${inv.planName} (${reason || 'Terminated early by administrator'})`,
-      };
-      memoryTransactions.unshift(tx);
-      persistTx(tx);
+      operations.push(
+        prisma.user.update({
+          where: { id: inv.userId },
+          data: {
+            investedCapital: { decrement: inv.investedAmount },
+            balance: { increment: inv.investedAmount },
+          },
+        }),
+        prisma.transaction.create({
+          data: {
+            id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+            userId: inv.userId,
+            type: 'admin_adjustment',
+            amount: inv.investedAmount,
+            fee: 0,
+            netAmount: inv.investedAmount,
+            status: 'completed',
+            gateway: 'System_Balance',
+            referenceCode: `INV-REFUND-${Date.now().toString().slice(-6)}`,
+            timestamp: getFormattedNow(),
+            notes: `Admin Investment Refund: ${inv.planName} (${reason || 'Terminated early by administrator'})`,
+          },
+        })
+      );
+    } else {
+      operations.push(
+        prisma.user.update({
+          where: { id: inv.userId },
+          data: {
+            investedCapital: { decrement: inv.investedAmount },
+          },
+        })
+      );
     }
-    persistUserUpdate(user.id, {
-      investedCapital: user.investedCapital,
-      balance: user.balance,
-    });
 
-    addNotification(user.id, {
-      title: 'Investment Package Concluded 📦',
-      message: `Your active investment in ${inv.planName} (Rs. ${inv.investedAmount.toLocaleString()}) has been closed by admin. ${refundPrincipal ? 'Principal was refunded to your wallet.' : ''}`,
-      type: 'system',
-      amount: inv.investedAmount,
-    });
+    await prisma.$transaction(operations);
+
+    await createUserNotification(
+      inv.userId,
+      'Investment Package Concluded 📦',
+      `Your investment in ${inv.planName} (Rs. ${inv.investedAmount.toLocaleString()}) was concluded. ${refundPrincipal ? 'Principal was refunded to your wallet.' : ''}`,
+      'system',
+      inv.investedAmount
+    );
+
+    res.json({ success: true, message: 'Investment package cancelled successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to cancel investment' });
   }
-
-  res.json({ success: true, message: 'Investment updated successfully' });
-});
-
-// ----------------------------------------------------
-// USER NOTIFICATIONS & REAL-TIME SYNC API
-// ----------------------------------------------------
-router.get('/notifications', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const userNotifs = memoryNotifications.filter((n) => n.userId === user.id);
-  const unreadCount = userNotifs.filter((n) => !n.read).length;
-  res.json({
-    success: true,
-    notifications: userNotifs,
-    unreadCount,
-  });
-});
-
-router.post('/notifications/mark-read', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const { notificationId } = req.body;
-  if (notificationId) {
-    const notif = memoryNotifications.find((n) => n.id === notificationId && n.userId === user.id);
-    if (notif) notif.read = true;
-  } else {
-    // mark all as read for user
-    memoryNotifications.forEach((n) => {
-      if (n.userId === user.id) n.read = true;
-    });
-  }
-  const unreadCount = memoryNotifications.filter((n) => n.userId === user.id && !n.read).length;
-  user.notificationsCount = unreadCount;
-  persistUserUpdate(user.id, { notificationsCount: unreadCount });
-  res.json({ success: true, unreadCount });
-});
-
-router.post('/notifications/clear', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  memoryNotifications = memoryNotifications.filter((n) => n.userId !== user.id);
-  user.notificationsCount = 0;
-  persistUserUpdate(user.id, { notificationsCount: 0 });
-  res.json({ success: true });
-});
-
-router.get('/user/sync', authenticate, (req, res) => {
-  const user = (req as any).user as DBUser;
-  const userInvestments = memoryInvestments.filter((i) => i.userId === user.id);
-  const userTransactions = memoryTransactions.filter((t) => t.userId === user.id);
-  const userNotifs = memoryNotifications.filter((n) => n.userId === user.id);
-  const unreadCount = userNotifs.filter((n) => !n.read).length;
-
-  const { password, ...safeUser } = user;
-  res.json({
-    success: true,
-    user: {
-      ...safeUser,
-      notificationsCount: unreadCount,
-    },
-    activeInvestments: userInvestments,
-    transactions: userTransactions,
-    notifications: userNotifs,
-    unreadNotificationsCount: unreadCount,
-  });
 });
 
 // Mount router on both '/api' and '/' for complete versatility
@@ -2581,7 +2430,7 @@ app.all('/api/*', (req, res) => {
   res.status(404).json({ success: false, error: `API route ${req.method} ${req.path} not found.` });
 });
 
-// Global API error middleware
+// Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[Server Uncaught Error]:', err);
   if (req.path.startsWith('/api/')) {
