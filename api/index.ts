@@ -1302,6 +1302,129 @@ router.post('/deposit', authenticate, async (req, res) => {
   }
 });
 
+// Dynamic Withdrawal Processing Fee Configuration (In-memory live config with default rule)
+// Default Rule: If withdrawal amount < 500 PKR, 0% processing fee. Default standard fee is 1% (or configurable percentage/tier).
+interface WithdrawalFeeTier {
+  id: string;
+  condition: 'lt' | 'lte' | 'gt' | 'gte' | 'always';
+  threshold: number;
+  feePercent: number;
+  flatFee: number;
+  label: string;
+}
+
+interface DynamicWithdrawalFeeConfig {
+  enabled: boolean;
+  standardPercent: number; // default fee percentage when no tier matches (e.g. 1% or 2%)
+  minWithdrawal: number;
+  description: string;
+  tiers: WithdrawalFeeTier[];
+}
+
+let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
+  enabled: true,
+  standardPercent: 1.0, // 1% standard
+  minWithdrawal: 500,
+  description: 'Dynamic processing fee tiering for PKR withdrawals',
+  tiers: [
+    {
+      id: 'tier-under-500',
+      condition: 'lt',
+      threshold: 500,
+      feePercent: 0,
+      flatFee: 0,
+      label: 'Under Rs. 500: 0% Processing Fee (Free)',
+    },
+    {
+      id: 'tier-500-to-2500',
+      condition: 'lte',
+      threshold: 2500,
+      feePercent: 1.0,
+      flatFee: 0,
+      label: 'Rs. 500 - Rs. 2,500: 1% Standard Fee',
+    },
+    {
+      id: 'tier-above-2500',
+      condition: 'gt',
+      threshold: 2500,
+      feePercent: 1.5,
+      flatFee: 0,
+      label: 'Above Rs. 2,500: 1.5% Standard Fee',
+    },
+  ],
+};
+
+// Calculate dynamic withdrawal fee based on amount and active rules
+function calculateWithdrawalFee(amount: number): { fee: number; netAmount: number; feePercent: number; ruleMatched: string } {
+  if (!withdrawalFeeConfig.enabled) {
+    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Processing fee disabled (0%)' };
+  }
+
+  // 1. Explicit user requirement rule: If withdrawal amount < 500, 0% processing fee
+  if (amount < 500) {
+    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Under Rs. 500 Promo (0% Free)' };
+  }
+
+  // 2. Evaluate configured tiers
+  for (const tier of withdrawalFeeConfig.tiers) {
+    let matches = false;
+    if (tier.condition === 'lt' && amount < tier.threshold) matches = true;
+    else if (tier.condition === 'lte' && amount <= tier.threshold) matches = true;
+    else if (tier.condition === 'gt' && amount > tier.threshold) matches = true;
+    else if (tier.condition === 'gte' && amount >= tier.threshold) matches = true;
+    else if (tier.condition === 'always') matches = true;
+
+    if (matches) {
+      const calculated = Math.round((amount * (tier.feePercent / 100)) + tier.flatFee);
+      const fee = Math.max(0, calculated);
+      return {
+        fee,
+        netAmount: Math.max(0, amount - fee),
+        feePercent: tier.feePercent,
+        ruleMatched: tier.label,
+      };
+    }
+  }
+
+  // Fallback to standard percent
+  const fee = Math.round(amount * (withdrawalFeeConfig.standardPercent / 100));
+  return {
+    fee,
+    netAmount: Math.max(0, amount - fee),
+    feePercent: withdrawalFeeConfig.standardPercent,
+    ruleMatched: `Standard Fee (${withdrawalFeeConfig.standardPercent}%)`,
+  };
+}
+
+// Public endpoint for clients to get current dynamic withdrawal fee config
+router.get('/withdrawal-fee-config', (req, res) => {
+  res.json({
+    success: true,
+    config: withdrawalFeeConfig,
+  });
+});
+
+// Admin endpoint to adjust the dynamic withdrawal fee rules
+router.post('/admin/withdrawal-fee-config', (req, res) => {
+  try {
+    const { enabled, standardPercent, minWithdrawal, description, tiers } = req.body;
+    if (typeof enabled === 'boolean') withdrawalFeeConfig.enabled = enabled;
+    if (typeof standardPercent === 'number' && !isNaN(standardPercent)) withdrawalFeeConfig.standardPercent = Math.max(0, standardPercent);
+    if (typeof minWithdrawal === 'number' && !isNaN(minWithdrawal)) withdrawalFeeConfig.minWithdrawal = Math.max(100, minWithdrawal);
+    if (typeof description === 'string') withdrawalFeeConfig.description = description;
+    if (Array.isArray(tiers) && tiers.length > 0) {
+      withdrawalFeeConfig.tiers = tiers;
+    }
+    res.json({
+      success: true,
+      message: 'Dynamic withdrawal fee configuration updated successfully.',
+      config: withdrawalFeeConfig,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update withdrawal fee config' });
+  }
+});
+
 router.post('/withdraw', authenticate, async (req, res) => {
   try {
     const user = (req as any).user;
@@ -1315,8 +1438,14 @@ router.post('/withdraw', authenticate, async (req, res) => {
     }
 
     const withdrawAmount = Number(amount);
-    if (isNaN(withdrawAmount) || withdrawAmount < 500) {
-      return res.status(400).json({ error: 'Minimum withdrawal amount is Rs. 500.' });
+    const minLimit = withdrawalFeeConfig.minWithdrawal || 500;
+    if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
+      return res.status(400).json({ error: `Please enter a valid withdrawal amount.` });
+    }
+
+    // Allow user withdrawals down to minLimit (or if test/promo under 500 allows 0% fee)
+    if (withdrawAmount < Math.min(minLimit, 500)) {
+      return res.status(400).json({ error: `Minimum withdrawal amount is Rs. ${Math.min(minLimit, 500)}.` });
     }
 
     if (liveUser.balance < withdrawAmount) {
@@ -1329,8 +1458,8 @@ router.post('/withdraw', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Account title and account number are required for withdrawal.' });
     }
 
-    const fee = Math.round(withdrawAmount * 0.05); // 5% processing fee
-    const netAmount = withdrawAmount - fee;
+    // Dynamic fee calculation (e.g. if amount < 500, 0% fee)
+    const { fee, netAmount, feePercent, ruleMatched } = calculateWithdrawalFee(withdrawAmount);
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
     const [updatedUser, tx] = await prisma.$transaction([

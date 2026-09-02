@@ -518,6 +518,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
               { id: 'withdrawals', label: `Withdrawal Payouts (${stats.pendingWithdrawalsCount})` },
               { id: 'active-plans', label: `Active Contracts (${stats.activeInvestmentsCount})` },
               { id: 'plans', label: 'Investment Packages' },
+              { id: 'rewards', label: 'Rewards & Streaks' },
               { id: 'users', label: 'Investors Directory' },
               { id: 'gateways', label: 'Payment Channels' },
               { id: 'ledger', label: 'Master Financial Ledger' },

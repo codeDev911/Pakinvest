@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Transaction } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   ArrowDownLeft,
   CheckCircle2,
@@ -12,30 +13,53 @@ import {
   FileText,
   Clock,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
 import { DepositDetailModal } from '../components/DepositDetailModal';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmDepositsViewProps {
-  deposits: Transaction[];
+  deposits?: Transaction[];
   onApproveDeposit: (txId: string) => Promise<void>;
   onDeclineDeposit: (txId: string, reason: string) => Promise<void>;
 }
 
 export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
-  deposits,
+  deposits: propDeposits,
   onApproveDeposit,
   onDeclineDeposit,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
+  const [depositsList, setDepositsList] = useState<Transaction[]>(propDeposits || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'declined'>('all');
   const [gatewayFilter, setGatewayFilter] = useState<string>('all');
   const [selectedDeposit, setSelectedDeposit] = useState<Transaction | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  // Tab-specific fetch: fetch deposits independently
+  const fetchDeposits = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/transactions?type=deposit&limit=200'));
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.transactions)) {
+        setDepositsList(data.transactions);
+      }
+    } catch (err) {
+      console.error('Failed to fetch deposits list:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDeposits();
+  }, [fetchDeposits]);
 
   const handleCopy = (e: React.MouseEvent, text: string, id: string) => {
     e.stopPropagation();
@@ -48,11 +72,22 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
     e.stopPropagation();
     setActionLoadingId(txId);
     await onApproveDeposit(txId);
+    await fetchDeposits();
     setActionLoadingId(null);
   };
 
+  const handleModalApprove = async (txId: string) => {
+    await onApproveDeposit(txId);
+    await fetchDeposits();
+  };
+
+  const handleModalDecline = async (txId: string, reason: string) => {
+    await onDeclineDeposit(txId, reason);
+    await fetchDeposits();
+  };
+
   // Only consider deposit transactions
-  const depositTxs = deposits.filter((tx) => tx.type === 'deposit');
+  const depositTxs = depositsList.filter((tx) => tx.type === 'deposit');
 
   // Unique gateways list
   const gateways: string[] = Array.from(new Set(depositTxs.map((d) => d.gateway).filter((g): g is string => Boolean(g))));
@@ -309,8 +344,8 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
         <DepositDetailModal
           deposit={selectedDeposit}
           onClose={() => setSelectedDeposit(null)}
-          onApprove={onApproveDeposit}
-          onDecline={onDeclineDeposit}
+          onApprove={handleModalApprove}
+          onDecline={handleModalDecline}
         />
       )}
     </div>

@@ -47,6 +47,8 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
         return 'Active Investor Package Contracts';
       case 'plans':
         return 'Investment Packages & Yield Rate Configuration';
+      case 'rewards':
+        return 'Daily Streak & Loyalty Rewards Engine';
       case 'users':
         return 'Investor Accounts & Balance Adjustments';
       case 'gateways':
