@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, Transaction } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   Users,
   X,
@@ -20,6 +21,10 @@ import {
   Check,
   Clock,
   Sparkles,
+  Receipt,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -39,7 +44,7 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'adjust-balance' | 'reset-pin'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'ledger' | 'adjust-balance' | 'reset-pin'>('overview');
   
   // Balance adjustment state
   const [adjustType, setAdjustType] = useState<'credit' | 'debit'>('credit');
@@ -50,6 +55,35 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   // PIN reset state
   const [newPin, setNewPin] = useState<string>('');
   const [isResettingPin, setIsResettingPin] = useState(false);
+
+  // User Ledger Transactions state (fast on-demand fetching)
+  const [userTransactions, setUserTransactions] = useState<Transaction[]>([]);
+  const [isLoadingTx, setIsLoadingTx] = useState(false);
+  const [txPage, setTxPage] = useState(1);
+  const [txTotal, setTxTotal] = useState(0);
+  const txLimit = 10;
+
+  useEffect(() => {
+    if (activeTab === 'ledger' && user?.id) {
+      fetchUserLedger(user.id, txPage);
+    }
+  }, [activeTab, user?.id, txPage]);
+
+  const fetchUserLedger = async (userId: string, pageNum: number) => {
+    setIsLoadingTx(true);
+    try {
+      const res = await fetch(getApiUrl(`/api/admin/users/${userId}/transactions?page=${pageNum}&limit=${txLimit}`));
+      const data = await res.json();
+      if (data?.success) {
+        setUserTransactions(data.transactions || []);
+        setTxTotal(data.pagination?.total || 0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch user transactions:', err);
+    } finally {
+      setIsLoadingTx(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -152,6 +186,21 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
             }`}
           >
             Account Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('ledger');
+              setTxPage(1);
+            }}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === 'ledger'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            <span>Ledger Transactions</span>
           </button>
           <button
             type="button"
@@ -266,6 +315,146 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'ledger' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-indigo-400" />
+                    Investor Ledger & Audit Trail
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Showing {txTotal > 0 ? `${(txPage - 1) * txLimit + 1}–${Math.min(txPage * txLimit, txTotal)} of ${txTotal}` : '0'} transactions
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchUserLedger(user.id, txPage)}
+                  disabled={isLoadingTx}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTx ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {isLoadingTx ? (
+                <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
+                  <span>Loading ledger records from database...</span>
+                </div>
+              ) : userTransactions.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl border border-slate-800 bg-slate-950/40 text-slate-400 text-xs">
+                  No ledger transactions recorded for this investor yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {userTransactions.map((tx) => {
+                    const isPositive = tx.type === 'deposit' || tx.type === 'daily_profit' || tx.type === 'referral_bonus';
+                    return (
+                      <div
+                        key={tx.id}
+                        className={`p-3 rounded-2xl border transition-all ${
+                          isDark ? 'bg-slate-950/80 border-slate-800 hover:border-slate-700' : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`p-2 rounded-xl text-xs ${
+                                tx.type === 'deposit'
+                                  ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800'
+                                  : tx.type === 'withdrawal'
+                                  ? 'bg-amber-950/80 text-amber-400 border border-amber-800'
+                                  : 'bg-indigo-950/80 text-indigo-400 border border-indigo-800'
+                              }`}
+                            >
+                              {tx.type === 'deposit' ? (
+                                <ArrowDownLeft className="w-4 h-4" />
+                              ) : tx.type === 'withdrawal' ? (
+                                <ArrowUpRight className="w-4 h-4" />
+                              ) : (
+                                <Receipt className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-white truncate">{tx.id}</span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                    tx.status === 'completed'
+                                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                      : tx.status === 'pending'
+                                      ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                      : 'bg-rose-950 text-rose-400 border border-rose-800'
+                                  }`}
+                                >
+                                  {tx.status.toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                <span className="uppercase font-semibold text-indigo-400">{tx.type.replace('_', ' ')}</span>
+                                <span>•</span>
+                                <span>{tx.timestamp}</span>
+                                {tx.referenceCode && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono text-amber-400 truncate max-w-[120px]">{tx.referenceCode}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right whitespace-nowrap">
+                            <div
+                              className={`font-mono font-black text-sm ${
+                                isPositive ? 'text-emerald-400' : 'text-amber-400'
+                              }`}
+                            >
+                              {isPositive ? '+' : '-'}
+                              {formatPKR(tx.amount)}
+                            </div>
+                            {tx.gateway && (
+                              <div className="text-[10px] text-slate-500 capitalize">{tx.gateway}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Pagination Bar */}
+                  {Math.ceil(txTotal / txLimit) > 1 && (
+                    <div className="flex items-center justify-between pt-2 px-1 text-xs text-slate-400">
+                      <span>
+                        Page {txPage} of {Math.ceil(txTotal / txLimit)}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={txPage === 1 || isLoadingTx}
+                          onClick={() => setTxPage((p) => Math.max(1, p - 1))}
+                          className="p-1.5 rounded-lg border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={txPage >= Math.ceil(txTotal / txLimit) || isLoadingTx}
+                          onClick={() => setTxPage((p) => p + 1)}
+                          className="p-1.5 rounded-lg border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

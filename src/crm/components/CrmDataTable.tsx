@@ -57,6 +57,14 @@ interface CrmDataTableProps<T> {
   emptyIcon?: React.ReactNode;
   defaultSortKey?: string;
   defaultSortDirection?: 'asc' | 'desc';
+  // Server-side pagination support
+  serverPagination?: boolean;
+  totalServerItems?: number;
+  serverPage?: number;
+  onServerPageChange?: (page: number) => void;
+  serverSearch?: string;
+  onServerSearchChange?: (search: string) => void;
+  isLoading?: boolean;
 }
 
 export function CrmDataTable<T>({
@@ -78,21 +86,45 @@ export function CrmDataTable<T>({
   emptyIcon,
   defaultSortKey,
   defaultSortDirection = 'desc',
+  serverPagination = false,
+  totalServerItems,
+  serverPage,
+  onServerPageChange,
+  serverSearch,
+  onServerSearchChange,
+  isLoading = false,
 }: CrmDataTableProps<T>) {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  const [localCurrentPage, setLocalCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [sortKey, setSortKey] = useState<string | undefined>(defaultSortKey);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
   const [jumpPageInput, setJumpPageInput] = useState('');
 
+  const currentPage = serverPagination ? (serverPage || 1) : localCurrentPage;
+  const searchQuery = serverPagination ? (serverSearch !== undefined ? serverSearch : localSearchQuery) : localSearchQuery;
+
+  const setCurrentPage = (action: number | ((prev: number) => number)) => {
+    if (serverPagination) {
+      const nextPage = typeof action === 'function' ? action(currentPage) : action;
+      if (onServerPageChange) onServerPageChange(nextPage);
+    } else {
+      setLocalCurrentPage(action);
+    }
+  };
+
   // Reset to page 1 on search or filter change
   const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-    setCurrentPage(1);
+    if (serverPagination) {
+      if (onServerSearchChange) onServerSearchChange(query);
+      if (onServerPageChange) onServerPageChange(1);
+    } else {
+      setLocalSearchQuery(query);
+      setLocalCurrentPage(1);
+    }
   };
 
   // Sorting handler
@@ -111,6 +143,7 @@ export function CrmDataTable<T>({
 
   // 1. Filter data by search query
   const filteredData = useMemo(() => {
+    if (serverPagination) return data;
     if (!searchQuery.trim()) return data;
     const query = searchQuery.toLowerCase().trim();
 
@@ -134,10 +167,11 @@ export function CrmDataTable<T>({
         return String(val).toLowerCase().includes(query);
       });
     });
-  }, [data, searchQuery, searchFields, columns]);
+  }, [data, searchQuery, searchFields, columns, serverPagination]);
 
   // 2. Sort data
   const sortedData = useMemo(() => {
+    if (serverPagination) return filteredData;
     if (!sortKey) return filteredData;
     const col = columns.find((c) => c.key === sortKey);
     if (!col) return filteredData;
@@ -160,17 +194,18 @@ export function CrmDataTable<T>({
       if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredData, sortKey, sortDirection, columns]);
+  }, [filteredData, sortKey, sortDirection, columns, serverPagination]);
 
   // 3. Pagination math
-  const totalItems = sortedData.length;
+  const totalItems = serverPagination ? (totalServerItems ?? data.length) : sortedData.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
 
   const paginatedData = useMemo(() => {
+    if (serverPagination) return data;
     const start = (safeCurrentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
-  }, [sortedData, safeCurrentPage, pageSize]);
+  }, [sortedData, safeCurrentPage, pageSize, serverPagination, data]);
 
   const startRange = totalItems === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
   const endRange = Math.min(safeCurrentPage * pageSize, totalItems);

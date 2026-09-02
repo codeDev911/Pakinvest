@@ -16,6 +16,7 @@ import { CrmDepositsView } from './views/CrmDepositsView';
 import { CrmWithdrawalsView } from './views/CrmWithdrawalsView';
 import { CrmActivePlansView } from './views/CrmActivePlansView';
 import { CrmPlansView } from './views/CrmPlansView';
+import { CrmRewardsView } from './views/CrmRewardsView';
 import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
@@ -72,22 +73,22 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
     }
   };
 
-  // Fetch all CRM Data
+  // Fetch initial CRM Data (Stats, Pending Queue, Users, Plans, Gateways - No heavy bulk transaction array)
   const loadCrmData = async () => {
     setIsRefreshing(true);
     try {
-      const [statsRes, txRes, usersRes, plansRes, activeInvRes, channelsRes] = await Promise.all([
+      const [statsRes, pendingRes, usersRes, plansRes, activeInvRes, channelsRes] = await Promise.all([
         fetch(getApiUrl('/api/admin/stats')),
-        fetch(getApiUrl('/api/admin/transactions')),
+        fetch(getApiUrl('/api/admin/pending')),
         fetch(getApiUrl('/api/admin/users')),
         fetch(getApiUrl('/api/admin/plans')),
         fetch(getApiUrl('/api/admin/active-investments')),
         fetch(getApiUrl('/api/admin/deposit-channels')),
       ]);
 
-      const [statsData, txData, usersData, plansData, activeInvData, channelsData] = await Promise.all([
+      const [statsData, pendingData, usersData, plansData, activeInvData, channelsData] = await Promise.all([
         safeJson(statsRes),
-        safeJson(txRes),
+        safeJson(pendingRes),
         safeJson(usersRes),
         safeJson(plansRes),
         safeJson(activeInvRes),
@@ -95,7 +96,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
       ]);
 
       if (statsData?.success && statsData?.stats) setStats(statsData.stats);
-      if (txData?.success && txData?.transactions) setAllTransactions(txData.transactions);
+      if (pendingData?.success && pendingData?.pending) setAllTransactions(pendingData.pending);
       if (usersData?.success && usersData?.users) setAllUsers(usersData.users);
       if (plansData?.success && plansData?.plans) setAllPlans(plansData.plans);
       if (activeInvData?.success && activeInvData?.activeInvestments) setAllActiveInvestments(activeInvData.activeInvestments);
@@ -439,6 +440,13 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
             onDeletePlan={handleDeletePlan}
           />
         );
+      case 'rewards':
+        return (
+          <CrmRewardsView
+            onRefresh={loadCrmData}
+            showToast={showToast}
+          />
+        );
       case 'users':
         return (
           <CrmUsersView
@@ -458,7 +466,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
         );
       case 'ledger':
         return (
-          <CrmLedgerView transactions={allTransactions} />
+          <CrmLedgerView />
         );
       default:
         return null;
