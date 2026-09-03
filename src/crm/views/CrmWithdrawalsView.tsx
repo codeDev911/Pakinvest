@@ -42,6 +42,7 @@ interface DynamicWithdrawalFeeConfig {
   standardPercent: number;
   standardFlatFee?: number;
   minWithdrawal: number;
+  maxDailyRequests?: number;
   description: string;
   tiers: WithdrawalFeeTier[];
 }
@@ -80,7 +81,8 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     enabled: true,
     standardPercent: 1.0,
     standardFlatFee: 0,
-    minWithdrawal: 500,
+    minWithdrawal: 300,
+    maxDailyRequests: 3,
     description: 'Dynamic processing fee tiering for PKR withdrawals',
     tiers: [
       {
@@ -611,13 +613,30 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
                   <input
                     type="number"
                     step="50"
-                    min="100"
+                    min="50"
                     value={feeConfig.minWithdrawal}
-                    onChange={(e) => setFeeConfig({ ...feeConfig, minWithdrawal: parseInt(e.target.value, 10) || 500 })}
+                    onChange={(e) => setFeeConfig({ ...feeConfig, minWithdrawal: parseInt(e.target.value, 10) || 300 })}
                     className={`w-full px-3 py-2 rounded-xl text-xs font-bold border ${
                       isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">Minimum withdrawal threshold (Rs. 300 default).</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-white block mb-1">Max Daily Requests Limit</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="20"
+                    value={feeConfig.maxDailyRequests || 3}
+                    onChange={(e) => setFeeConfig({ ...feeConfig, maxDailyRequests: parseInt(e.target.value, 10) || 3 })}
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold border ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Maximum payout requests per user per day (Default: 3).</p>
                 </div>
               </div>
 

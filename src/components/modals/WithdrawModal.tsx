@@ -17,6 +17,7 @@ import {
   Coins,
   Sparkles,
   Tag,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -43,25 +44,48 @@ export const WithdrawModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [step, setStep] = useState<1 | 2>(1); // 1 = Details & Amount, 2 = PIN Confirmation
 
-  // Dynamic fee configuration from server
+  // Dynamic fee configuration and daily quota from server
   const [feeConfig, setFeeConfig] = useState<any>(null);
+  const [dailyStats, setDailyStats] = useState<{
+    todayCount: number;
+    maxDaily: number;
+    remaining: number;
+    canWithdraw: boolean;
+  }>({
+    todayCount: 0,
+    maxDaily: 3,
+    remaining: 3,
+    canWithdraw: true,
+  });
+
+  const fetchWithdrawalInfo = () => {
+    const token = localStorage.getItem('pakinvest_jwt_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(getApiUrl('/api/withdrawal-fee-config'), { headers })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success && data?.config) {
+          setFeeConfig(data.config);
+        }
+        if (data?.userDailyStats) {
+          setDailyStats(data.userDailyStats);
+        }
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     if (isWithdrawModalOpen) {
-      fetch(getApiUrl('/api/withdrawal-fee-config'))
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.success && data?.config) {
-            setFeeConfig(data.config);
-          }
-        })
-        .catch(() => {});
+      fetchWithdrawalInfo();
     }
   }, [isWithdrawModalOpen]);
 
   if (!isWithdrawModalOpen) return null;
 
-  const minWithdrawal = feeConfig?.minWithdrawal ?? 500;
+  const minWithdrawal = feeConfig?.minWithdrawal ?? 300;
+  const maxDaily = feeConfig?.maxDailyRequests ?? dailyStats.maxDaily ?? 3;
 
   // Dynamic fee calculation:
   // Explicit rule: If amount < 500 or feeConfig disabled => 0% processing fee
@@ -112,6 +136,10 @@ export const WithdrawModal: React.FC = () => {
 
   const handleProceedToPin = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dailyStats.canWithdraw || dailyStats.remaining <= 0) {
+      showToast('Daily Limit Reached', `You can only submit up to ${maxDaily} withdrawal requests per day (${dailyStats.todayCount}/${maxDaily} submitted today).`, 'error');
+      return;
+    }
     if (amount < minWithdrawal) {
       showToast('Amount too low', `Minimum withdrawal amount is Rs. ${minWithdrawal.toLocaleString()}`, 'warning');
       return;
@@ -150,6 +178,13 @@ export const WithdrawModal: React.FC = () => {
       setIsWithdrawModalOpen(false);
       setStep(1);
       setPin('');
+      // Update local quota immediately
+      setDailyStats((prev) => ({
+        ...prev,
+        todayCount: prev.todayCount + 1,
+        remaining: Math.max(0, prev.remaining - 1),
+        canWithdraw: prev.remaining - 1 > 0,
+      }));
     }
   };
 
@@ -221,19 +256,49 @@ export const WithdrawModal: React.FC = () => {
           <div className="p-5 overflow-y-auto space-y-5 flex-1">
             {step === 1 ? (
               <form onSubmit={handleProceedToPin} className="space-y-4">
-                {/* Balance Banner */}
-                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between shadow-md">
-                  <div>
-                    <span className="text-[11px] text-slate-400 block">Available Withdrawable Balance</span>
-                    <span className="text-xl font-black text-emerald-400 font-display">
-                      {formatPKR(user.balance)}
+                {/* Balance Banner & Daily Quota */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md border border-slate-700/60 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block font-medium">Available Withdrawable Balance</span>
+                      <span className="text-xl font-black text-emerald-400 font-display">
+                        {formatPKR(user.balance)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Min. Limit</span>
+                      <span className="text-xs font-black text-amber-300 font-mono">{formatPKR(minWithdrawal)}</span>
+                    </div>
+                  </div>
+
+                  {/* Daily Quota Counter Bar */}
+                  <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-300">
+                      <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Daily Withdrawal Limit:</span>
+                    </div>
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md font-mono ${
+                      dailyStats.remaining > 0
+                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/50'
+                        : 'bg-rose-950/80 text-rose-300 border border-rose-700/50'
+                    }`}>
+                      {dailyStats.remaining} of {maxDaily} left today
                     </span>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">Min. Limit</span>
-                    <span className="text-xs font-bold text-slate-200">Rs. 500</span>
-                  </div>
                 </div>
+
+                {/* Daily limit reached alert banner */}
+                {(!dailyStats.canWithdraw || dailyStats.remaining <= 0) && (
+                  <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 flex items-start gap-2.5 text-rose-800 dark:text-rose-300">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />
+                    <div className="text-xs">
+                      <p className="font-bold">Daily Request Limit Reached</p>
+                      <p className="text-[11px] text-rose-700/90 dark:text-rose-400/90 mt-0.5">
+                        You have submitted the maximum allowed {maxDaily} withdrawal requests for today. Please wait until tomorrow to request another payout.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Gateway Selection */}
                 <div>
@@ -414,11 +479,17 @@ export const WithdrawModal: React.FC = () => {
                 {/* Continue button */}
                 <button
                   type="submit"
-                  disabled={amount < minWithdrawal || amount > user.balance}
+                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > user.balance}
                   className="w-full py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition-colors shadow-lg shadow-amber-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
-                  <span>Verify with Security PIN</span>
+                  <span>
+                    {!dailyStats.canWithdraw || dailyStats.remaining <= 0
+                      ? `Daily Limit Reached (${maxDaily}/${maxDaily} Used Today)`
+                      : amount < minWithdrawal
+                      ? `Minimum Rs. ${minWithdrawal.toLocaleString()} Required`
+                      : 'Verify with Security PIN'}
+                  </span>
                 </button>
               </form>
             ) : (

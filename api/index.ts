@@ -1318,15 +1318,26 @@ interface DynamicWithdrawalFeeConfig {
   standardPercent: number; // default fee percentage when no tier matches (e.g. 1% or 2%)
   standardFlatFee?: number; // optional flat PKR fee
   minWithdrawal: number;
+  maxDailyRequests: number; // Daily withdrawal request limit (default 3)
   description: string;
   tiers: WithdrawalFeeTier[];
+}
+
+// Helper: Calculate start of today in Pakistan Standard Time (PKT, UTC+5)
+function getStartOfToday(): Date {
+  const now = new Date();
+  const pktOffsetMs = 5 * 60 * 60 * 1000;
+  const pktDate = new Date(now.getTime() + pktOffsetMs);
+  const startOfPktDay = new Date(Date.UTC(pktDate.getUTCFullYear(), pktDate.getUTCMonth(), pktDate.getUTCDate()));
+  return new Date(startOfPktDay.getTime() - pktOffsetMs);
 }
 
 let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
   enabled: true,
   standardPercent: 1.0, // 1% standard
   standardFlatFee: 0,
-  minWithdrawal: 500,
+  minWithdrawal: 300,
+  maxDailyRequests: 3,
   description: 'Dynamic processing fee tiering for PKR withdrawals',
   tiers: [
     {
@@ -1399,22 +1410,88 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
   };
 }
 
-// Public endpoint for clients to get current dynamic withdrawal fee config
-router.get('/withdrawal-fee-config', (req, res) => {
+// Public endpoint for clients to get current dynamic withdrawal fee config & limits
+router.get('/withdrawal-fee-config', async (req, res) => {
+  let userDailyStats = {
+    todayCount: 0,
+    maxDaily: withdrawalFeeConfig.maxDailyRequests || 3,
+    remaining: withdrawalFeeConfig.maxDailyRequests || 3,
+    canWithdraw: true,
+  };
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+      if (decoded?.userId) {
+        const startOfDay = getStartOfToday();
+        const count = await prisma.transaction.count({
+          where: {
+            userId: decoded.userId,
+            type: 'withdrawal',
+            createdAt: { gte: startOfDay },
+          },
+        });
+        const maxDaily = withdrawalFeeConfig.maxDailyRequests || 3;
+        userDailyStats = {
+          todayCount: count,
+          maxDaily,
+          remaining: Math.max(0, maxDaily - count),
+          canWithdraw: count < maxDaily,
+        };
+      }
+    } catch {
+      // Ignore token parse error for public config
+    }
+  }
+
   res.json({
     success: true,
     config: withdrawalFeeConfig,
+    userDailyStats,
   });
 });
 
-// Admin endpoint to adjust the dynamic withdrawal fee rules
+// Dedicated endpoint to check daily withdrawal quota
+router.get('/withdraw/daily-status', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const startOfDay = getStartOfToday();
+    const todayCount = await prisma.transaction.count({
+      where: {
+        userId: user.id,
+        type: 'withdrawal',
+        createdAt: { gte: startOfDay },
+      },
+    });
+
+    const maxDaily = withdrawalFeeConfig.maxDailyRequests || 3;
+    const minWithdrawal = withdrawalFeeConfig.minWithdrawal || 300;
+    const remaining = Math.max(0, maxDaily - todayCount);
+
+    res.json({
+      success: true,
+      minWithdrawal,
+      maxDailyRequests: maxDaily,
+      todayRequestsCount: todayCount,
+      remainingRequests: remaining,
+      canWithdraw: remaining > 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch daily withdrawal status' });
+  }
+});
+
+// Admin endpoint to adjust the dynamic withdrawal fee rules and limits
 router.post('/admin/withdrawal-fee-config', (req, res) => {
   try {
-    const { enabled, standardPercent, standardFlatFee, minWithdrawal, description, tiers } = req.body;
+    const { enabled, standardPercent, standardFlatFee, minWithdrawal, maxDailyRequests, description, tiers } = req.body;
     if (typeof enabled === 'boolean') withdrawalFeeConfig.enabled = enabled;
     if (typeof standardPercent === 'number' && !isNaN(standardPercent)) withdrawalFeeConfig.standardPercent = Math.max(0, standardPercent);
     if (typeof standardFlatFee === 'number' && !isNaN(standardFlatFee)) withdrawalFeeConfig.standardFlatFee = Math.max(0, standardFlatFee);
-    if (typeof minWithdrawal === 'number' && !isNaN(minWithdrawal)) withdrawalFeeConfig.minWithdrawal = Math.max(100, minWithdrawal);
+    if (typeof minWithdrawal === 'number' && !isNaN(minWithdrawal)) withdrawalFeeConfig.minWithdrawal = Math.max(50, minWithdrawal);
+    if (typeof maxDailyRequests === 'number' && !isNaN(maxDailyRequests)) withdrawalFeeConfig.maxDailyRequests = Math.max(1, maxDailyRequests);
     if (typeof description === 'string') withdrawalFeeConfig.description = description;
     if (Array.isArray(tiers) && tiers.length > 0) {
       withdrawalFeeConfig.tiers = tiers;
@@ -1442,14 +1519,36 @@ router.post('/withdraw', authenticate, async (req, res) => {
     }
 
     const withdrawAmount = Number(amount);
-    const minLimit = withdrawalFeeConfig.minWithdrawal || 500;
+    const minLimit = withdrawalFeeConfig.minWithdrawal || 300;
     if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
       return res.status(400).json({ error: `Please enter a valid withdrawal amount.` });
     }
 
-    // Allow user withdrawals down to minLimit (or if test/promo under 500 allows 0% fee)
-    if (withdrawAmount < Math.min(minLimit, 500)) {
-      return res.status(400).json({ error: `Minimum withdrawal amount is Rs. ${Math.min(minLimit, 500)}.` });
+    // Explicit check: Min amount is 300 PKR
+    if (withdrawAmount < minLimit) {
+      return res.status(400).json({ error: `Minimum withdrawal amount is Rs. ${minLimit.toLocaleString()}.` });
+    }
+
+    // Daily limit check: Up to 3 withdrawal requests per day
+    const maxDaily = withdrawalFeeConfig.maxDailyRequests || 3;
+    const startOfDay = getStartOfToday();
+    const todayWithdrawalsCount = await prisma.transaction.count({
+      where: {
+        userId: user.id,
+        type: 'withdrawal',
+        createdAt: {
+          gte: startOfDay,
+        },
+      },
+    });
+
+    if (todayWithdrawalsCount >= maxDaily) {
+      return res.status(400).json({
+        error: `Daily limit reached! You can submit up to ${maxDaily} withdrawal requests per day (${todayWithdrawalsCount}/${maxDaily} used today). Please try again tomorrow.`,
+        dailyLimitReached: true,
+        maxDailyRequests: maxDaily,
+        todayRequestsCount: todayWithdrawalsCount,
+      });
     }
 
     if (liveUser.balance < withdrawAmount) {
