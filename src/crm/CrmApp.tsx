@@ -73,36 +73,17 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
     }
   };
 
-  // Fetch initial CRM Data (Stats, Pending Queue, Users, Plans, Gateways - No heavy bulk transaction array)
+  // Fetch CRM Stats for navigation badges and counters (Each view now fetches its own dataset independently)
   const loadCrmData = async () => {
     setIsRefreshing(true);
     try {
-      const [statsRes, pendingRes, usersRes, plansRes, activeInvRes, channelsRes] = await Promise.all([
-        fetch(getApiUrl('/api/admin/stats')),
-        fetch(getApiUrl('/api/admin/pending')),
-        fetch(getApiUrl('/api/admin/users')),
-        fetch(getApiUrl('/api/admin/plans')),
-        fetch(getApiUrl('/api/admin/active-investments')),
-        fetch(getApiUrl('/api/admin/deposit-channels')),
-      ]);
-
-      const [statsData, pendingData, usersData, plansData, activeInvData, channelsData] = await Promise.all([
-        safeJson(statsRes),
-        safeJson(pendingRes),
-        safeJson(usersRes),
-        safeJson(plansRes),
-        safeJson(activeInvRes),
-        safeJson(channelsRes),
-      ]);
-
-      if (statsData?.success && statsData?.stats) setStats(statsData.stats);
-      if (pendingData?.success && pendingData?.pending) setAllTransactions(pendingData.pending);
-      if (usersData?.success && usersData?.users) setAllUsers(usersData.users);
-      if (plansData?.success && plansData?.plans) setAllPlans(plansData.plans);
-      if (activeInvData?.success && activeInvData?.activeInvestments) setAllActiveInvestments(activeInvData.activeInvestments);
-      if (channelsData?.success && channelsData?.channels) setAllChannels(channelsData.channels);
+      const statsRes = await fetch(getApiUrl('/api/admin/stats'));
+      const statsData = await safeJson(statsRes);
+      if (statsData?.success && statsData?.stats) {
+        setStats(statsData.stats);
+      }
     } catch (err) {
-      console.error('Failed to load CRM data:', err);
+      console.error('Failed to load CRM stats:', err);
     } finally {
       setIsRefreshing(false);
     }
@@ -137,16 +118,16 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
   };
 
   // Deposit Actions
-  const handleApproveDeposit = async (txId: string) => {
+  const handleApproveDeposit = async (txId: string, channelId?: string, gateway?: string) => {
     try {
       const res = await fetch(getApiUrl('/api/admin/approve-deposit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txId, transactionId: txId }),
+        body: JSON.stringify({ txId, transactionId: txId, channelId, gateway }),
       });
       const data = await safeJson(res);
       if (data?.success) {
-        showToast('Deposit Approved', 'User wallet credited & 3-tier commissions distributed.', 'success');
+        showToast('Deposit Approved', 'User wallet credited & channel balance incremented.', 'success');
         await loadCrmData();
       } else {
         showToast('Approval Failed', data?.error || 'Server error', 'error');
@@ -176,16 +157,35 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
   };
 
   // Withdrawal Actions
-  const handleApproveWithdrawal = async (txId: string) => {
+  const handleApproveWithdrawal = async (
+    txId: string,
+    channelId?: string,
+    gateway?: string,
+    dispatchReference?: string,
+    dispatchNotes?: string
+  ) => {
     try {
       const res = await fetch(getApiUrl('/api/admin/approve-withdrawal'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txId, transactionId: txId }),
+        body: JSON.stringify({
+          txId,
+          transactionId: txId,
+          channelId,
+          gateway,
+          dispatchReference,
+          dispatchNotes,
+        }),
       });
       const data = await safeJson(res);
       if (data?.success) {
-        showToast('Withdrawal Dispatched', 'Marked settled in ledger.', 'success');
+        showToast(
+          'Withdrawal Dispatched',
+          data.channelDeducted
+            ? `Dispatched & deducted from ${data.channelDeducted.gateway} float.`
+            : 'Marked settled in ledger.',
+          'success'
+        );
         await loadCrmData();
       } else {
         showToast('Action Failed', data?.error || 'Server error', 'error');

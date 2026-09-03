@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { UserProfile } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   Users,
   Search,
@@ -16,30 +17,69 @@ import {
   Lock,
   UserCheck,
   Eye,
+  RotateCcw,
 } from 'lucide-react';
 import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
 import { UserDetailModal } from '../components/UserDetailModal';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmUsersViewProps {
-  users: UserProfile[];
+  users?: UserProfile[];
   onAdjustBalance: (userId: string, amount: number, type: 'credit' | 'debit', note: string) => Promise<boolean>;
   onResetPin: (userId: string, newPin: string) => Promise<boolean>;
 }
 
 export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
-  users,
+  users: propUsers,
   onAdjustBalance,
   onResetPin,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
+  const [usersList, setUsersList] = useState<UserProfile[]>(propUsers || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const filteredUsers = users.filter((u) => {
+  // Tab-specific independent fetch
+  const fetchUsers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/users'));
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.users)) {
+        setUsersList(data.users);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users list:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const handleModalAdjustBalance = async (userId: string, amount: number, type: 'credit' | 'debit', note: string) => {
+    const success = await onAdjustBalance(userId, amount, type, note);
+    if (success) {
+      await fetchUsers();
+    }
+    return success;
+  };
+
+  const handleModalResetPin = async (userId: string, newPin: string) => {
+    const success = await onResetPin(userId, newPin);
+    if (success) {
+      await fetchUsers();
+    }
+    return success;
+  };
+
+  const filteredUsers = usersList.filter((u) => {
     if (roleFilter === 'admin' && !u.isAdmin) return false;
     if (roleFilter === 'investor' && u.isAdmin) return false;
     if (statusFilter === 'verified' && !u.isVerified) return false;
@@ -167,8 +207,8 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
   ];
 
   // Summary Metrics
-  const totalBalances = users.reduce((sum, u) => sum + (u.balance || 0), 0);
-  const totalLocked = users.reduce((sum, u) => sum + (u.investedCapital || 0), 0);
+  const totalBalances = usersList.reduce((sum, u) => sum + (u.balance || 0), 0);
+  const totalLocked = usersList.reduce((sum, u) => sum + (u.investedCapital || 0), 0);
 
   return (
     <div className="space-y-6 pb-16">
@@ -183,7 +223,7 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
             Registered Investor Accounts
           </span>
           <p className="text-2xl font-black text-white tracking-tight mt-1">
-            {users.length} Users
+            {usersList.length} Users
           </p>
         </div>
 
@@ -242,8 +282,8 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
         <UserDetailModal
           user={selectedUser}
           onClose={() => setSelectedUser(null)}
-          onAdjustBalance={onAdjustBalance}
-          onResetPin={onResetPin}
+          onAdjustBalance={handleModalAdjustBalance}
+          onResetPin={handleModalResetPin}
         />
       )}
     </div>

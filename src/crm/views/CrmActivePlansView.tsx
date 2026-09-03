@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ActiveInvestment } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   Package,
   Search,
@@ -20,29 +21,51 @@ import { ActivePlanDetailModal } from '../components/ActivePlanDetailModal';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmActivePlansViewProps {
-  activeInvestments: ActiveInvestment[];
+  activeInvestments?: ActiveInvestment[];
   onCancelInvestment?: (invId: string, reason: string, refundPrincipal: boolean) => Promise<boolean>;
 }
 
 export const CrmActivePlansView: React.FC<CrmActivePlansViewProps> = ({
-  activeInvestments,
+  activeInvestments: propInvestments,
   onCancelInvestment,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
+  const [investmentsList, setInvestmentsList] = useState<ActiveInvestment[]>(propInvestments || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedInvestment, setSelectedInvestment] = useState<ActiveInvestment | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
+  // Independent fetch on mount
+  const fetchActiveInvestments = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/active-investments'));
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.activeInvestments)) {
+        setInvestmentsList(data.activeInvestments);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active investments:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchActiveInvestments();
+  }, [fetchActiveInvestments]);
+
   // Filter data
-  const filteredInvestments = activeInvestments.filter((inv) => {
+  const filteredInvestments = investmentsList.filter((inv) => {
     if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
     if (categoryFilter !== 'all' && inv.planCategory !== categoryFilter) return false;
     return true;
   });
 
-  const categories: string[] = Array.from(new Set(activeInvestments.map((i) => i.planCategory).filter((c): c is string => Boolean(c))));
+  const categories: string[] = Array.from(new Set(investmentsList.map((i) => i.planCategory).filter((c): c is string => Boolean(c))));
 
   const filterGroups: FilterGroup[] = [
     {
@@ -178,10 +201,10 @@ export const CrmActivePlansView: React.FC<CrmActivePlansViewProps> = ({
   ];
 
   // Summary Metrics
-  const totalActiveCapital = activeInvestments
+  const totalActiveCapital = investmentsList
     .filter((i) => i.status === 'active')
     .reduce((sum, i) => sum + i.investedAmount, 0);
-  const totalDailyCommittedProfit = activeInvestments
+  const totalDailyCommittedProfit = investmentsList
     .filter((i) => i.status === 'active')
     .reduce((sum, i) => sum + i.dailyProfitAmount, 0);
 
@@ -198,7 +221,7 @@ export const CrmActivePlansView: React.FC<CrmActivePlansViewProps> = ({
             Total Active Subscriptions
           </span>
           <p className="text-2xl font-black text-emerald-500 tracking-tight mt-1">
-            {activeInvestments.filter((i) => i.status === 'active').length} Contracts
+            {investmentsList.filter((i) => i.status === 'active').length} Contracts
           </p>
         </div>
 

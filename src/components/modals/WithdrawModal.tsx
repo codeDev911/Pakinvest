@@ -64,14 +64,12 @@ export const WithdrawModal: React.FC = () => {
   const minWithdrawal = feeConfig?.minWithdrawal ?? 500;
 
   // Dynamic fee calculation:
-  // Explicit rule: If amount < 500 => 0% processing fee
-  let feeRatePercent = 1.0;
-  let feeBadgeLabel = '1% Standard Fee';
+  // Explicit rule: If amount < 500 or feeConfig disabled => 0% processing fee
   let platformFee = 0;
 
-  if (amount < 500) {
-    feeRatePercent = 0;
-    feeBadgeLabel = '0% Free Processing (< Rs. 500)';
+  if (feeConfig && feeConfig.enabled === false) {
+    platformFee = 0;
+  } else if (amount < 500) {
     platformFee = 0;
   } else if (feeConfig?.tiers && Array.isArray(feeConfig.tiers)) {
     let matchedTier = null;
@@ -83,17 +81,14 @@ export const WithdrawModal: React.FC = () => {
       if (t.condition === 'always') { matchedTier = t; break; }
     }
     if (matchedTier) {
-      feeRatePercent = matchedTier.feePercent;
-      feeBadgeLabel = matchedTier.label || `${matchedTier.feePercent}% Fee`;
       platformFee = Math.round((amount * (matchedTier.feePercent / 100)) + (matchedTier.flatFee || 0));
     } else {
-      feeRatePercent = feeConfig.standardPercent ?? 1.0;
-      feeBadgeLabel = `${feeRatePercent}% Standard Fee`;
-      platformFee = Math.round(amount * (feeRatePercent / 100));
+      const feeRatePercent = feeConfig.standardPercent ?? 1.0;
+      const flat = feeConfig.standardFlatFee ?? 0;
+      platformFee = Math.round(amount * (feeRatePercent / 100) + flat);
     }
   } else {
     // Fallback standard calculation
-    feeRatePercent = 1.0;
     platformFee = Math.round(amount * 0.01);
   }
 
@@ -405,18 +400,9 @@ export const WithdrawModal: React.FC = () => {
                     <span className="font-semibold text-slate-800 dark:text-slate-200">{formatPKR(amount)}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1.5">
-                      <span>Processing Fee</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                        platformFee === 0 
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' 
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}>
-                        {feeBadgeLabel}
-                      </span>
-                    </span>
-                    <span className={`font-semibold ${platformFee === 0 ? 'text-emerald-500 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
-                      {platformFee === 0 ? 'Rs. 0 (Free)' : `-${formatPKR(platformFee)}`}
+                    <span>Processing Fee</span>
+                    <span className={`font-semibold font-mono ${platformFee === 0 ? 'text-emerald-500 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
+                      {formatPKR(platformFee)}
                     </span>
                   </div>
                   <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between font-bold text-sm">

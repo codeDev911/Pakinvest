@@ -138,7 +138,7 @@ export const WithdrawalDetailModal: React.FC<WithdrawalDetailModalProps> = ({
                 {formatPKR(withdrawal.netAmount || withdrawal.amount)}
               </p>
               <p className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                Requested: {formatPKR(withdrawal.amount)} (0% Fee)
+                Requested: {formatPKR(withdrawal.amount)} • Fee: {formatPKR(withdrawal.fee || 0)}
               </p>
             </div>
 

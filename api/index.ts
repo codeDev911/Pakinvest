@@ -1316,6 +1316,7 @@ interface WithdrawalFeeTier {
 interface DynamicWithdrawalFeeConfig {
   enabled: boolean;
   standardPercent: number; // default fee percentage when no tier matches (e.g. 1% or 2%)
+  standardFlatFee?: number; // optional flat PKR fee
   minWithdrawal: number;
   description: string;
   tiers: WithdrawalFeeTier[];
@@ -1324,6 +1325,7 @@ interface DynamicWithdrawalFeeConfig {
 let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
   enabled: true,
   standardPercent: 1.0, // 1% standard
+  standardFlatFee: 0,
   minWithdrawal: 500,
   description: 'Dynamic processing fee tiering for PKR withdrawals',
   tiers: [
@@ -1333,7 +1335,7 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
       threshold: 500,
       feePercent: 0,
       flatFee: 0,
-      label: 'Under Rs. 500: 0% Processing Fee (Free)',
+      label: 'Under Rs. 500: Free',
     },
     {
       id: 'tier-500-to-2500',
@@ -1341,7 +1343,7 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
       threshold: 2500,
       feePercent: 1.0,
       flatFee: 0,
-      label: 'Rs. 500 - Rs. 2,500: 1% Standard Fee',
+      label: 'Rs. 500 - Rs. 2,500',
     },
     {
       id: 'tier-above-2500',
@@ -1349,7 +1351,7 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
       threshold: 2500,
       feePercent: 1.5,
       flatFee: 0,
-      label: 'Above Rs. 2,500: 1.5% Standard Fee',
+      label: 'Above Rs. 2,500',
     },
   ],
 };
@@ -1357,12 +1359,12 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
 // Calculate dynamic withdrawal fee based on amount and active rules
 function calculateWithdrawalFee(amount: number): { fee: number; netAmount: number; feePercent: number; ruleMatched: string } {
   if (!withdrawalFeeConfig.enabled) {
-    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Processing fee disabled (0%)' };
+    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Rs. 0' };
   }
 
   // 1. Explicit user requirement rule: If withdrawal amount < 500, 0% processing fee
   if (amount < 500) {
-    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Under Rs. 500 Promo (0% Free)' };
+    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Rs. 0' };
   }
 
   // 2. Evaluate configured tiers
@@ -1375,24 +1377,25 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
     else if (tier.condition === 'always') matches = true;
 
     if (matches) {
-      const calculated = Math.round((amount * (tier.feePercent / 100)) + tier.flatFee);
+      const calculated = Math.round((amount * (tier.feePercent / 100)) + (tier.flatFee || 0));
       const fee = Math.max(0, calculated);
       return {
         fee,
         netAmount: Math.max(0, amount - fee),
         feePercent: tier.feePercent,
-        ruleMatched: tier.label,
+        ruleMatched: `Rs. ${fee}`,
       };
     }
   }
 
-  // Fallback to standard percent
-  const fee = Math.round(amount * (withdrawalFeeConfig.standardPercent / 100));
+  // Fallback to standard percent and flat fee
+  const calculated = Math.round((amount * (withdrawalFeeConfig.standardPercent / 100)) + (withdrawalFeeConfig.standardFlatFee || 0));
+  const fee = Math.max(0, calculated);
   return {
     fee,
     netAmount: Math.max(0, amount - fee),
     feePercent: withdrawalFeeConfig.standardPercent,
-    ruleMatched: `Standard Fee (${withdrawalFeeConfig.standardPercent}%)`,
+    ruleMatched: `Rs. ${fee}`,
   };
 }
 
@@ -1407,9 +1410,10 @@ router.get('/withdrawal-fee-config', (req, res) => {
 // Admin endpoint to adjust the dynamic withdrawal fee rules
 router.post('/admin/withdrawal-fee-config', (req, res) => {
   try {
-    const { enabled, standardPercent, minWithdrawal, description, tiers } = req.body;
+    const { enabled, standardPercent, standardFlatFee, minWithdrawal, description, tiers } = req.body;
     if (typeof enabled === 'boolean') withdrawalFeeConfig.enabled = enabled;
     if (typeof standardPercent === 'number' && !isNaN(standardPercent)) withdrawalFeeConfig.standardPercent = Math.max(0, standardPercent);
+    if (typeof standardFlatFee === 'number' && !isNaN(standardFlatFee)) withdrawalFeeConfig.standardFlatFee = Math.max(0, standardFlatFee);
     if (typeof minWithdrawal === 'number' && !isNaN(minWithdrawal)) withdrawalFeeConfig.minWithdrawal = Math.max(100, minWithdrawal);
     if (typeof description === 'string') withdrawalFeeConfig.description = description;
     if (Array.isArray(tiers) && tiers.length > 0) {
@@ -2508,6 +2512,7 @@ router.post('/admin/approve-deposit', async (req, res) => {
   try {
     const rawId = req.body.txId || req.body.transactionId || req.body.id;
     const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
+    const { channelId, gateway: targetGateway } = req.body;
     if (!txId) {
       return res.status(400).json({ error: 'Transaction ID is required for approval' });
     }
@@ -2531,11 +2536,16 @@ router.post('/admin/approve-deposit', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User associated with transaction not found' });
 
     // Mark completed, credit user balance & increment payment channel balance
-    const notes = `Deposit verified & approved (${tx.gateway} TID: ${tx.referenceCode})`;
+    const effectiveGateway = targetGateway || tx.gateway;
+    const notes = `Deposit verified & credited to official float (${effectiveGateway || 'Payment Channel'} TID: ${tx.referenceCode})`;
     const operations: any[] = [
       prisma.transaction.update({
         where: { id: tx.id },
-        data: { status: 'completed', notes },
+        data: {
+          status: 'completed',
+          notes,
+          ...(effectiveGateway ? { gateway: effectiveGateway } : {}),
+        },
       }),
       prisma.user.update({
         where: { id: user.id },
@@ -2543,10 +2553,20 @@ router.post('/admin/approve-deposit', async (req, res) => {
       }),
     ];
 
-    if (tx.gateway) {
+    // Find channel to increment
+    let targetChannelQuery: any = null;
+    if (channelId) {
+      targetChannelQuery = {
+        OR: [{ id: channelId }, { gateway: channelId }],
+      };
+    } else if (effectiveGateway) {
+      targetChannelQuery = { gateway: { equals: effectiveGateway, mode: 'insensitive' } };
+    }
+
+    if (targetChannelQuery) {
       operations.push(
         prisma.depositChannel.updateMany({
-          where: { gateway: { equals: tx.gateway, mode: 'insensitive' } },
+          where: targetChannelQuery,
           data: { currentBalance: { increment: tx.amount } },
         })
       );
@@ -2735,11 +2755,12 @@ router.post('/admin/decline-deposit', async (req, res) => {
   }
 });
 
-// Admin Approve Withdrawal
+// Admin Approve Withdrawal & Deduct from Selected Payment Channel
 router.post('/admin/approve-withdrawal', async (req, res) => {
   try {
     const rawId = req.body.txId || req.body.transactionId || req.body.id;
     const txId = typeof rawId === 'string' ? rawId.trim() : rawId ? String(rawId) : '';
+    const { channelId, gateway: targetGateway, dispatchReference, dispatchNotes } = req.body;
 
     const tx = await prisma.transaction.findFirst({
       where: {
@@ -2756,27 +2777,83 @@ router.post('/admin/approve-withdrawal', async (req, res) => {
       return res.status(400).json({ error: 'Withdrawal is already completed' });
     }
 
-    const notes = `Dispatched successfully to ${tx.gateway} (${tx.accountNumber})`;
-    const [updatedTx] = await prisma.$transaction([
+    // Identify target payment channel for deduction
+    let channel: any = null;
+    if (channelId) {
+      channel = await prisma.depositChannel.findFirst({
+        where: {
+          OR: [{ id: channelId }, { gateway: channelId }],
+        },
+      });
+    }
+    if (!channel && targetGateway) {
+      channel = await prisma.depositChannel.findFirst({
+        where: { gateway: { equals: targetGateway, mode: 'insensitive' } },
+      });
+    }
+    if (!channel && tx.gateway) {
+      channel = await prisma.depositChannel.findFirst({
+        where: { gateway: { equals: tx.gateway, mode: 'insensitive' } },
+      });
+    }
+
+    // Cash leaving the channel float is netAmount (gross minus fee), fallback to amount
+    const dispatchAmount = typeof tx.netAmount === 'number' && tx.netAmount > 0 ? tx.netAmount : tx.amount;
+
+    const channelSummary = channel
+      ? `Dispatched via ${channel.gateway} (${channel.accountTitle} / ${channel.accountNumber})`
+      : `Dispatched to ${tx.gateway} (${tx.accountNumber})`;
+    const refSummary = dispatchReference ? `[Ref: ${dispatchReference}]` : '';
+    const customNotes = dispatchNotes ? `${dispatchNotes.trim()} | ` : '';
+    const finalNotes = `${customNotes}${channelSummary} ${refSummary}`.trim();
+
+    const operations: any[] = [
       prisma.transaction.update({
         where: { id: tx.id },
-        data: { status: 'completed', notes },
+        data: {
+          status: 'completed',
+          notes: finalNotes,
+          // If a channel was selected, stamp its gateway on the record for audit linking
+          ...(channel ? { gateway: channel.gateway } : {}),
+        },
       }),
-      ...(tx.userId
-        ? [
-            prisma.user.update({
-              where: { id: tx.userId },
-              data: { totalWithdrawn: { increment: tx.amount } },
-            }),
-          ]
-        : []),
-    ]);
+    ];
+
+    if (tx.userId) {
+      operations.push(
+        prisma.user.update({
+          where: { id: tx.userId },
+          data: { totalWithdrawn: { increment: tx.amount } },
+        })
+      );
+    }
+
+    // Deduct dispatch amount from the selected payment channel's float balance
+    if (channel) {
+      operations.push(
+        prisma.depositChannel.update({
+          where: { id: channel.id },
+          data: {
+            currentBalance: { decrement: dispatchAmount },
+          },
+        })
+      );
+    }
+
+    const [updatedTx] = await prisma.$transaction(operations);
+
+    // Get new channel balance if deducted
+    let updatedChannelBalance = null;
+    if (channel) {
+      const freshChannel = await prisma.depositChannel.findUnique({ where: { id: channel.id } });
+      updatedChannelBalance = freshChannel?.currentBalance ?? null;
+    }
 
     if (tx.userId) {
       await createUserNotification(
         tx.userId,
-        'Withdrawal Approved & Sent! 🚀',
-        `Your withdrawal of Rs. ${tx.amount.toLocaleString()} has been approved and dispatched to ${tx.gateway} (${tx.accountNumber}).`,
+        'Withdrawal Dispatched! 🚀',
+        `Your withdrawal of Rs. ${dispatchAmount.toLocaleString()} has been approved and dispatched from our official ${channel ? channel.gateway : tx.gateway} account to ${tx.accountTitle || 'your account'} (${tx.accountNumber}).`,
         'withdrawal_approved',
         tx.amount
       );
@@ -2784,8 +2861,16 @@ router.post('/admin/approve-withdrawal', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Withdrawal of Rs. ${tx.amount.toLocaleString()} marked as approved and dispatched!`,
+      message: `Withdrawal of Rs. ${dispatchAmount.toLocaleString()} dispatched! ${channel ? `Deducted from ${channel.gateway} float.` : ''}`,
       transaction: updatedTx,
+      channelDeducted: channel
+        ? {
+            id: channel.id,
+            gateway: channel.gateway,
+            deductedAmount: dispatchAmount,
+            newBalance: updatedChannelBalance,
+          }
+        : null,
     });
   } catch (err: any) {
     console.error('[Admin Approve Withdrawal Error]:', err);
@@ -2930,39 +3015,145 @@ router.delete('/admin/plans/:id', async (req, res) => {
 // Admin Deposit Channels Management
 router.get('/admin/deposit-channels', async (req, res) => {
   try {
-    const channels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
-    const depositsByGateway = await prisma.transaction.groupBy({
-      by: ['gateway'],
-      where: { type: 'deposit', status: 'completed' },
-      _sum: { amount: true },
-      _count: { id: true },
-    });
+    const [channels, depositsByGateway, withdrawalsByGateway] = await Promise.all([
+      prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } }),
+      prisma.transaction.groupBy({
+        by: ['gateway'],
+        where: { type: 'deposit', status: 'completed' },
+        _sum: { amount: true },
+        _count: { id: true },
+      }),
+      prisma.transaction.groupBy({
+        by: ['gateway'],
+        where: { type: 'withdrawal', status: 'completed' },
+        _sum: { netAmount: true, amount: true },
+        _count: { id: true },
+      }),
+    ]);
 
     const depositsMap = new Map<string, { total: number; count: number }>();
     depositsByGateway.forEach((g) => {
       if (g.gateway) {
-        depositsMap.set(g.gateway, {
+        depositsMap.set(g.gateway.toLowerCase(), {
           total: g._sum.amount || 0,
           count: g._count.id || 0,
         });
       }
     });
 
+    const withdrawalsMap = new Map<string, { total: number; count: number }>();
+    withdrawalsByGateway.forEach((w) => {
+      if (w.gateway) {
+        withdrawalsMap.set(w.gateway.toLowerCase(), {
+          total: w._sum.netAmount || w._sum.amount || 0,
+          count: w._count.id || 0,
+        });
+      }
+    });
+
     const enriched = channels.map((c) => {
-      const stats = depositsMap.get(c.gateway) || { total: 0, count: 0 };
-      const currentBal = typeof c.currentBalance === 'number' ? c.currentBalance : stats.total + (c.manualAdjustment || 0);
+      const gKey = (c.gateway || '').toLowerCase();
+      const depStats = depositsMap.get(gKey) || { total: 0, count: 0 };
+      const wdStats = withdrawalsMap.get(gKey) || { total: 0, count: 0 };
+      const currentBal = typeof c.currentBalance === 'number' ? c.currentBalance : Math.max(0, depStats.total - wdStats.total + (c.manualAdjustment || 0));
+
       return {
         ...c,
         currentBalance: currentBal,
         manualAdjustment: c.manualAdjustment || 0,
-        totalDeposited: stats.total,
-        completedCount: stats.count,
+        totalDeposited: depStats.total,
+        completedDepositsCount: depStats.count,
+        totalDepositsVolume: depStats.total,
+        totalWithdrawn: wdStats.total,
+        completedWithdrawalsCount: wdStats.count,
+        totalWithdrawalsVolume: wdStats.total,
       };
     });
 
     res.json({ success: true, channels: enriched });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch deposit channels' });
+  }
+});
+
+// Channel-specific transactions ledger
+router.get('/admin/deposit-channels/:channelId/transactions', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { type, search, page: rawPage, limit: rawLimit } = req.query;
+    const page = Math.max(1, parseInt(rawPage as string, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(rawLimit as string, 10) || 50));
+    const skip = (page - 1) * limit;
+
+    let channel = null;
+    let where: any = { status: 'completed' };
+
+    if (channelId !== 'all') {
+      channel = await prisma.depositChannel.findFirst({
+        where: {
+          OR: [{ id: channelId }, { gateway: channelId }],
+        },
+      });
+
+      if (!channel) {
+        return res.status(404).json({ error: 'Payment channel not found' });
+      }
+
+      // Match transactions that passed through this channel:
+      // Either gateway matches, or notes contain gateway/account number
+      where.OR = [
+        { gateway: { equals: channel.gateway, mode: 'insensitive' } },
+        { notes: { contains: channel.gateway, mode: 'insensitive' } },
+        ...(channel.accountNumber ? [{ notes: { contains: channel.accountNumber } }] : []),
+      ];
+    }
+
+    if (type && typeof type === 'string' && type !== 'all') {
+      where.type = type;
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const q = search.trim();
+      const searchConditions = [
+        { referenceCode: { contains: q, mode: 'insensitive' } },
+        { userName: { contains: q, mode: 'insensitive' } },
+        { userPhone: { contains: q, mode: 'insensitive' } },
+        { notes: { contains: q, mode: 'insensitive' } },
+        { accountNumber: { contains: q, mode: 'insensitive' } },
+        { gateway: { contains: q, mode: 'insensitive' } },
+      ];
+
+      if (where.OR && Array.isArray(where.OR)) {
+        where.AND = [{ OR: searchConditions }];
+      } else {
+        where.OR = searchConditions;
+      }
+    }
+
+    const [transactions, total] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.transaction.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      channel,
+      transactions,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Channel Transactions Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch channel transactions' });
   }
 });
 

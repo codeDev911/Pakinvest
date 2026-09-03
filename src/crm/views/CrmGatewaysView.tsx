@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { OfficialDepositChannel, GatewayType } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   CreditCard,
   Smartphone,
@@ -17,13 +18,17 @@ import {
   Clock,
   LayoutGrid,
   List,
+  RotateCcw,
+  ArrowUpDown,
+  Layers,
 } from 'lucide-react';
 import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
 import { GatewayDetailModal } from '../components/GatewayDetailModal';
+import { ChannelTransactionsLedger } from '../components/ChannelTransactionsLedger';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmGatewaysViewProps {
-  channels: OfficialDepositChannel[];
+  channels?: OfficialDepositChannel[];
   onSaveChannel: (channel: OfficialDepositChannel) => Promise<boolean>;
   onAdjustChannel?: (channelId: string, gateway: string, amount: number, type: 'increase' | 'decrease', reason: string) => Promise<boolean>;
   onDeleteChannel: (channelId: string) => Promise<boolean>;
@@ -38,7 +43,7 @@ const GATEWAY_OPTIONS: { type: GatewayType; label: string; sub: string }[] = [
 ];
 
 export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
-  channels,
+  channels: propChannels,
   onSaveChannel,
   onAdjustChannel,
   onDeleteChannel,
@@ -46,10 +51,34 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
+  const [channelsList, setChannelsList] = useState<OfficialDepositChannel[]>(propChannels || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedChannel, setSelectedChannel] = useState<OfficialDepositChannel | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [activeSubTab, setActiveSubTab] = useState<'channels' | 'ledger'>('channels');
+  const [ledgerChannelId, setLedgerChannelId] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Independent fetch on mount
+  const fetchChannels = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/deposit-channels'));
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.channels)) {
+        setChannelsList(data.channels);
+      }
+    } catch (err) {
+      console.error('Failed to fetch deposit channels:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchChannels();
+  }, [fetchChannels]);
 
   // Adjustment Modal State
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -85,10 +114,13 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
   };
 
   const handleToggleActive = async (channelId: string, currentStatus: boolean) => {
-    const target = channels.find((c) => c.id === channelId);
+    const target = channelsList.find((c) => c.id === channelId);
     if (!target) return;
     const updated = { ...target, isActive: !currentStatus };
-    await onSaveChannel(updated);
+    const success = await onSaveChannel(updated);
+    if (success) {
+      await fetchChannels();
+    }
   };
 
   const handleOpenAdjust = (c: OfficialDepositChannel, e?: React.MouseEvent) => {
@@ -118,6 +150,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
     if (success) {
       setIsAdjustModalOpen(false);
       setAdjustTargetChannel(null);
+      await fetchChannels();
     }
   };
 
@@ -154,10 +187,18 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
     setIsSaving(false);
     if (success) {
       setIsModalOpen(false);
+      await fetchChannels();
     }
   };
 
-  const filteredChannels = channels.filter((c) => {
+  const handleDeleteChannel = async (channelId: string) => {
+    const success = await onDeleteChannel(channelId);
+    if (success) {
+      await fetchChannels();
+    }
+  };
+
+  const filteredChannels = channelsList.filter((c) => {
     if (statusFilter === 'active' && !c.isActive) return false;
     if (statusFilter === 'disabled' && c.isActive) return false;
     return true;
@@ -293,6 +334,19 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
         <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLedgerChannelId(c.id || c.gateway);
+              setActiveSubTab('ledger');
+            }}
+            className="px-2 py-1 rounded-lg bg-amber-950/60 border border-amber-800/80 text-amber-300 hover:bg-amber-900 text-[11px] font-bold transition-colors flex items-center gap-1"
+            title="View Transactions for this Channel"
+          >
+            <ArrowUpDown className="w-3 h-3" />
+            <span>Ledger</span>
+          </button>
+          <button
+            type="button"
             onClick={(e) => handleOpenAdjust(c, e)}
             className="px-2 py-1 rounded-lg bg-teal-950/60 border border-teal-800/80 text-teal-300 hover:bg-teal-900 text-[11px] font-bold transition-colors flex items-center gap-1"
             title="Adjust Channel Balance"
@@ -310,7 +364,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => onDeleteChannel(c.id)}
+            onClick={() => handleDeleteChannel(c.id)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
             title="Delete Channel"
           >
@@ -331,47 +385,92 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
             <span>Official Receiving Channels & Till Numbers</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Configure official JazzCash, EasyPaisa and Bank accounts displayed to investors
+            Configure official JazzCash, EasyPaisa and Bank accounts displayed to investors and audit real-time cash flows
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'table' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Table View"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'cards' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Card Grid View"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
+          {activeSubTab === 'channels' && (
+            <>
+              <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                    viewMode === 'table' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Table View"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                    viewMode === 'cards' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Card Grid View"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-950/40 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Channel</span>
-          </button>
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-950/40 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Channel</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* 2. Main Content: Table or Cards */}
-      {viewMode === 'table' ? (
+      {/* 2. Top Subtabs Navigation */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('channels')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubTab === 'channels'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>Channel Balances & Accounts ({channelsList.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLedgerChannelId('all');
+            setActiveSubTab('ledger');
+          }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubTab === 'ledger'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+          }`}
+        >
+          <ArrowUpDown className="w-4 h-4" />
+          <span>Transactions & Movement Ledger</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+            AUTO-AUDITED
+          </span>
+        </button>
+      </div>
+
+      {/* 3. Main Content: Channels Configuration or Ledger */}
+      {activeSubTab === 'ledger' ? (
+        <ChannelTransactionsLedger
+          channels={channelsList}
+          initialChannelId={ledgerChannelId}
+          onRefreshChannels={fetchChannels}
+        />
+      ) : viewMode === 'table' ? (
         <CrmDataTable<OfficialDepositChannel>
           data={filteredChannels}
           columns={columns}
@@ -440,14 +539,28 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <button
-                  type="button"
-                  onClick={(e) => handleOpenAdjust(c, e)}
-                  className="px-2.5 py-1 rounded-lg bg-teal-950/80 border border-teal-800/80 text-teal-300 hover:bg-teal-900 text-xs font-bold transition-colors flex items-center gap-1.5"
-                >
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>Adjust Balance</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenAdjust(c, e)}
+                    className="px-2.5 py-1 rounded-lg bg-teal-950/80 border border-teal-800/80 text-teal-300 hover:bg-teal-900 text-xs font-bold transition-colors flex items-center gap-1.5"
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>Adjust</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLedgerChannelId(c.id || c.gateway);
+                      setActiveSubTab('ledger');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-800/80 text-amber-300 hover:bg-amber-900 text-xs font-bold transition-colors flex items-center gap-1.5"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span>Ledger</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
@@ -458,7 +571,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeleteChannel(c.id)}
+                    onClick={() => handleDeleteChannel(c.id)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -476,8 +589,13 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
           channel={selectedChannel}
           onClose={() => setSelectedChannel(null)}
           onEdit={(c) => handleOpenEdit(c)}
-          onDelete={(id) => onDeleteChannel(id)}
+          onDelete={(id) => handleDeleteChannel(id)}
           onToggleActive={(id, st) => handleToggleActive(id, st)}
+          onViewLedger={(channelId) => {
+            setSelectedChannel(null);
+            setLedgerChannelId(channelId);
+            setActiveSubTab('ledger');
+          }}
         />
       )}
 

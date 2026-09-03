@@ -208,8 +208,12 @@ export interface OfficialDepositChannel {
   processingTime: string;
   currentBalance?: number;
   manualAdjustment?: number;
+  totalDeposited?: number;
   totalDepositsVolume?: number;
   completedDepositsCount?: number;
+  totalWithdrawn?: number;
+  totalWithdrawalsVolume?: number;
+  completedWithdrawalsCount?: number;
   isActive?: boolean;
 }
 

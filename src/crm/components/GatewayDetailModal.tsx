@@ -14,6 +14,7 @@ import {
   Trash2,
   Layers,
   Copy,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -23,6 +24,7 @@ interface GatewayDetailModalProps {
   onEdit?: (channel: OfficialDepositChannel) => void;
   onDelete?: (channelId: string) => void;
   onToggleActive?: (channelId: string, currentStatus: boolean) => void;
+  onViewLedger?: (channelId: string) => void;
 }
 
 export const GatewayDetailModal: React.FC<GatewayDetailModalProps> = ({
@@ -31,6 +33,7 @@ export const GatewayDetailModal: React.FC<GatewayDetailModalProps> = ({
   onEdit,
   onDelete,
   onToggleActive,
+  onViewLedger,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -230,6 +233,20 @@ export const GatewayDetailModal: React.FC<GatewayDetailModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
+            {onViewLedger && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onViewLedger(channel.id || channel.gateway);
+                }}
+                className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-colors shadow-md shadow-amber-500/20"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span>View Transactions</span>
+              </button>
+            )}
+
             {onToggleActive && (
               <button
                 type="button"

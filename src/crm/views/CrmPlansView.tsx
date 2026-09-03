@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { InvestmentPlan } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   Package,
   Plus,
@@ -16,28 +17,51 @@ import {
   Zap,
   LayoutGrid,
   List,
+  RotateCcw,
 } from 'lucide-react';
 import { CrmDataTable, Column, FilterGroup } from '../components/CrmDataTable';
 import { PlanDetailModal } from '../components/PlanDetailModal';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
 interface CrmPlansViewProps {
-  plans: InvestmentPlan[];
+  plans?: InvestmentPlan[];
   onSavePlan: (plan: InvestmentPlan) => Promise<boolean>;
   onDeletePlan: (planId: string) => Promise<boolean>;
 }
 
 export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
-  plans,
+  plans: propPlans,
   onSavePlan,
   onDeletePlan,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
+  const [plansList, setPlansList] = useState<InvestmentPlan[]>(propPlans || []);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedPlan, setSelectedPlan] = useState<InvestmentPlan | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  // Independent fetch on mount
+  const fetchPlans = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/plans'));
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.plans)) {
+        setPlansList(data.plans);
+      }
+    } catch (err) {
+      console.error('Failed to fetch investment plans:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPlans();
+  }, [fetchPlans]);
 
   // Modal Create/Edit State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -65,9 +89,9 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
   const [highlightsInput, setHighlightsInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const categories: string[] = Array.from(new Set(plans.map((p) => p.category).filter((c): c is string => Boolean(c))));
+  const categories: string[] = Array.from(new Set(plansList.map((p) => p.category).filter((c): c is string => Boolean(c))));
 
-  const filteredPlans = plans.filter((p) => {
+  const filteredPlans = plansList.filter((p) => {
     if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
     return true;
   });
@@ -164,6 +188,14 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
     setIsSaving(false);
     if (success) {
       setIsModalOpen(false);
+      await fetchPlans();
+    }
+  };
+
+  const handleDeletePlan = async (planId: string) => {
+    const success = await onDeletePlan(planId);
+    if (success) {
+      await fetchPlans();
     }
   };
 
@@ -258,7 +290,7 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => onDeletePlan(p.id)}
+            onClick={() => handleDeletePlan(p.id)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
             title="Delete Package"
           >
@@ -393,7 +425,7 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeletePlan(p.id)}
+                    onClick={() => handleDeletePlan(p.id)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -411,7 +443,7 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
           plan={selectedPlan}
           onClose={() => setSelectedPlan(null)}
           onEdit={(p) => handleOpenEdit(p)}
-          onDelete={(id) => onDeletePlan(id)}
+          onDelete={(id) => handleDeletePlan(id)}
         />
       )}
 
