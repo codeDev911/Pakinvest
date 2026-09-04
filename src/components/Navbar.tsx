@@ -22,12 +22,19 @@ export const Navbar: React.FC = () => {
           id="app-header-brand"
           onClick={() => setCurrentTab('home')}
           className="flex items-center gap-2.5 cursor-pointer group select-none"
-          title="PakInvest - Click to go to Home"
+          title="Investify - Click to go to Home"
         >
           {/* Logo Badge */}
           <div className="relative">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 p-0.5 shadow-md shadow-emerald-600/20 border border-emerald-400/40 flex items-center justify-center text-white transition-transform group-hover:scale-105">
-              <ShieldCheck className="w-5 h-5 sm:w-5.5 sm:h-5.5 drop-shadow-xs" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl overflow-hidden shadow-md shadow-emerald-600/25 border border-emerald-500/30 transition-transform group-hover:scale-105 flex items-center justify-center bg-emerald-600">
+              <img
+                src="/logo.png"
+                alt="Investify"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
           </div>
@@ -36,7 +43,7 @@ export const Navbar: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight font-display group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1">
-                PakInvest <span className="text-emerald-600 dark:text-emerald-400 font-black">PKR</span>
+                Investify <span className="text-emerald-600 dark:text-emerald-400 font-black">PKR</span>
               </span>
               <span className="hidden xs:inline-flex items-center text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
                 Official

@@ -130,11 +130,11 @@ export const AuthScreen: React.FC = () => {
       <div className="w-full max-w-md relative z-10">
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-xl shadow-emerald-600/25 mb-3 border border-emerald-400/30">
-            <ShieldCheck className="w-8 h-8" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl overflow-hidden shadow-xl shadow-emerald-600/30 mb-3 border border-emerald-500/30 bg-emerald-600">
+            <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-display">
-            PakInvest <span className="text-emerald-400">PKR</span>
+            Investify <span className="text-emerald-400">PKR</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xs mx-auto">
             Pakistan's Premier Automated Investment & Daily Yield Platform

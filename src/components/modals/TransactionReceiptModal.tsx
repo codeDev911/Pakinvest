@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   X,
   CheckCircle2,
@@ -186,9 +186,9 @@ export const TransactionReceiptModal: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-slate-500 dark:text-slate-400">Date & Timestamp</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">{tx.timestamp}</span>
+              <div className="flex justify-between items-center pb-2 border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-slate-500 dark:text-slate-400">Date & Timestamp (PKT)</span>
+                <span className="font-medium text-slate-800 dark:text-slate-200">{formatPakistanDateTime(tx.timestamp || tx.createdAt)}</span>
               </div>
 
               <div className="flex justify-between items-center font-bold text-sm pt-1">

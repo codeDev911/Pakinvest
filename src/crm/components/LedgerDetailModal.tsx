@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   Receipt,
   X,
@@ -139,10 +139,10 @@ export const LedgerDetailModal: React.FC<LedgerDetailModalProps> = ({ entry, onC
 
             <div className={`p-4 rounded-2xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
               <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                Booking Timestamp
+                Booking Timestamp (PKT)
               </span>
               <p className={`text-xs font-mono font-semibold mt-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                {entry.timestamp}
+                {formatPakistanDateTime(entry.timestamp || entry.createdAt)}
               </p>
             </div>
           </div>

@@ -103,13 +103,13 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
       <div className={`p-5 border-b space-y-3 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-slate-950 font-black shadow-md shadow-amber-500/20">
-              <ShieldCheck className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md shadow-emerald-600/20 border border-emerald-500/30 flex items-center justify-center bg-emerald-600">
+              <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  PakInvest
+                  Investify
                 </h2>
                 <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-500">
                   CRM

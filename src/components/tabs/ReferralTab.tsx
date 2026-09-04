@@ -44,7 +44,7 @@ export const ReferralTab: React.FC = () => {
 
   const handleWhatsAppShare = () => {
     const text = encodeURIComponent(
-      `🇵🇰 Join PakInvest - Earn guaranteed daily profits in Pakistani Rupees (Rs.) on your investments with instant JazzCash & EasyPaisa withdrawals!\n\nUse my invite code: *${user.referralCode}*\nSign up here: ${inviteUrl}`
+      `🇵🇰 Join Investify - Earn guaranteed daily profits in Pakistani Rupees (Rs.) on your investments with instant JazzCash & EasyPaisa withdrawals!\n\nUse my invite code: *${user.referralCode}*\nSign up here: ${inviteUrl}`
     );
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };

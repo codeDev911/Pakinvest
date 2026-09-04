@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Transaction, TransactionType } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   Search,
   Filter,
@@ -168,7 +168,7 @@ export const TransactionsTab: React.FC = () => {
                       )}
                     </div>
                     <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                      Ref: {tx.referenceCode} • {tx.timestamp}
+                      Ref: {tx.referenceCode} • {formatPakistanDateTime(tx.timestamp || tx.createdAt)}
                     </p>
                   </div>
                 </div>

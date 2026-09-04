@@ -1,6 +1,6 @@
 import React from 'react';
 import { CrmStats, Transaction, CrmNavTab } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   TrendingUp,
   ArrowDownLeft,
@@ -320,7 +320,7 @@ export const CrmOverviewView: React.FC<CrmOverviewViewProps> = ({
                     <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
                       <span className="text-amber-400 font-bold">TID: {d.referenceCode}</span>
                       <span>•</span>
-                      <span>{d.timestamp}</span>
+                      <span>{formatPakistanDateTime(d.timestamp || d.createdAt)}</span>
                     </div>
                   </div>
 
@@ -403,7 +403,7 @@ export const CrmOverviewView: React.FC<CrmOverviewViewProps> = ({
                     <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
                       <span className="text-amber-300">{w.accountNumber || w.userPhone}</span>
                       <span>•</span>
-                      <span>{w.timestamp}</span>
+                      <span>{formatPakistanDateTime(w.timestamp || w.createdAt)}</span>
                     </div>
                   </div>
 

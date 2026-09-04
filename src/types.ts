@@ -146,6 +146,7 @@ export interface Transaction {
   senderTitle?: string;
   referenceCode: string;
   timestamp: string;
+  createdAt?: string | Date;
   notes?: string;
   planName?: string;
   // Bank-Grade Ledger & Fraud Prevention properties

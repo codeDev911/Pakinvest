@@ -529,7 +529,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsAuthModalOpen(false);
         await refreshAllData();
         fireConfetti();
-        showToast('Registration Successful 🎉', `Welcome to PakInvest, ${data.user.name}!`, 'success');
+        showToast('Registration Successful 🎉', `Welcome to Investify, ${data.user.name}!`, 'success');
         return { success: true };
       }
       return { success: false, error: data?.error || 'Registration failed' };

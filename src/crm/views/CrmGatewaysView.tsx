@@ -640,7 +640,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
                     type="text"
                     value={editingChannel.accountTitle}
                     onChange={(e) => setEditingChannel({ ...editingChannel, accountTitle: e.target.value })}
-                    placeholder="e.g. PakInvest Official Pvt Ltd"
+                    placeholder="e.g. Investify Official Pvt Ltd"
                     className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-bold"
                     required
                   />

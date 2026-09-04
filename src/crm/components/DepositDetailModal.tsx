@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   ArrowDownLeft,
   X,
@@ -156,10 +156,10 @@ export const DepositDetailModal: React.FC<DepositDetailModalProps> = ({
 
             <div>
               <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                Submission Timestamp
+                Submission Timestamp (PKT)
               </span>
               <p className={`text-xs font-mono font-semibold mt-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                {deposit.timestamp}
+                {formatPakistanDateTime(deposit.timestamp || deposit.createdAt)}
               </p>
             </div>
           </div>

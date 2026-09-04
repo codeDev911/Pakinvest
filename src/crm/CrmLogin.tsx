@@ -72,11 +72,11 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         )}
 
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 text-slate-950 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20">
-            <ShieldCheck className="w-8 h-8" />
+          <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-lg shadow-emerald-600/30 border border-emerald-500/30 flex items-center justify-center mx-auto bg-emerald-600">
+            <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            PakInvest Operations CRM
+            Investify Operations CRM
           </h1>
           <p className="text-xs text-slate-400">
             Protected Administrator Route • Approvals & Financial Control

@@ -158,11 +158,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {/* Header */}
           <div className="p-5 pb-3 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mx-auto mb-2.5 shadow-2xs">
-              <ShieldCheck className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-md shadow-emerald-600/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2.5 bg-emerald-600">
+              <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
             </div>
             <h2 className="text-xl font-extrabold text-slate-900 dark:text-white font-display">
-              {mode === 'login' ? 'Sign In to PakInvest' : 'Create Investor Account'}
+              {mode === 'login' ? 'Sign In to Investify' : 'Create Investor Account'}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               {mode === 'login'

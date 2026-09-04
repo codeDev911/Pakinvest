@@ -192,15 +192,43 @@ const INITIAL_CHANNELS = [
   },
 ];
 
-// Helper: Format Pakistan Timestamp
-const getFormattedNow = () => {
-  const d = new Date();
-  return (
-    d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-  );
+// Helper: Format Pakistan Timestamp (Strict Pakistan Standard Time: PKT, UTC+5)
+export const getFormattedNow = (date: Date | string | number = new Date()): string => {
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const dateStr = validDate.toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Karachi',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const timeStr = validDate.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Karachi',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${dateStr}, ${timeStr} PKT`;
 };
+
+// Helper: Calculate start of today in Pakistan Standard Time (PKT, UTC+5)
+export function getStartOfToday(): Date {
+  const now = new Date();
+  const pktOffsetMs = 5 * 60 * 60 * 1000;
+  const pktDate = new Date(now.getTime() + pktOffsetMs);
+  const startOfPktDay = new Date(Date.UTC(pktDate.getUTCFullYear(), pktDate.getUTCMonth(), pktDate.getUTCDate()));
+  return new Date(startOfPktDay.getTime() - pktOffsetMs);
+}
+
+// Helper: Get today's YYYY-MM-DD in Pakistan Standard Time (PKT, UTC+5)
+export function getTodayPktDateString(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
 
 // Helper: Mask phone numbers for public/referrals privacy
 const maskPhone = (phone: string) => {
@@ -242,6 +270,10 @@ async function ensureInitialDatabaseData() {
         await prisma.dailyRewardTier.create({ data: t });
       }
     }
+
+    // Sync and load dynamic withdrawal fee configuration from database
+    await syncWithdrawalFeeConfigFromDb();
+
     dbInitDone = true;
   } catch (err) {
     console.error('[Prisma Seed/Init Error]:', err);
@@ -421,7 +453,12 @@ router.post('/auth/register', async (req, res) => {
 
     const newRefCode = 'PAK' + Math.floor(1000 + Math.random() * 9000);
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const joinedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const joinedDate = new Date().toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Karachi',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
 
     const newUser = await prisma.user.create({
       data: {
@@ -1323,15 +1360,6 @@ interface DynamicWithdrawalFeeConfig {
   tiers: WithdrawalFeeTier[];
 }
 
-// Helper: Calculate start of today in Pakistan Standard Time (PKT, UTC+5)
-function getStartOfToday(): Date {
-  const now = new Date();
-  const pktOffsetMs = 5 * 60 * 60 * 1000;
-  const pktDate = new Date(now.getTime() + pktOffsetMs);
-  const startOfPktDay = new Date(Date.UTC(pktDate.getUTCFullYear(), pktDate.getUTCMonth(), pktDate.getUTCDate()));
-  return new Date(startOfPktDay.getTime() - pktOffsetMs);
-}
-
 let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
   enabled: true,
   standardPercent: 1.0, // 1% standard
@@ -1366,6 +1394,33 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
     },
   ],
 };
+
+// Sync and persist dynamic withdrawal fee configuration in PostgreSQL database
+async function syncWithdrawalFeeConfigFromDb(): Promise<DynamicWithdrawalFeeConfig> {
+  try {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'withdrawal_fee_config' },
+    });
+    if (setting && setting.value) {
+      const parsed = JSON.parse(setting.value);
+      withdrawalFeeConfig = {
+        ...withdrawalFeeConfig,
+        ...parsed,
+        tiers: Array.isArray(parsed.tiers) && parsed.tiers.length > 0 ? parsed.tiers : withdrawalFeeConfig.tiers,
+      };
+    } else {
+      // Seed default withdrawal fee config into database if not yet existing
+      await prisma.systemSetting.upsert({
+        where: { key: 'withdrawal_fee_config' },
+        update: { value: JSON.stringify(withdrawalFeeConfig) },
+        create: { key: 'withdrawal_fee_config', value: JSON.stringify(withdrawalFeeConfig) },
+      });
+    }
+  } catch (err) {
+    console.error('[syncWithdrawalFeeConfigFromDb Error]:', err);
+  }
+  return withdrawalFeeConfig;
+}
 
 // Calculate dynamic withdrawal fee based on amount and active rules
 function calculateWithdrawalFee(amount: number): { fee: number; netAmount: number; feePercent: number; ruleMatched: string } {
@@ -1412,6 +1467,8 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
 
 // Public endpoint for clients to get current dynamic withdrawal fee config & limits
 router.get('/withdrawal-fee-config', async (req, res) => {
+  await syncWithdrawalFeeConfigFromDb();
+
   let userDailyStats = {
     todayCount: 0,
     maxDaily: withdrawalFeeConfig.maxDailyRequests || 3,
@@ -1456,6 +1513,7 @@ router.get('/withdrawal-fee-config', async (req, res) => {
 // Dedicated endpoint to check daily withdrawal quota
 router.get('/withdraw/daily-status', authenticate, async (req, res) => {
   try {
+    await syncWithdrawalFeeConfigFromDb();
     const user = (req as any).user;
     const startOfDay = getStartOfToday();
     const todayCount = await prisma.transaction.count({
@@ -1483,8 +1541,8 @@ router.get('/withdraw/daily-status', authenticate, async (req, res) => {
   }
 });
 
-// Admin endpoint to adjust the dynamic withdrawal fee rules and limits
-router.post('/admin/withdrawal-fee-config', (req, res) => {
+// Admin endpoint to adjust the dynamic withdrawal fee rules and limits (persisted to DB)
+router.post('/admin/withdrawal-fee-config', async (req, res) => {
   try {
     const { enabled, standardPercent, standardFlatFee, minWithdrawal, maxDailyRequests, description, tiers } = req.body;
     if (typeof enabled === 'boolean') withdrawalFeeConfig.enabled = enabled;
@@ -1496,18 +1554,27 @@ router.post('/admin/withdrawal-fee-config', (req, res) => {
     if (Array.isArray(tiers) && tiers.length > 0) {
       withdrawalFeeConfig.tiers = tiers;
     }
+
+    // Persist permanently in PostgreSQL database
+    await prisma.systemSetting.upsert({
+      where: { key: 'withdrawal_fee_config' },
+      update: { value: JSON.stringify(withdrawalFeeConfig) },
+      create: { key: 'withdrawal_fee_config', value: JSON.stringify(withdrawalFeeConfig) },
+    });
+
     res.json({
       success: true,
-      message: 'Dynamic withdrawal fee configuration updated successfully.',
+      message: 'Dynamic withdrawal fee configuration saved permanently in database.',
       config: withdrawalFeeConfig,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to update withdrawal fee config' });
+    res.status(500).json({ error: err?.message || 'Failed to update withdrawal fee config in database' });
   }
 });
 
 router.post('/withdraw', authenticate, async (req, res) => {
   try {
+    await syncWithdrawalFeeConfigFromDb();
     const user = (req as any).user;
     const { amount, gateway, accountTitle, accountNumber, bankName, pin } = req.body;
 
@@ -1832,8 +1899,7 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
     const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
     if (!liveUser) return res.status(404).json({ error: 'User not found' });
 
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getTodayPktDateString();
 
     // Check if already claimed today
     if (liveUser.lastCheckInDate === todayStr) {
@@ -2145,10 +2211,10 @@ router.get('/admin/pending', async (req, res) => {
 router.get('/admin/transactions', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
     const skip = (page - 1) * limit;
 
-    const { type, status, userId, search } = req.query;
+    const { type, status, userId, search, gateway } = req.query;
 
     const where: any = {};
     if (type && typeof type === 'string' && type !== 'all') {
@@ -2156,6 +2222,9 @@ router.get('/admin/transactions', async (req, res) => {
     }
     if (status && typeof status === 'string' && status !== 'all') {
       where.status = status;
+    }
+    if (gateway && typeof gateway === 'string' && gateway !== 'all') {
+      where.gateway = { equals: gateway, mode: 'insensitive' };
     }
     if (userId && typeof userId === 'string' && userId !== 'all') {
       where.userId = userId;
@@ -2170,6 +2239,7 @@ router.get('/admin/transactions', async (req, res) => {
         { accountNumber: { contains: q, mode: 'insensitive' } },
         { senderPhone: { contains: q, mode: 'insensitive' } },
         { notes: { contains: q, mode: 'insensitive' } },
+        { gateway: { contains: q, mode: 'insensitive' } },
       ];
     }
 
@@ -2182,6 +2252,59 @@ router.get('/admin/transactions', async (req, res) => {
       }),
       prisma.transaction.count({ where }),
     ]);
+
+    // Gather live summary aggregates and gateway options when filtered by type (e.g. deposit or withdrawal)
+    let typeStats: any = null;
+    let availableGateways: string[] = [];
+
+    if (type && typeof type === 'string' && type !== 'all') {
+      const [grouped, sumAgg, distinctGateways] = await Promise.all([
+        prisma.transaction.groupBy({
+          by: ['status'],
+          where: { type },
+          _count: { id: true },
+          _sum: { amount: true, netAmount: true },
+        }),
+        prisma.transaction.count({ where: { type } }),
+        prisma.transaction.findMany({
+          where: { type },
+          select: { gateway: true },
+          distinct: ['gateway'],
+        }),
+      ]);
+
+      let pendingCount = 0;
+      let pendingVolume = 0;
+      let completedCount = 0;
+      let completedVolume = 0;
+      let declinedCount = 0;
+      let declinedVolume = 0;
+
+      for (const g of grouped) {
+        if (g.status === 'pending') {
+          pendingCount = g._count.id;
+          pendingVolume = g._sum.amount || 0;
+        } else if (g.status === 'completed') {
+          completedCount = g._count.id;
+          completedVolume = (type === 'withdrawal' ? g._sum.netAmount || g._sum.amount : g._sum.amount) || 0;
+        } else if (g.status === 'declined') {
+          declinedCount = g._count.id;
+          declinedVolume = g._sum.amount || 0;
+        }
+      }
+
+      typeStats = {
+        totalSubmissions: sumAgg,
+        pendingCount,
+        pendingVolume,
+        completedCount,
+        completedVolume,
+        declinedCount,
+        declinedVolume,
+      };
+
+      availableGateways = distinctGateways.map((g) => g.gateway).filter((g): g is string => Boolean(g));
+    }
 
     const LEDGER_SECRET = process.env.LEDGER_SECRET || 'PAK_LEDGER_MASTER_INTEGRITY_KEY_2026';
 
@@ -2212,6 +2335,8 @@ router.get('/admin/transactions', async (req, res) => {
         limit,
         totalPages: Math.ceil(total / limit) || 1,
       },
+      typeStats,
+      availableGateways,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch CRM transactions' });
@@ -3179,13 +3304,18 @@ router.get('/admin/deposit-channels', async (req, res) => {
 router.get('/admin/deposit-channels/:channelId/transactions', async (req, res) => {
   try {
     const { channelId } = req.params;
-    const { type, search, page: rawPage, limit: rawLimit } = req.query;
+    const { type, search, status, page: rawPage, limit: rawLimit } = req.query;
     const page = Math.max(1, parseInt(rawPage as string, 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(rawLimit as string, 10) || 50));
+    const limit = Math.min(250, Math.max(1, parseInt(rawLimit as string, 10) || 25));
     const skip = (page - 1) * limit;
 
     let channel = null;
-    let where: any = { status: 'completed' };
+    let where: any = {};
+    if (status && status !== 'all') {
+      where.status = status;
+    } else if (!status) {
+      where.status = 'completed';
+    }
 
     if (channelId !== 'all') {
       channel = await prisma.depositChannel.findFirst({

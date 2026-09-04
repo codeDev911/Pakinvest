@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserProfile } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
 import {
   Users,
@@ -179,10 +179,10 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
     },
     {
       key: 'joinedDate',
-      header: 'Joined Date',
+      header: 'Joined Date (PKT)',
       render: (u) => (
         <span className="text-[11px] text-slate-300">
-          {u.joinedDate || '—'}
+          {u.joinedDate ? formatPakistanDateTime(u.joinedDate) : '—'}
         </span>
       ),
     },

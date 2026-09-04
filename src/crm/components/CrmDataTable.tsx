@@ -64,6 +64,8 @@ interface CrmDataTableProps<T> {
   onServerPageChange?: (page: number) => void;
   serverSearch?: string;
   onServerSearchChange?: (search: string) => void;
+  serverPageSize?: number;
+  onServerPageSizeChange?: (pageSize: number) => void;
   isLoading?: boolean;
 }
 
@@ -92,6 +94,8 @@ export function CrmDataTable<T>({
   onServerPageChange,
   serverSearch,
   onServerSearchChange,
+  serverPageSize,
+  onServerPageSizeChange,
   isLoading = false,
 }: CrmDataTableProps<T>) {
   const { theme } = useCrmTheme();
@@ -99,7 +103,7 @@ export function CrmDataTable<T>({
 
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [localCurrentPage, setLocalCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [pageSize, setPageSize] = useState(serverPageSize || initialPageSize);
   const [sortKey, setSortKey] = useState<string | undefined>(defaultSortKey);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
   const [jumpPageInput, setJumpPageInput] = useState('');
@@ -348,7 +352,9 @@ export function CrmDataTable<T>({
               <select
                 value={pageSize}
                 onChange={(e) => {
-                  setPageSize(Number(e.target.value));
+                  const newSize = Number(e.target.value);
+                  setPageSize(newSize);
+                  if (onServerPageSizeChange) onServerPageSizeChange(newSize);
                   setCurrentPage(1);
                 }}
                 className={`py-1.5 px-2.5 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer ${

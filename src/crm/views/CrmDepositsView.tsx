@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
 import {
   ArrowDownLeft,
@@ -41,21 +41,54 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // Tab-specific fetch: fetch deposits independently
+  // Server-side pagination state
+  const [serverPage, setServerPage] = useState<number>(1);
+  const [serverPageSize, setServerPageSize] = useState<number>(25);
+  const [serverSearch, setServerSearch] = useState<string>('');
+  const [totalServerItems, setTotalServerItems] = useState<number>(0);
+  const [statsData, setStatsData] = useState<{
+    pendingCount: number;
+    pendingVolume: number;
+    completedCount: number;
+    completedVolume: number;
+    totalCount: number;
+  }>({
+    pendingCount: 0,
+    pendingVolume: 0,
+    completedCount: 0,
+    completedVolume: 0,
+    totalCount: 0,
+  });
+
+  // Tab-specific fetch with full pagination and filters
   const fetchDeposits = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(getApiUrl('/api/admin/transactions?type=deposit&limit=200'));
+      const params = new URLSearchParams();
+      params.append('type', 'deposit');
+      params.append('page', String(serverPage));
+      params.append('limit', String(serverPageSize));
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (gatewayFilter !== 'all') params.append('gateway', gatewayFilter);
+      if (serverSearch.trim()) params.append('search', serverSearch.trim());
+
+      const res = await fetch(getApiUrl(`/api/admin/transactions?${params.toString()}`));
       const data = await res.json();
       if (data?.success && Array.isArray(data?.transactions)) {
         setDepositsList(data.transactions);
+        if (data.pagination) {
+          setTotalServerItems(data.pagination.total);
+        }
+        if (data.typeStats?.deposit) {
+          setStatsData(data.typeStats.deposit);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch deposits list:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [serverPage, serverPageSize, statusFilter, gatewayFilter, serverSearch]);
 
   useEffect(() => {
     fetchDeposits();
@@ -86,24 +119,20 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
     await fetchDeposits();
   };
 
-  // Only consider deposit transactions
-  const depositTxs = depositsList.filter((tx) => tx.type === 'deposit');
-
   // Unique gateways list
-  const gateways: string[] = Array.from(new Set(depositTxs.map((d) => d.gateway).filter((g): g is string => Boolean(g))));
-
-  const filteredDeposits = depositTxs.filter((tx) => {
-    if (statusFilter !== 'all' && tx.status !== statusFilter) return false;
-    if (gatewayFilter !== 'all' && tx.gateway !== gatewayFilter) return false;
-    return true;
-  });
+  const standardGateways = ['JazzCash', 'EasyPaisa', 'Bank_Transfer', 'Raast', 'Direct'];
+  const dynamicGateways = Array.from(new Set(depositsList.map((d) => d.gateway).filter((g): g is string => Boolean(g))));
+  const allGateways = Array.from(new Set([...standardGateways, ...dynamicGateways]));
 
   const filterGroups: FilterGroup[] = [
     {
       key: 'status',
       label: 'Approval Status',
       selectedValue: statusFilter,
-      onChange: (val) => setStatusFilter(val as any),
+      onChange: (val) => {
+        setStatusFilter(val as any);
+        setServerPage(1);
+      },
       options: [
         { label: 'All Statuses', value: 'all' },
         { label: 'Pending Approval', value: 'pending' },
@@ -111,20 +140,19 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
         { label: 'Declined / Rejected', value: 'declined' },
       ],
     },
-    ...(gateways.length > 0
-      ? [
-          {
-            key: 'gateway',
-            label: 'Payment Gateway',
-            selectedValue: gatewayFilter,
-            onChange: setGatewayFilter,
-            options: [
-              { label: 'All Gateways', value: 'all' },
-              ...gateways.map((g: string) => ({ label: g, value: g })),
-            ],
-          },
-        ]
-      : []),
+    {
+      key: 'gateway',
+      label: 'Payment Gateway',
+      selectedValue: gatewayFilter,
+      onChange: (val) => {
+        setGatewayFilter(val);
+        setServerPage(1);
+      },
+      options: [
+        { label: 'All Gateways', value: 'all' },
+        ...allGateways.map((g: string) => ({ label: g, value: g })),
+      ],
+    },
   ];
 
   const columns: Column<Transaction>[] = [
@@ -188,10 +216,10 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
     },
     {
       key: 'timestamp',
-      header: 'Submitted Time',
+      header: 'Submitted Time (PKT)',
       render: (tx) => (
         <span className="font-mono text-[11px] text-slate-300">
-          {tx.timestamp}
+          {formatPakistanDateTime(tx.timestamp || tx.createdAt)}
         </span>
       ),
     },
@@ -262,14 +290,15 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
     },
   ];
 
-  // Metrics
-  const pendingCount = depositTxs.filter((d) => d.status === 'pending').length;
-  const pendingVolume = depositTxs
+  // Metrics across entire database
+  const pendingCount = statsData.pendingCount || depositsList.filter((d) => d.status === 'pending').length;
+  const pendingVolume = statsData.pendingVolume || depositsList
     .filter((d) => d.status === 'pending')
     .reduce((sum, d) => sum + d.amount, 0);
-  const totalApprovedVolume = depositTxs
+  const totalApprovedVolume = statsData.completedVolume || depositsList
     .filter((d) => d.status === 'completed')
     .reduce((sum, d) => sum + d.amount, 0);
+  const totalSubmissions = statsData.totalCount || totalServerItems || depositsList.length;
 
   return (
     <div className="space-y-6 pb-16">
@@ -310,30 +339,37 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
             Total Submissions
           </span>
           <p className="text-2xl font-black text-indigo-400 tracking-tight mt-1">
-            {depositTxs.length} Transactions
+            {totalSubmissions.toLocaleString()} Transactions
           </p>
         </div>
       </div>
 
       {/* 2. Main Data Table */}
       <CrmDataTable<Transaction>
-        data={filteredDeposits}
+        data={depositsList}
         columns={columns}
         keyExtractor={(d) => d.id}
         title="Pakistani Deposit Verification Queue"
         subtitle="Review JazzCash, EasyPaisa, Raast & Bank IBFT transaction IDs and credit investor wallets"
         icon={<ArrowDownLeft className="w-5 h-5" />}
         searchPlaceholder="Search by TID, investor name, phone, or Ref ID..."
-        searchFields={[
-          (d) => d.referenceCode,
-          (d) => d.userName,
-          (d) => d.userPhone,
-          (d) => d.senderPhone,
-          (d) => d.id,
-          (d) => d.gateway,
-        ]}
         filterGroups={filterGroups}
-        initialPageSize={10}
+        initialPageSize={serverPageSize}
+        serverPagination={true}
+        totalServerItems={totalServerItems}
+        serverPage={serverPage}
+        onServerPageChange={setServerPage}
+        serverSearch={serverSearch}
+        onServerSearchChange={(val) => {
+          setServerSearch(val);
+          setServerPage(1);
+        }}
+        serverPageSize={serverPageSize}
+        onServerPageSizeChange={(newSize) => {
+          setServerPageSize(newSize);
+          setServerPage(1);
+        }}
+        isLoading={isLoading}
         onRowClick={(deposit) => setSelectedDeposit(deposit)}
         emptyMessage="No deposit transaction records found"
         emptySubtext="When users deposit via JazzCash or EasyPaisa, they will appear here for verification."

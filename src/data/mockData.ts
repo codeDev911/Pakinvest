@@ -129,7 +129,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
     id: 'ch_jazzcash_01',
     gateway: 'JazzCash',
-    accountTitle: 'PakInvest Digital Services',
+    accountTitle: 'Investify Digital Services',
     accountNumber: '03049876543',
     instructions: 'Open JazzCash App > Send Money > Enter Mobile Account: 03049876543. After sending, enter the 12-digit TID (Transaction ID) below for admin confirmation.',
     minDeposit: 500,
@@ -140,7 +140,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
     id: 'ch_easypaisa_01',
     gateway: 'EasyPaisa',
-    accountTitle: 'PakInvest Payment Hub',
+    accountTitle: 'Investify Payment Hub',
     accountNumber: '03451234567',
     instructions: 'Open EasyPaisa App > Send Money > EasyPaisa Account: 03451234567. Copy your TRX ID from the confirmation SMS and paste it below.',
     minDeposit: 500,
@@ -151,7 +151,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
     id: 'ch_raast_01',
     gateway: 'Raast',
-    accountTitle: 'PakInvest Raast Corporate',
+    accountTitle: 'Investify Raast Corporate',
     accountNumber: '03049876543',
     instructions: 'Send money from any Pakistani Bank using Raast Instant ID: 03049876543. 0% fee transaction directly to company settlement ledger.',
     minDeposit: 500,
@@ -162,7 +162,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
     id: 'ch_bank_meezan',
     gateway: 'Bank_Transfer',
-    accountTitle: 'PakInvest Holdings Pvt Ltd',
+    accountTitle: 'Investify Holdings Pvt Ltd',
     accountNumber: '0102030405060708',
     bankName: 'Meezan Bank Limited (Islamic Banking)',
     branchCode: '0204 (Gulberg Lahore Branch)',
@@ -175,7 +175,7 @@ export const OFFICIAL_DEPOSIT_CHANNELS: OfficialDepositChannel[] = [
   {
     id: 'ch_usdt_trc20',
     gateway: 'USDT_TRC20',
-    accountTitle: 'PakInvest Crypto Clearing',
+    accountTitle: 'Investify Crypto Clearing',
     accountNumber: 'TX9rqv8B1XzM4pLqW2K9aJ7pZvNxM8sTqE',
     instructions: 'Send only USDT (TRC20 Network). Calculated at current fixed conversion rate Rs. 280 / 1 USDT. Ensure correct network to prevent loss.',
     minDeposit: 3000,

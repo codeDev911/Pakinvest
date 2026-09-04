@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
 import {
   ArrowUpRight,
@@ -116,21 +116,54 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
   const [feeSaveSuccess, setFeeSaveSuccess] = useState(false);
   const [testAmount, setTestAmount] = useState<number>(450);
 
-  // Tab-specific independent fetch
+  // Server-side pagination state
+  const [serverPage, setServerPage] = useState<number>(1);
+  const [serverPageSize, setServerPageSize] = useState<number>(25);
+  const [serverSearch, setServerSearch] = useState<string>('');
+  const [totalServerItems, setTotalServerItems] = useState<number>(0);
+  const [statsData, setStatsData] = useState<{
+    pendingCount: number;
+    pendingVolume: number;
+    completedCount: number;
+    completedVolume: number;
+    totalCount: number;
+  }>({
+    pendingCount: 0,
+    pendingVolume: 0,
+    completedCount: 0,
+    completedVolume: 0,
+    totalCount: 0,
+  });
+
+  // Tab-specific fetch with full pagination and query filters
   const fetchWithdrawals = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(getApiUrl('/api/admin/transactions?type=withdrawal&limit=200'));
+      const params = new URLSearchParams();
+      params.append('type', 'withdrawal');
+      params.append('page', String(serverPage));
+      params.append('limit', String(serverPageSize));
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (gatewayFilter !== 'all') params.append('gateway', gatewayFilter);
+      if (serverSearch.trim()) params.append('search', serverSearch.trim());
+
+      const res = await fetch(getApiUrl(`/api/admin/transactions?${params.toString()}`));
       const data = await res.json();
       if (data?.success && Array.isArray(data?.transactions)) {
         setWithdrawalsList(data.transactions);
+        if (data.pagination) {
+          setTotalServerItems(data.pagination.total);
+        }
+        if (data.typeStats?.withdrawal) {
+          setStatsData(data.typeStats.withdrawal);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch withdrawals:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [serverPage, serverPageSize, statusFilter, gatewayFilter, serverSearch]);
 
   // Fetch fee config from server
   const fetchFeeConfig = useCallback(async () => {
@@ -154,15 +187,22 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     setIsSavingFee(true);
     setFeeSaveSuccess(false);
     try {
+      const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(getApiUrl('/api/admin/withdrawal-fee-config'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(feeConfig),
       });
       const data = await res.json();
       if (data?.success) {
+        if (data.config) {
+          setFeeConfig(data.config);
+        }
         setFeeSaveSuccess(true);
-        setTimeout(() => setFeeSaveSuccess(false), 3000);
+        setTimeout(() => setFeeSaveSuccess(false), 3500);
       }
     } catch (err) {
       console.error('Failed to save fee config:', err);
@@ -208,10 +248,10 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     await fetchWithdrawals();
   };
 
-  // Test simulation calculation
+  // Simplified fee calculation: only returns exact Rs. amount
   const calculateTestFee = (amt: number) => {
-    if (!feeConfig.enabled) return { fee: 0, net: amt, rule: 'Fee Engine Disabled (Rs. 0)' };
-    if (amt < 500) return { fee: 0, net: amt, rule: 'Under Rs. 500: Free (Rs. 0)' };
+    if (!feeConfig.enabled) return { fee: 0, net: amt, feeDisplay: 'Rs. 0' };
+    if (amt < 500) return { fee: 0, net: amt, feeDisplay: 'Rs. 0' };
     for (const t of feeConfig.tiers) {
       let match = false;
       if (t.condition === 'lt' && amt < t.threshold) match = true;
@@ -221,31 +261,30 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
       else if (t.condition === 'always') match = true;
       if (match) {
         const fee = Math.max(0, Math.round((amt * (t.feePercent / 100)) + (t.flatFee || 0)));
-        return { fee, net: Math.max(0, amt - fee), rule: t.label || `Tier (${formatPKR(fee)})` };
+        return { fee, net: Math.max(0, amt - fee), feeDisplay: formatPKR(fee) };
       }
     }
     const fee = Math.max(0, Math.round((amt * (feeConfig.standardPercent / 100)) + (feeConfig.standardFlatFee || 0)));
-    return { fee, net: Math.max(0, amt - fee), rule: `Standard Rate (${formatPKR(fee)})` };
+    return { fee, net: Math.max(0, amt - fee), feeDisplay: formatPKR(fee) };
   };
 
   // Only consider withdrawal transactions
   const withdrawalTxs = withdrawalsList.filter((tx) => tx.type === 'withdrawal');
 
   // Gateways
-  const gateways: string[] = Array.from(new Set(withdrawalTxs.map((w) => w.gateway).filter((g): g is string => Boolean(g))));
-
-  const filteredWithdrawals = withdrawalTxs.filter((tx) => {
-    if (statusFilter !== 'all' && tx.status !== statusFilter) return false;
-    if (gatewayFilter !== 'all' && tx.gateway !== gatewayFilter) return false;
-    return true;
-  });
+  const standardGateways = ['JazzCash', 'EasyPaisa', 'Bank_Transfer', 'Raast', 'Direct'];
+  const dynamicGateways = Array.from(new Set(withdrawalsList.map((w) => w.gateway).filter((g): g is string => Boolean(g))));
+  const allGateways = Array.from(new Set([...standardGateways, ...dynamicGateways]));
 
   const filterGroups: FilterGroup[] = [
     {
       key: 'status',
       label: 'Payout Status',
       selectedValue: statusFilter,
-      onChange: (val) => setStatusFilter(val as any),
+      onChange: (val) => {
+        setStatusFilter(val as any);
+        setServerPage(1);
+      },
       options: [
         { label: 'All Statuses', value: 'all' },
         { label: 'Pending Payout', value: 'pending' },
@@ -253,20 +292,19 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
         { label: 'Declined & Refunded', value: 'declined' },
       ],
     },
-    ...(gateways.length > 0
-      ? [
-          {
-            key: 'gateway',
-            label: 'Payout Channel',
-            selectedValue: gatewayFilter,
-            onChange: setGatewayFilter,
-            options: [
-              { label: 'All Gateways', value: 'all' },
-              ...gateways.map((g: string) => ({ label: g, value: g })),
-            ],
-          },
-        ]
-      : []),
+    {
+      key: 'gateway',
+      label: 'Payout Channel',
+      selectedValue: gatewayFilter,
+      onChange: (val) => {
+        setGatewayFilter(val);
+        setServerPage(1);
+      },
+      options: [
+        { label: 'All Gateways', value: 'all' },
+        ...allGateways.map((g: string) => ({ label: g, value: g })),
+      ],
+    },
   ];
 
   const columns: Column<Transaction>[] = [
@@ -351,10 +389,10 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     },
     {
       key: 'timestamp',
-      header: 'Requested Time',
+      header: 'Requested Time (PKT)',
       render: (tx) => (
         <span className="font-mono text-[11px] text-slate-300">
-          {tx.timestamp}
+          {formatPakistanDateTime(tx.timestamp || tx.createdAt)}
         </span>
       ),
     },
@@ -421,14 +459,15 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     },
   ];
 
-  // Metrics
-  const pendingCount = withdrawalTxs.filter((w) => w.status === 'pending').length;
-  const pendingVolume = withdrawalTxs
+  // Metrics across entire database
+  const pendingCount = statsData.pendingCount || withdrawalsList.filter((w) => w.status === 'pending').length;
+  const pendingVolume = statsData.pendingVolume || withdrawalsList
     .filter((w) => w.status === 'pending')
     .reduce((sum, w) => sum + (w.netAmount || w.amount), 0);
-  const totalSettledVolume = withdrawalTxs
+  const totalSettledVolume = statsData.completedVolume || withdrawalsList
     .filter((w) => w.status === 'completed')
     .reduce((sum, w) => sum + (w.netAmount || w.amount), 0);
+  const totalSubmissions = statsData.totalCount || totalServerItems || withdrawalsList.length;
 
   const testResult = calculateTestFee(testAmount);
 
@@ -471,7 +510,7 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
             Total Payout Requests
           </span>
           <p className="text-2xl font-black text-indigo-400 tracking-tight mt-1">
-            {withdrawalTxs.length} Transactions
+            {totalSubmissions.toLocaleString()} Transactions
           </p>
         </div>
 
@@ -659,12 +698,8 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
                 </div>
                 <div className="pt-2 border-t border-slate-800/60 space-y-1 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Rule Triggered:</span>
-                    <span className="font-bold text-amber-300 truncate max-w-[180px]">{testResult.rule}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Calculated Fee:</span>
-                    <span className={`font-mono font-bold ${testResult.fee === 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
+                    <span className="text-slate-400">Processing Fee:</span>
+                    <span className={`font-mono font-bold ${testResult.fee === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
                       {formatPKR(testResult.fee)}
                     </span>
                   </div>
@@ -839,7 +874,7 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
 
       {/* 3. Main Data Table */}
       <CrmDataTable<Transaction>
-        data={filteredWithdrawals}
+        data={withdrawalsList}
         columns={columns}
         keyExtractor={(w) => w.id}
         title="Withdrawal Payout Dispatch Queue"
@@ -865,16 +900,23 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
           </button>
         }
         searchPlaceholder="Search by account title, account number, investor name, or Ref ID..."
-        searchFields={[
-          (w) => w.userName,
-          (w) => w.accountTitle,
-          (w) => w.accountNumber,
-          (w) => w.userPhone,
-          (w) => w.id,
-          (w) => w.gateway,
-        ]}
         filterGroups={filterGroups}
-        initialPageSize={10}
+        initialPageSize={serverPageSize}
+        serverPagination={true}
+        totalServerItems={totalServerItems}
+        serverPage={serverPage}
+        onServerPageChange={setServerPage}
+        serverSearch={serverSearch}
+        onServerSearchChange={(val) => {
+          setServerSearch(val);
+          setServerPage(1);
+        }}
+        serverPageSize={serverPageSize}
+        onServerPageSizeChange={(newSize) => {
+          setServerPageSize(newSize);
+          setServerPage(1);
+        }}
+        isLoading={isLoading}
         onRowClick={(w) => setSelectedWithdrawal(w)}
         emptyMessage="No withdrawal payout records found"
         emptySubtext="When investors request payouts to JazzCash or Bank, they appear here."

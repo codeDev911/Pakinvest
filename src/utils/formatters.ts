@@ -104,11 +104,64 @@ export function getPlanCycleTimeFormatted(timestamp?: number, fallbackStr?: stri
   if (timestamp) {
     const d = new Date(timestamp);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return d.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Karachi',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
     }
   }
   if (fallbackStr && fallbackStr.includes(':')) {
-    return fallbackStr;
+    return fallbackStr.includes('PKT') ? fallbackStr : `${fallbackStr} PKT`;
   }
-  return '02:33 PM';
+  return '02:33 PM PKT';
+}
+
+/**
+ * Format any timestamp, date, or date string into Pakistan Standard Time (PKT, UTC+5).
+ * Guarantees consistent, local Pakistan time display across the entire application.
+ */
+export function formatPakistanDateTime(val?: string | number | Date | null): string {
+  if (!val) return 'Just now (PKT)';
+  let d: Date;
+  if (val instanceof Date) {
+    d = val;
+  } else if (typeof val === 'number') {
+    d = new Date(val);
+  } else {
+    const str = String(val).trim();
+    if (str.includes('PKT')) return str;
+
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime()) && (str.includes('T') || (str.includes('-') && str.length > 10))) {
+      d = parsed;
+    } else {
+      return `${str} PKT`;
+    }
+  }
+
+  if (isNaN(d.getTime())) return String(val);
+
+  const dateStr = d.toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Karachi',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const timeStr = d.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Karachi',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return `${dateStr}, ${timeStr} PKT`;
+}
+
+/**
+ * Get current Pakistan Standard Time formatted string
+ */
+export function getPakistanCurrentTime(): string {
+  return formatPakistanDateTime(new Date());
 }

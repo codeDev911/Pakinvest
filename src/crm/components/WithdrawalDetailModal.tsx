@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import {
   ArrowUpRight,
   X,
@@ -154,10 +154,10 @@ export const WithdrawalDetailModal: React.FC<WithdrawalDetailModalProps> = ({
 
             <div>
               <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                Request Timestamp
+                Request Timestamp (PKT)
               </span>
               <p className={`text-xs font-mono font-semibold mt-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                {withdrawal.timestamp}
+                {formatPakistanDateTime(withdrawal.timestamp || withdrawal.createdAt)}
               </p>
             </div>
           </div>

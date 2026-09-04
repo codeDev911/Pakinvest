@@ -27,6 +27,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { LivePlatformFeed } from '../LivePlatformFeed';
 
 export const HomeTab: React.FC = () => {
   const {
@@ -249,7 +250,10 @@ export const HomeTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Live Activity & Notifications Alert Box */}
+      {/* 3. Live Simulated Platform Activity (Unlimited Upward Feed) */}
+      <LivePlatformFeed />
+
+      {/* 4. Live Activity & Notifications Alert Box */}
       <div
         onClick={() => setIsNotificationModalOpen(true)}
         className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-all shadow-2xs group"

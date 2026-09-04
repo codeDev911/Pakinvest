@@ -88,7 +88,7 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
             {getTabTitle()}
           </h1>
           <p className={`text-[11px] hidden sm:block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            PakInvest Multi-Tier Operations & Real-time Settlement Console
+            Investify Multi-Tier Operations & Real-time Settlement Console
           </p>
         </div>
       </div>

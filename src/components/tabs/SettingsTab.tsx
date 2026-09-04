@@ -126,7 +126,7 @@ export const SettingsTab: React.FC = () => {
     },
     {
       q: 'What payment methods are supported in Pakistan?',
-      a: 'PakInvest supports JazzCash, EasyPaisa, Raast Instant ID, Meezan/HBL/UBL Bank transfers, and USDT (TRC20).',
+      a: 'Investify supports JazzCash, EasyPaisa, Raast Instant ID, Meezan/HBL/UBL Bank transfers, and USDT (TRC20).',
     },
   ];
 
@@ -166,7 +166,7 @@ export const SettingsTab: React.FC = () => {
               )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-              {isAuthenticated ? `${user.phone} • ${user.email || 'PakInvest Member'}` : 'Sign in to access personalized portfolio'}
+              {isAuthenticated ? `${user.phone} • ${user.email || 'Investify Member'}` : 'Sign in to access personalized portfolio'}
             </p>
             {isAuthenticated && (
               <p className="text-[11px] text-slate-400 mt-0.5">
@@ -489,7 +489,7 @@ export const SettingsTab: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <button
             onClick={() => {
-              window.open('https://api.whatsapp.com/send?phone=923001234567&text=Hello%20PakInvest%20Support,%20I%20need%20assistance', '_blank');
+              window.open('https://api.whatsapp.com/send?phone=923001234567&text=Hello%20Investify%20Support,%20I%20need%20assistance', '_blank');
             }}
             className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-left flex items-center justify-between hover:bg-emerald-100 transition-colors"
           >
@@ -509,7 +509,7 @@ export const SettingsTab: React.FC = () => {
 
           <button
             onClick={() => {
-              showToast('Telegram Channel', 'Opening official announcement telegram channel: @PakInvestOfficial', 'info');
+              showToast('Telegram Channel', 'Opening official announcement telegram channel: @InvestifyOfficial', 'info');
             }}
             className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-left flex items-center justify-between hover:bg-blue-100 transition-colors"
           >
@@ -580,7 +580,7 @@ export const SettingsTab: React.FC = () => {
 
       <div className="pt-2 text-center">
         <p className="text-[10px] text-slate-400">
-          PakInvest v3.2.0 • Secured & SSL Encrypted for Pakistan
+          Investify v3.2.0 • Secured & SSL Encrypted for Pakistan
         </p>
       </div>
     </div>

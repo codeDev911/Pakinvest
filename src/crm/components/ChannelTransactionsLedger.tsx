@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { OfficialDepositChannel, Transaction } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
 import {
   CreditCard,
@@ -20,6 +20,10 @@ import {
   TrendingUp,
   TrendingDown,
   Info,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -42,7 +46,10 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 50, totalPages: 1 });
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [jumpPageInput, setJumpPageInput] = useState<string>('');
+  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 25, totalPages: 1 });
 
   const fetchLedger = useCallback(async () => {
     setIsLoading(true);
@@ -50,8 +57,8 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
       const params = new URLSearchParams();
       if (typeFilter !== 'all') params.append('type', typeFilter);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
-      params.append('page', '1');
-      params.append('limit', '100');
+      params.append('page', String(currentPage));
+      params.append('limit', String(pageSize));
 
       const url = getApiUrl(
         `/api/admin/deposit-channels/${encodeURIComponent(selectedChannelId)}/transactions?${params.toString()}`
@@ -67,11 +74,58 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
     } finally {
       setIsLoading(false);
     }
-  }, [selectedChannelId, typeFilter, searchQuery]);
+  }, [selectedChannelId, typeFilter, searchQuery, currentPage, pageSize]);
 
   useEffect(() => {
     fetchLedger();
   }, [fetchLedger]);
+
+  const handleSelectChannel = (chId: string) => {
+    setSelectedChannelId(chId);
+    setCurrentPage(1);
+  };
+
+  const handleTypeChange = (t: 'all' | 'deposit' | 'withdrawal') => {
+    setTypeFilter(t);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.max(1, pagination.totalPages || Math.ceil(pagination.total / pageSize) || 1);
+
+  const pageNumbers = useMemo(() => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 4) {
+        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+      } else if (currentPage >= totalPages - 3) {
+        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+      }
+    }
+    return pages;
+  }, [currentPage, totalPages]);
+
+  const handleJumpPage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const pageNum = parseInt(jumpPageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setJumpPageInput('');
+    }
+  };
 
   // Selected channel object (if not 'all')
   const activeChannel = channels.find((c) => c.id === selectedChannelId || c.gateway === selectedChannelId);
@@ -147,7 +201,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
         <div className="mt-5 pt-4 border-t border-slate-800/60 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
           <button
             type="button"
-            onClick={() => setSelectedChannelId('all')}
+            onClick={() => handleSelectChannel('all')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
               selectedChannelId === 'all'
                 ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
@@ -174,7 +228,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
               <button
                 key={ch.id || ch.gateway}
                 type="button"
-                onClick={() => setSelectedChannelId(ch.id || ch.gateway)}
+                onClick={() => handleSelectChannel(ch.id || ch.gateway)}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 border ${
                   isSelected
                     ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20 font-black'
@@ -313,7 +367,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
         <div className="flex items-center gap-1.5 w-full md:w-auto">
           <button
             type="button"
-            onClick={() => setTypeFilter('all')}
+            onClick={() => handleTypeChange('all')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
               typeFilter === 'all'
                 ? 'bg-amber-500 text-slate-950 font-black'
@@ -326,7 +380,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
           </button>
           <button
             type="button"
-            onClick={() => setTypeFilter('deposit')}
+            onClick={() => handleTypeChange('deposit')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
               typeFilter === 'deposit'
                 ? 'bg-emerald-500 text-slate-950 font-black'
@@ -340,7 +394,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
           </button>
           <button
             type="button"
-            onClick={() => setTypeFilter('withdrawal')}
+            onClick={() => handleTypeChange('withdrawal')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
               typeFilter === 'withdrawal'
                 ? 'bg-rose-500 text-slate-950 font-black'
@@ -360,7 +414,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search by TID, phone, name, notes..."
             className={`w-full pl-9 pr-4 py-2 rounded-xl text-xs font-medium border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
               isDark
@@ -382,13 +436,15 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
             <h3 className={`text-sm font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Ledger Journal Entries
             </h3>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">
-              {transactions.length} entries shown
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-amber-400 border border-slate-700">
+              {pagination.total > 0
+                ? `${pagination.total.toLocaleString()} total entries recorded`
+                : `${transactions.length} entries shown`}
             </span>
           </div>
 
           <span className="text-[11px] text-slate-400 font-mono">
-            Showing most recent settled flows
+            Page {currentPage} of {totalPages} • Pakistan Standard Time (PKT)
           </span>
         </div>
 
@@ -444,7 +500,7 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
                     >
                       {/* Date */}
                       <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400 whitespace-nowrap">
-                        {tx.timestamp || 'Just now'}
+                        {formatPakistanDateTime(tx.timestamp || tx.createdAt)}
                       </td>
 
                       {/* Gateway / Channel */}
@@ -525,6 +581,139 @@ export const ChannelTransactionsLedger: React.FC<ChannelTransactionsLedgerProps>
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Footer Controls */}
+        {pagination.total > 0 && (
+          <div
+            className={`p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 text-xs ${
+              isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={isDark ? 'text-slate-400' : 'text-slate-600'}>
+                Showing{' '}
+                <strong className={isDark ? 'text-white' : 'text-slate-900'}>
+                  {(currentPage - 1) * pageSize + 1}
+                </strong>{' '}
+                to{' '}
+                <strong className={isDark ? 'text-white' : 'text-slate-900'}>
+                  {Math.min(currentPage * pageSize, pagination.total)}
+                </strong>{' '}
+                of{' '}
+                <strong className="text-amber-400 font-mono">
+                  {pagination.total.toLocaleString()}
+                </strong>{' '}
+                entries
+              </span>
+
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className={`py-1 px-2 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
+                    isDark
+                      ? 'bg-slate-900 border border-slate-700 text-slate-200'
+                      : 'bg-white border border-slate-300 text-slate-800'
+                  }`}
+                >
+                  {[10, 25, 50, 100, 200].map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Page Navigation Buttons */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1 || isLoading}
+                className="p-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="First Page"
+              >
+                <ChevronsLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1 || isLoading}
+                className="p-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Previous Page"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="flex items-center gap-1 mx-1">
+                {pageNumbers.map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-500 font-bold">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={`page-${p}`}
+                      type="button"
+                      onClick={() => setCurrentPage(Number(p))}
+                      disabled={isLoading}
+                      className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition-all ${
+                        currentPage === p
+                          ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                          : isDark
+                          ? 'text-slate-300 hover:bg-slate-800 border border-slate-800'
+                          : 'text-slate-700 hover:bg-slate-200 border border-slate-300'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages || isLoading}
+                className="p-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Next Page"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage >= totalPages || isLoading}
+                className="p-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Last Page"
+              >
+                <ChevronsRight className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Jump to page */}
+              {totalPages > 5 && (
+                <form onSubmit={handleJumpPage} className="flex items-center gap-1 ml-2">
+                  <span className="text-[11px] text-slate-500">Go:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={jumpPageInput}
+                    onChange={(e) => setJumpPageInput(e.target.value)}
+                    placeholder="#"
+                    className={`w-11 py-1 px-1.5 rounded-lg text-center font-mono text-xs border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      isDark
+                        ? 'bg-slate-900 border-slate-700 text-white'
+                        : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </form>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Transaction, TransactionType } from '../../types';
-import { formatPKR } from '../../utils/formatters';
+import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
 import {
   Receipt,
@@ -226,10 +226,10 @@ export const CrmLedgerView: React.FC<CrmLedgerViewProps> = () => {
     },
     {
       key: 'timestamp',
-      header: 'Timestamp',
+      header: 'Timestamp (PKT)',
       render: (tx) => (
         <span className="font-mono text-[11px] text-slate-300 whitespace-nowrap">
-          {tx.timestamp}
+          {formatPakistanDateTime(tx.timestamp || tx.createdAt)}
         </span>
       ),
     },
