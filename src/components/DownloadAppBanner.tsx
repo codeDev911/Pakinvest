@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Download, Smartphone, CheckCircle2, ChevronDown, ChevronUp, ShieldCheck, Zap } from 'lucide-react';
-import { isNativePlatform } from '../config/api';
+import { Download, Smartphone, CheckCircle2, ChevronDown, ChevronUp, ShieldCheck, Zap, ExternalLink } from 'lucide-react';
+import { isNativePlatform, ANDROID_APK_DOWNLOAD_URL } from '../config/api';
 
 export const DownloadAppBanner: React.FC = () => {
   const [showInstructions, setShowInstructions] = useState(false);
@@ -14,17 +14,20 @@ export const DownloadAppBanner: React.FC = () => {
   const handleDownload = () => {
     setDownloading(true);
 
-    // Trigger download of the APK file
-    const link = document.createElement('a');
-    link.href = '/investify.apk';
-    link.download = 'Investify.apk';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // If external URL (e.g. GitHub Releases, Firebase Storage, Drive, CDN), open directly
+    if (ANDROID_APK_DOWNLOAD_URL.startsWith('http')) {
+      window.open(ANDROID_APK_DOWNLOAD_URL, '_blank');
+      setTimeout(() => setDownloading(false), 1500);
+      return;
+    }
+
+    // Direct browser navigation to the APK endpoint forces standard browser binary download
+    // without iframe HTML wrapper renaming (.apk.html)
+    window.location.href = ANDROID_APK_DOWNLOAD_URL;
 
     setTimeout(() => {
       setDownloading(false);
-    }, 2000);
+    }, 2500);
   };
 
   return (

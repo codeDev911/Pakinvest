@@ -26,6 +26,13 @@ export const API_BASE_URL = envApiUrl
   ? String(envApiUrl).replace(/\/+$/, '')
   : (isNativePlatform ? DEFAULT_FALLBACK_URL : '');
 
+// Direct APK download URL (can be customized via VITE_ANDROID_APK_URL or defaults to local /investify.apk)
+const envApkUrl =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ANDROID_APK_URL) ||
+  '';
+
+export const ANDROID_APK_DOWNLOAD_URL = envApkUrl || '/investify.apk';
+
 /**
  * Returns the full API URL for a given endpoint path.
  * 
