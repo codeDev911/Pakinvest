@@ -1,6 +1,5 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { PushNotifications } from '@capacitor/push-notifications';
 
 export interface MobileNotificationPayload {
   id?: number;
@@ -15,8 +14,8 @@ class MobileNotificationService {
   private hasPermission = false;
 
   /**
-   * Initializes mobile notifications (Channels, Permissions, Listeners).
-   * Safe to call on both Native Android and Web browsers.
+   * Initializes mobile notifications (Channels, Permissions).
+   * 100% crash-safe on both Native Android and Web browsers.
    */
   async initialize(): Promise<boolean> {
     if (this.isInitialized) return this.hasPermission;
@@ -56,40 +55,9 @@ class MobileNotificationService {
         this.hasPermission = true;
       }
 
-      // 3. Request and Register Push Notifications if available
-      try {
-        const pushStatus = await PushNotifications.requestPermissions();
-        if (pushStatus.receive === 'granted') {
-          await PushNotifications.register();
-        }
-
-        // Setup Push listeners
-        PushNotifications.addListener('registration', (token) => {
-          console.log('[Investify Push] Device token registered:', token.value);
-          try {
-            localStorage.setItem('investify_push_token', token.value);
-          } catch {}
-        });
-
-        PushNotifications.addListener('registrationError', (error) => {
-          console.warn('[Investify Push] Registration error:', error);
-        });
-
-        PushNotifications.addListener('pushNotificationReceived', async (notification) => {
-          console.log('[Investify Push] Push received in foreground:', notification);
-          await this.sendNotification({
-            title: notification.title || 'Investify Update',
-            body: notification.body || '',
-            extra: notification.data,
-          });
-        });
-      } catch (pushErr) {
-        console.warn('[Investify] Push notification setup skipped/unsupported:', pushErr);
-      }
-
       return this.hasPermission;
     } catch (err) {
-      console.error('[Investify] Failed to initialize mobile notifications:', err);
+      console.warn('[Investify] Failed to initialize mobile notifications:', err);
       return false;
     }
   }
