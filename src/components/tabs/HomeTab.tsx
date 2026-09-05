@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LivePlatformFeed } from '../LivePlatformFeed';
+import { DownloadAppBanner } from '../DownloadAppBanner';
 
 export const HomeTab: React.FC = () => {
   const {
@@ -154,7 +155,7 @@ export const HomeTab: React.FC = () => {
 
       {/* 2. Quick Actions */}
       <div className="space-y-2.5">
-        {/* Primary Row: Deposit & Withdrawal (Large Hero Action Buttons) */}
+        {/* Primary Row: Deposit & Withdraw (Hero Action Buttons) */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
           {/* Deposit Button */}
           <button
@@ -170,11 +171,10 @@ export const HomeTab: React.FC = () => {
               <span className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors block">
                 Deposit
               </span>
-              <span className="text-[10px] text-slate-400 block font-medium">Add funds in PKR</span>
             </div>
           </button>
 
-          {/* Withdrawal Button */}
+          {/* Withdraw Button */}
           <button
             id="home-btn-withdrawal"
             type="button"
@@ -186,9 +186,8 @@ export const HomeTab: React.FC = () => {
             </div>
             <div className="text-left">
               <span className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors block">
-                Withdrawal
+                Withdraw
               </span>
-              <span className="text-[10px] text-slate-400 block font-medium">Instant Cashout</span>
             </div>
           </button>
         </div>
@@ -249,6 +248,9 @@ export const HomeTab: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Download Android Mobile App (Only rendered in Web browser, hidden inside APK) */}
+      <DownloadAppBanner />
 
       {/* 3. Live Simulated Platform Activity (Unlimited Upward Feed) */}
       <LivePlatformFeed />
@@ -319,22 +321,22 @@ export const HomeTab: React.FC = () => {
               className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 transition-all cursor-pointer flex flex-col justify-between shadow-2xs"
             >
               <div className="space-y-2.5">
-                <div className="flex items-start justify-between">
-                  <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                    {getPlanIcon(plan.category)}
+                {/* Full width Title Header */}
+                <div className="w-full space-y-1">
+                  <div className="flex items-center justify-between gap-1.5 w-full">
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">
+                      {plan.name}
+                    </h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                      {plan.dailyProfitPercent}%
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    {plan.dailyProfitPercent}% Daily
-                  </span>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                    {plan.name}
-                  </h4>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    {plan.durationDays} Days Duration
-                  </span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                    <span className="shrink-0">{getPlanIcon(plan.category)}</span>
+                    <span>{plan.category}</span>
+                    <span>•</span>
+                    <span>{plan.durationDays} Days</span>
+                  </div>
                 </div>
 
                 <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs flex justify-between items-center">
@@ -346,7 +348,7 @@ export const HomeTab: React.FC = () => {
               </div>
 
               <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                <span>Invest Now</span>
+                <span>Invest</span>
                 <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
               </div>
             </div>

@@ -236,11 +236,8 @@ export const WithdrawModal: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {step === 1 ? 'Withdraw to Pakistani Gateway' : 'Security PIN Authorization'}
+                  Withdraw
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {step === 1 ? 'Fast settlement via JazzCash, EasyPaisa, Raast' : 'Enter your 4-digit withdrawal PIN'}
-                </p>
               </div>
             </div>
 

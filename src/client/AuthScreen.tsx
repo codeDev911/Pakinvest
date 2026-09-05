@@ -23,7 +23,38 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export const AuthScreen: React.FC = () => {
   const { login, register } = useApp();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+
+  // Helper to extract referral code from URL or storage
+  const getInitialReferralCode = (): string => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlRef = params.get('ref') || params.get('invite') || params.get('referral');
+      if (urlRef && urlRef.trim()) {
+        const clean = urlRef.trim().toUpperCase();
+        localStorage.setItem('pakinvest_ref_code', clean);
+        return clean;
+      }
+      const saved = localStorage.getItem('pakinvest_ref_code');
+      return saved ? saved.trim().toUpperCase() : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const initialRef = getInitialReferralCode();
+
+  // If user navigated using invite link (e.g. /join?ref=PAK6890), default to register
+  const [mode, setMode] = useState<'login' | 'register'>(() => {
+    try {
+      const path = window.location.pathname.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('ref') || params.get('invite') || params.get('referral') || path.includes('/join') || path.includes('/register')) {
+        return 'register';
+      }
+    } catch {}
+    return 'login';
+  });
+
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -38,10 +69,7 @@ export const AuthScreen: React.FC = () => {
   const [regEmail, setRegEmail] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
   const [regPin, setRegPin] = useState<string>('');
-  const [regReferralCode, setRegReferralCode] = useState<string>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return (params.get('ref') || '').toUpperCase();
-  });
+  const [regReferralCode, setRegReferralCode] = useState<string>(initialRef);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +162,7 @@ export const AuthScreen: React.FC = () => {
             <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-display">
-            Investify <span className="text-emerald-400">PKR</span>
+            Investify
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xs mx-auto">
             Pakistan's Premier Automated Investment & Daily Yield Platform
@@ -290,6 +318,24 @@ export const AuthScreen: React.FC = () => {
           ) : (
             /* REGISTER FORM */
             <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+              {regReferralCode && (
+                <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 flex items-center justify-between text-xs text-emerald-300 shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-900/90 border border-emerald-600/50 flex items-center justify-center text-amber-400">
+                      <Gift className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-white block text-xs">Invited by Sponsor</span>
+                      <span className="text-[11px] text-emerald-300 font-mono">
+                        Referral ID: <strong className="text-amber-300 font-bold">{regReferralCode}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-900 text-emerald-300 border border-emerald-700/60">
+                    Applied
+                  </span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
                   Full Name / Legal Name
@@ -382,18 +428,34 @@ export const AuthScreen: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Referral Code <span className="text-slate-500 font-normal">(Optional)</span>
+                  Referral ID <span className="text-slate-500 font-normal">(Optional)</span>
                 </label>
                 <div className="relative">
                   <Gift className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={regReferralCode}
-                    onChange={(e) => setRegReferralCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. PAK1234"
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setRegReferralCode(val);
+                      if (val.trim()) {
+                        localStorage.setItem('pakinvest_ref_code', val.trim());
+                      }
+                    }}
+                    placeholder="e.g. PAK6890"
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/70 border border-slate-700 text-xs text-white font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
                   />
                 </div>
+                {regReferralCode.trim() && (
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-700/50 text-emerald-300">
+                    <span className="flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      Registering under sponsor:{' '}
+                      <strong className="font-mono text-white font-bold">{regReferralCode.trim()}</strong>
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Active</span>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2">

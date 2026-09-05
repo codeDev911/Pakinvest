@@ -18,6 +18,7 @@ import {
 import { INITIAL_PLANS, LIVE_PAYOUT_FEED, OFFICIAL_DEPOSIT_CHANNELS } from '../data/mockData';
 import { fireConfetti } from '../utils/formatters';
 import { getApiUrl } from '../config/api';
+import { mobileNotifications } from '../services/mobileNotifications';
 
 export interface ToastInfo {
   id: string;
@@ -43,6 +44,7 @@ interface AppContextType {
   notifications: UserNotification[];
   unreadNotificationsCount: number;
   livePayouts: LivePayoutNotification[];
+  requestMobileNotificationPermission: () => Promise<boolean>;
   databaseStatus: DatabaseStatus;
   referralNetwork: ReferralNetworkData;
   toasts: ToastInfo[];
@@ -218,6 +220,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pakinvest_theme', theme);
   }, [theme]);
 
+  // Capture invite referral code from URL parameters on startup
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const refCode = params.get('ref') || params.get('invite') || params.get('referral');
+      if (refCode && refCode.trim()) {
+        localStorage.setItem('pakinvest_ref_code', refCode.trim().toUpperCase());
+      }
+    } catch {}
+  }, []);
+
   // Auth Headers Helper
   const getAuthHeaders = () => {
     const activeToken = token || localStorage.getItem('pakinvest_jwt_token');
@@ -383,8 +396,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // URL referral code tracker
+  // URL referral code tracker & Mobile Notification Initializer
   useEffect(() => {
+    mobileNotifications.initialize();
     try {
       const params = new URLSearchParams(window.location.search);
       const ref = params.get('ref') || params.get('invite') || params.get('referral');
@@ -1095,6 +1109,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   n.message,
                   n.type.includes('declined') ? 'warning' : 'success'
                 );
+                // Trigger native mobile notification with sound & vibration
+                mobileNotifications.sendNotification({
+                  title: n.title,
+                  body: n.message,
+                });
                 if (n.type.includes('approved') || n.type.includes('declined')) {
                   hasApprovalOrStatusChange = true;
                 }
@@ -1204,6 +1223,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         markNotificationAsRead,
         clearAllNotifications,
         fetchNotifications,
+        requestMobileNotificationPermission: () => mobileNotifications.requestPermission(),
         addPaymentAccount,
         deletePaymentAccount,
         updateUserPin,

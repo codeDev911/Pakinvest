@@ -229,13 +229,10 @@ export const PlanDetailModal: React.FC = () => {
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Activating Investment...
+                    Investing...
                   </span>
                 ) : (
-                  <>
-                    <span>Confirm & Activate Plan ({formatPKR(investAmount)})</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+                  <span>Invest</span>
                 )}
               </button>
             ) : (
@@ -247,8 +244,7 @@ export const PlanDetailModal: React.FC = () => {
                 }}
                 className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-all shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2"
               >
-                <span>Deposit Rs. {(investAmount - user.balance).toLocaleString()} to Activate</span>
-                <ArrowRight className="w-4 h-4" />
+                Deposit
               </button>
             )}
           </div>

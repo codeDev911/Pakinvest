@@ -91,7 +91,7 @@ export const PlansTab: React.FC = () => {
                 : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            Explore Plans ({plans.length})
+            Plans ({plans.length})
           </button>
           <button
             onClick={() => setViewSection('active')}
@@ -101,7 +101,7 @@ export const PlansTab: React.FC = () => {
                 : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            <span>My Active</span>
+            <span>Active</span>
             <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[10px]">
               {activeInvestments.length}
             </span>
@@ -119,13 +119,13 @@ export const PlansTab: React.FC = () => {
               </div>
               <h4 className="text-sm font-bold text-slate-800 dark:text-white">No Active Plans Yet</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                Activate an investment package below to start earning daily guaranteed ROI in Pakistani Rupees.
+                Activate an investment package to start earning daily guaranteed ROI in Pakistani Rupees.
               </p>
               <button
                 onClick={() => setViewSection('plans')}
                 className="py-2.5 px-4 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition-colors"
               >
-                Browse Plans
+                Plans
               </button>
             </div>
           ) : (
@@ -165,33 +165,31 @@ export const PlansTab: React.FC = () => {
                 className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                        {getPlanIcon(plan.category)}
-                      </div>
-                      <div>
-                        <h4 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                          {plan.name}
-                        </h4>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {plan.category} • {plan.durationDays} Days Lock
+                  {/* Full-width Title Header */}
+                  <div className="w-full space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                        {plan.name}
+                      </h4>
+                      {plan.badge && (
+                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                          {plan.badge}
                         </span>
-                      </div>
+                      )}
                     </div>
-
-                    {plan.badge && (
-                      <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        {plan.badge}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="shrink-0">{getPlanIcon(plan.category)}</span>
+                      <span>{plan.category}</span>
+                      <span>•</span>
+                      <span>{plan.durationDays} Days</span>
+                    </div>
                   </div>
 
                   {/* Pricing Matrix */}
-                  <div className="grid grid-cols-2 gap-2.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
                     <div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 block uppercase tracking-wider font-semibold">
-                        Plan Cost
+                        Price
                       </span>
                       <span className="text-base font-black text-slate-900 dark:text-white font-display">
                         {formatPKR(plan.fixedAmount || plan.minAmount)}
@@ -200,7 +198,7 @@ export const PlansTab: React.FC = () => {
 
                     <div className="text-right">
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block uppercase tracking-wider font-bold">
-                        Daily Profit ({plan.dailyProfitPercent}%)
+                        Daily ({plan.dailyProfitPercent}%)
                       </span>
                       <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-display">
                         +{formatPKR(plan.dailyProfitAmount)}
@@ -219,20 +217,19 @@ export const PlansTab: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800/80 mt-4 text-xs">
+                <div className="flex items-center justify-between pt-3.5 border-t border-slate-100 dark:border-slate-800/80 mt-3.5 text-xs">
                   <div>
-                    <span className="text-[10px] text-slate-400 block">Total Expected Return</span>
+                    <span className="text-[10px] text-slate-400 block">Total Return</span>
                     <span className="font-extrabold text-slate-900 dark:text-white">
-                      {formatPKR(plan.totalReturnAmount)} ({plan.totalRoiPercent}% ROI)
+                      {formatPKR(plan.totalReturnAmount)} ({plan.totalRoiPercent}%)
                     </span>
                   </div>
 
                   <button
                     type="button"
-                    className="py-2 px-4 rounded-xl bg-emerald-600 group-hover:bg-emerald-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+                    className="py-2 px-4 rounded-xl bg-emerald-600 group-hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-xs"
                   >
-                    <span>Invest Now</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    Invest
                   </button>
                 </div>
               </div>
@@ -330,10 +327,9 @@ export const PlansTab: React.FC = () => {
 
             <button
               onClick={() => setSelectedPlanForDetail(calcPlan)}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-md shadow-emerald-600/20"
             >
-              <span>Activate {calcPlan.name} for {formatPKR(calcAmount)}</span>
-              <ArrowRight className="w-4 h-4" />
+              Invest
             </button>
           </div>
         </div>

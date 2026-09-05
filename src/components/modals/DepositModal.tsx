@@ -133,11 +133,8 @@ export const DepositModal: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {step === 1 ? 'Deposit Pakistani Rupees (Rs.)' : 'Confirm Deposit Payment'}
+                  Deposit
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {step === 1 ? 'Select gateway & enter amount' : `Send funds via ${selectedGateway}`}
-                </p>
               </div>
             </div>
 

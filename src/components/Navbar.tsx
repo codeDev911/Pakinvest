@@ -42,8 +42,8 @@ export const Navbar: React.FC = () => {
           {/* App Title & Tagline */}
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight font-display group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1">
-                Investify <span className="text-emerald-600 dark:text-emerald-400 font-black">PKR</span>
+              <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight font-display group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                Investify
               </span>
               <span className="hidden xs:inline-flex items-center text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
                 Official

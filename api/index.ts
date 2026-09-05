@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -328,6 +330,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Direct APK Download Endpoint
+app.get(['/investify.apk', '/api/download-apk'], (req, res) => {
+  const apkPath = path.join(process.cwd(), 'public', 'investify.apk');
+  if (fs.existsSync(apkPath)) {
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="Investify.apk"');
+    return res.sendFile(apkPath);
+  }
+  return res.status(404).json({ error: 'APK package is being prepared. Please try again shortly.' });
+});
+
 // Middleware to ensure DB seed is ready
 app.use(async (req, res, next) => {
   if (!dbInitDone) {
@@ -441,14 +454,14 @@ router.post('/auth/register', async (req, res) => {
     }
 
     let validReferredBy: string | null = null;
+    let parentUser: any = null;
     if (referralCode && typeof referralCode === 'string' && referralCode.trim()) {
       const cleanRef = referralCode.trim().toUpperCase();
-      const parent = await prisma.user.findFirst({
+      parentUser = await prisma.user.findFirst({
         where: { referralCode: { equals: cleanRef, mode: 'insensitive' } },
       });
-      if (parent) {
-        validReferredBy = parent.referralCode;
-      }
+      // Register with sponsor referral ID (e.g. PAK6890)
+      validReferredBy = parentUser ? parentUser.referralCode : cleanRef;
     }
 
     const newRefCode = 'PAK' + Math.floor(1000 + Math.random() * 9000);
@@ -488,10 +501,20 @@ router.post('/auth/register', async (req, res) => {
     // Create welcome notification
     await createUserNotification(
       newUser.id,
-      'Welcome to PakInvest Official! 🇵🇰',
+      'Welcome to Investify PKR! 🇵🇰',
       `Assalam-o-Alaikum ${newUser.name}! Your account is active. Deposit via JazzCash / EasyPaisa to activate high-yield plans.`,
       'system'
     );
+
+    // Notify referral parent sponsor
+    if (parentUser) {
+      await createUserNotification(
+        parentUser.id,
+        'New Referral Registered! 👥',
+        `${newUser.name} just registered using your referral code (${parentUser.referralCode}). You will earn instant commissions when they deposit!`,
+        'referral'
+      ).catch(() => {});
+    }
 
     const token = jwt.sign({ userId: newUser.id, phone: newUser.phone }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = newUser;
