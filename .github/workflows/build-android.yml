@@ -1,16 +1,16 @@
 name: Build Investify Android APK
 
 on:
+  workflow_dispatch:
+    inputs:
+      backend_api_url:
+        description: 'Backend API URL (e.g. https://your-backend.run.app or https://api.yourdomain.com)'
+        required: true
+        type: string
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:
-    inputs:
-      api_base_url:
-        description: 'Hosted Backend API Base URL (e.g. https://your-domain.run.app)'
-        required: false
-        default: ''
 
 jobs:
   build-apk:
@@ -41,10 +41,23 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
+      - name: Configure Backend API Environment
+        run: |
+          API_URL="${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}"
+          # Strip trailing slashes
+          API_URL=$(echo "$API_URL" | sed 's:/*$::')
+          echo "=================================================="
+          echo "Baking Backend API URL into APK: $API_URL"
+          echo "=================================================="
+          echo "VITE_API_BASE_URL=$API_URL" > .env.production
+          echo "VITE_API_URL=$API_URL" >> .env.production
+          echo "VITE_API_BASE_URL=$API_URL" >> .env
+          echo "VITE_API_URL=$API_URL" >> .env
+
       - name: Build Web Client Assets
         env:
-          VITE_API_BASE_URL: ${{ inputs.api_base_url || secrets.VITE_API_BASE_URL || 'https://ais-dev-wprzecnjv6ps2nlop6pkwv-1020468351467.asia-southeast1.run.app' }}
-          VITE_API_URL: ${{ inputs.api_base_url || secrets.VITE_API_BASE_URL || 'https://ais-dev-wprzecnjv6ps2nlop6pkwv-1020468351467.asia-southeast1.run.app' }}
+          VITE_API_BASE_URL: ${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}
+          VITE_API_URL: ${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}
         run: npm run build
 
       - name: Sync Capacitor Android Project

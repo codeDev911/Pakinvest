@@ -515,7 +515,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return { success: false, error: data?.error || 'Login failed. Please verify your credentials.' };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Network connection failed' };
+      let message = err?.message || 'Network connection failed';
+      if (message.toLowerCase().includes('failed to fetch')) {
+        message = 'Unable to connect to the server. Please check your internet connection and try again.';
+      }
+      return { success: false, error: message };
     }
   };
 
@@ -548,7 +552,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return { success: false, error: data?.error || 'Registration failed' };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Network connection failed' };
+      let message = err?.message || 'Network connection failed';
+      if (message.toLowerCase().includes('failed to fetch')) {
+        message = 'Unable to connect to the server. Please check your internet connection and try again.';
+      }
+      return { success: false, error: message };
     }
   };
 
