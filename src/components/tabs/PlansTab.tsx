@@ -28,16 +28,26 @@ export const PlansTab: React.FC = () => {
     activeInvestments,
     setSelectedPlanForDetail,
     claimProfit,
+    claimAllProfits,
+    readyToCollectPackagesCount,
+    readyToCollectTotalAmount,
     user,
     plansTabSection,
     setPlansTabSection,
   } = useApp();
 
+  const [isClaimingAll, setIsClaimingAll] = useState<boolean>(false);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [calcPlan, setCalcPlan] = useState<InvestmentPlan>(plans[1] || plans[0]);
   const [calcAmount, setCalcAmount] = useState<number>(calcPlan.fixedAmount || calcPlan.minAmount);
   const viewSection = plansTabSection;
   const setViewSection = setPlansTabSection;
+
+  const handleClaimAll = async () => {
+    setIsClaimingAll(true);
+    await claimAllProfits();
+    setIsClaimingAll(false);
+  };
 
   const categories = ['All', 'Starter', 'Solar Energy', 'Agro Yield', 'CPEC Logistics', 'Real Estate', 'VIP Bluechip'];
 
@@ -95,15 +105,17 @@ export const PlansTab: React.FC = () => {
           </button>
           <button
             onClick={() => setViewSection('active')}
-            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 ${
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 relative ${
               viewSection === 'active'
                 ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400'
             }`}
           >
             <span>Active</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[10px]">
-              {activeInvestments.length}
+            <span className={`px-1.5 py-0.2 rounded-full text-white text-[10px] font-bold ${
+              readyToCollectPackagesCount > 0 ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+            }`}>
+              {readyToCollectPackagesCount > 0 ? `${readyToCollectPackagesCount} Ready` : activeInvestments.length}
             </span>
           </button>
         </div>
@@ -112,6 +124,36 @@ export const PlansTab: React.FC = () => {
       {viewSection === 'active' ? (
         /* ACTIVE INVESTMENTS VIEW */
         <div className="space-y-4">
+          {/* Prominent Ready to Collect Banner */}
+          {readyToCollectPackagesCount > 0 && (
+            <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md border border-emerald-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/20">
+                  <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-extrabold flex items-center gap-2">
+                    <span>{readyToCollectPackagesCount} {readyToCollectPackagesCount === 1 ? 'Package Yield Ready' : 'Packages Yield Ready'}</span>
+                    <span className="text-[10px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded-md">Ready</span>
+                  </h4>
+                  <p className="text-xs text-emerald-100">
+                    Collect your rewards of <strong className="text-white font-black">{formatPKR(readyToCollectTotalAmount)}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isClaimingAll}
+                onClick={handleClaimAll}
+                className="py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-extrabold text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>{isClaimingAll ? 'Collecting...' : `Collect All (${formatPKR(readyToCollectTotalAmount)})`}</span>
+              </button>
+            </div>
+          )}
+
           {activeInvestments.length === 0 ? (
             <div className="text-center py-12 p-6 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 mx-auto flex items-center justify-center">

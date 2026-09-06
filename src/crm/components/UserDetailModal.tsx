@@ -25,6 +25,8 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  Bell,
+  Send,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -44,7 +46,14 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'ledger' | 'adjust-balance' | 'reset-pin'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'ledger' | 'adjust-balance' | 'reset-pin' | 'send-notification'>('overview');
+  
+  // Notification state
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifCategory, setNotifCategory] = useState<'system' | 'promo' | 'alert' | 'profit_unlocked'>('system');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [notifSuccess, setNotifSuccess] = useState(false);
   
   // Balance adjustment state
   const [adjustType, setAdjustType] = useState<'credit' | 'debit'>('credit');
@@ -225,6 +234,18 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
           >
             <Key className="w-3.5 h-3.5" />
             <span>Reset Security PIN</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('send-notification')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === 'send-notification'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Send In-App Alert</span>
           </button>
         </div>
 
@@ -568,6 +589,144 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
                 {isResettingPin ? 'Updating PIN...' : 'Save New Security PIN'}
               </button>
             </form>
+          )}
+
+          {activeTab === 'send-notification' && (
+            <div className="space-y-4">
+              <div
+                className={`p-4 rounded-2xl border text-xs leading-relaxed ${
+                  isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}
+              >
+                Deliver a personalized in-app push notification directly to{' '}
+                <strong className="text-emerald-400">{user?.name}</strong> ({user?.phone}).
+              </div>
+
+              {notifSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Notification successfully sent to user's device!</span>
+                </div>
+              )}
+
+              {/* Category selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Notification Category</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'system', label: 'System Notice' },
+                    { id: 'promo', label: 'Promotion' },
+                    { id: 'alert', label: 'Security Alert' },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setNotifCategory(cat.id as any)}
+                      className={`p-2 rounded-xl border text-xs font-bold transition-all ${
+                        notifCategory === cat.id
+                          ? 'border-blue-500 bg-blue-950/50 text-blue-300'
+                          : 'border-slate-800 bg-slate-950 text-slate-400'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick templates */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-400">Quick Templates</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { t: 'Payment Received', m: 'Your payment has been successfully confirmed and credited to your wallet balance.' },
+                    { t: 'Account Verified', m: 'Your investor account has been verified. You now have full withdrawal access.' },
+                    { t: 'Special Bonus Credited', m: 'A special VIP investor bonus has been credited directly to your account.' },
+                  ].map((tmpl, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setNotifTitle(tmpl.t);
+                        setNotifMessage(tmpl.m);
+                      }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900"
+                    >
+                      {tmpl.t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Notification Title</label>
+                <input
+                  type="text"
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  placeholder="e.g. Deposit Credited Successfully"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Notification Message</label>
+                <textarea
+                  rows={3}
+                  value={notifMessage}
+                  onChange={(e) => setNotifMessage(e.target.value)}
+                  placeholder="Type the message body to display on the user's phone..."
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed"
+                  required
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={isSendingNotif || !notifTitle.trim() || !notifMessage.trim()}
+                onClick={async () => {
+                  if (!user?.id || !notifTitle.trim() || !notifMessage.trim()) return;
+                  setIsSendingNotif(true);
+                  setNotifSuccess(false);
+                  try {
+                    const res = await fetch(getApiUrl('/api/admin/notifications/broadcast'), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        title: notifTitle.trim(),
+                        message: notifMessage.trim(),
+                        type: notifCategory,
+                        filter: {
+                          target: 'specific_users',
+                          specificUserIds: [user.id],
+                        },
+                        adminName: 'Admin Operator',
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data?.success) {
+                      setNotifSuccess(true);
+                      setNotifTitle('');
+                      setNotifMessage('');
+                      setTimeout(() => setNotifSuccess(false), 5000);
+                    }
+                  } catch (err) {
+                    console.error('Failed to send direct notification:', err);
+                  } finally {
+                    setIsSendingNotif(false);
+                  }
+                }}
+                className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md ${
+                  notifTitle.trim() && notifMessage.trim()
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-blue-950/40'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSendingNotif ? 'Delivering Alert...' : `Send Notification to ${user?.name}`}</span>
+              </button>
+            </div>
           )}
         </div>
 

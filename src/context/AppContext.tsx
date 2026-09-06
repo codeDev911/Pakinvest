@@ -17,8 +17,9 @@ import {
 } from '../types';
 import { INITIAL_PLANS, LIVE_PAYOUT_FEED, OFFICIAL_DEPOSIT_CHANNELS } from '../data/mockData';
 import { fireConfetti } from '../utils/formatters';
-import { getApiUrl } from '../config/api';
+import { getApiUrl, isNativePlatform, API_BASE_URL } from '../config/api';
 import { mobileNotifications } from '../services/mobileNotifications';
+import { packageRewardNotificationService } from '../services/packageRewardNotificationService';
 
 export interface ToastInfo {
   id: string;
@@ -109,6 +110,8 @@ interface AppContextType {
   totalDailyProfitRate: number;
   profitPerSecond: number;
   profitPerHour: number;
+  readyToCollectPackagesCount: number;
+  readyToCollectTotalAmount: number;
   hideBalance: boolean;
   toggleHideBalance: () => void;
 }
@@ -242,14 +245,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Safe JSON parser helper to prevent SyntaxError if non-JSON (HTML 404/500) is returned
   const safeParseJson = async <T = any>(res: Response): Promise<{ ok: boolean; status: number; data: T }> => {
+    let text = '';
     try {
-      const text = await res.text();
+      text = await res.text();
+      if (!text || !text.trim()) {
+        return {
+          ok: res.ok,
+          status: res.status,
+          data: (res.ok ? { success: true } : { success: false, error: `Empty response from server (HTTP ${res.status})` }) as unknown as T,
+        };
+      }
       const parsed = JSON.parse(text);
       return { ok: res.ok, status: res.status, data: parsed };
     } catch {
-      const errorMsg = !res.ok
-        ? `Server responded with ${res.status}: ${res.statusText || 'Unable to process request'}`
-        : 'Invalid server response format. Please try again.';
+      let errorMsg = '';
+      const trimmed = text.trim().toLowerCase();
+      if (trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html')) {
+        if (isNativePlatform && !API_BASE_URL) {
+          errorMsg = 'This APK was built without a backend API URL. Please build the APK via GitHub Actions and enter your live backend server URL.';
+        } else {
+          errorMsg = `Server returned an HTML page (HTTP ${res.status}) instead of JSON. Ensure your Backend API URL is active and accessible.`;
+        }
+      } else if (!res.ok) {
+        errorMsg = `Server responded with ${res.status}: ${res.statusText || 'Unable to process request'}`;
+      } else {
+        errorMsg = 'Received invalid response format from server. Please verify your backend API.';
+      }
       return {
         ok: false,
         status: res.status,
@@ -396,9 +417,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // URL referral code tracker & Mobile Notification Initializer
+  // URL referral code tracker & Mobile Notification Initializer + Package Reward Offline Service
   useEffect(() => {
     mobileNotifications.initialize();
+    packageRewardNotificationService.initialize({
+      onPackageReady: (pkg) => {
+        showToast(
+          '🎁 Package Yield Ready!',
+          `Your "${pkg.planName}" daily profit of Rs. ${Math.round(pkg.dailyProfitAmount).toLocaleString()} is ready to collect!`,
+          'success'
+        );
+        const notifId = `ready-${pkg.id}-${pkg.nextClaimTimestamp}`;
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === notifId)) return prev;
+          const newNotif: UserNotification = {
+            id: notifId,
+            userId: user.id || 'current-user',
+            title: `🎁 Daily Profit Ready (Rs. ${Math.round(pkg.dailyProfitAmount).toLocaleString()})`,
+            message: `Your "${pkg.planName}" contract has matured its 24-hour payout cycle. Tap to collect your reward of Rs. ${Math.round(pkg.dailyProfitAmount).toLocaleString()} now.`,
+            type: 'profit_unlocked',
+            amount: pkg.dailyProfitAmount,
+            read: false,
+            timestamp: 'Just now',
+            createdAt: Date.now(),
+            actionTab: 'plans',
+          };
+          return [newNotif, ...prev];
+        });
+        setUnreadNotificationsCount((prev) => prev + 1);
+      },
+      onStreakReady: (streak) => {
+        showToast(
+          '🔥 Daily Check-in Bonus Ready!',
+          `Collect your Day ${streak.nextStreakDay} loyalty reward of Rs. ${streak.nextRewardAmount.toLocaleString()}!`,
+          'info'
+        );
+        const streakNotifId = `streak-ready-${new Date().toISOString().split('T')[0]}`;
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === streakNotifId)) return prev;
+          const newNotif: UserNotification = {
+            id: streakNotifId,
+            userId: user.id || 'current-user',
+            title: `🔥 Daily Check-in Bonus Ready (Rs. ${streak.nextRewardAmount.toLocaleString()})`,
+            message: `Your daily check-in loyalty bonus for Day ${streak.nextStreakDay} is ready to collect. Tap to claim Rs. ${streak.nextRewardAmount.toLocaleString()}.`,
+            type: 'promo',
+            amount: streak.nextRewardAmount,
+            read: false,
+            timestamp: 'Just now',
+            createdAt: Date.now(),
+            actionTab: 'rewards',
+          };
+          return [newNotif, ...prev];
+        });
+        setUnreadNotificationsCount((prev) => prev + 1);
+      },
+    });
+
     try {
       const params = new URLSearchParams(window.location.search);
       const ref = params.get('ref') || params.get('invite') || params.get('referral');
@@ -407,6 +481,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch {}
   }, []);
+
+  // Sync active investments to local storage for offline & native alarms
+  useEffect(() => {
+    if (activeInvestments.length > 0) {
+      packageRewardNotificationService.syncActiveInvestments(activeInvestments);
+    }
+  }, [activeInvestments]);
+
+  // Sync daily streak schedule to local storage
+  useEffect(() => {
+    if (user.id) {
+      packageRewardNotificationService.syncStreakReward(user, dailyRewardTiers);
+    }
+  }, [user.dailyStreak, user.lastCheckInDate, dailyRewardTiers]);
 
   useEffect(() => {
     refreshAllData();
@@ -419,6 +507,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const interval = setInterval(() => {
       const now = Date.now();
       setCurrentTimestamp(now);
+      packageRewardNotificationService.checkReadyRewards();
       setActiveInvestments((prevInvestments) => {
         if (prevInvestments.length === 0) return prevInvestments;
         return prevInvestments.map((inv) => {
@@ -496,6 +585,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Auth: Login
   const login = async (identifier: string, password: string) => {
+    if (isNativePlatform && !API_BASE_URL) {
+      return {
+        success: false,
+        error: 'This APK was built without a configured backend API URL. Please build the APK via GitHub Actions and enter your live backend server URL when prompted.',
+      };
+    }
     try {
       const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
@@ -532,6 +627,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     securityPin: string;
     referralCode?: string;
   }) => {
+    if (isNativePlatform && !API_BASE_URL) {
+      return {
+        success: false,
+        error: 'This APK was built without a configured backend API URL. Please build the APK via GitHub Actions and enter your live backend server URL when prompted.',
+      };
+    }
     try {
       const res = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
@@ -807,6 +908,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (data.transaction) {
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
+        packageRewardNotificationService.markPackageClaimed(
+          investmentId,
+          Date.now() + 86400000
+        );
         fireConfetti();
         showToast(
           'Daily Profit Claimed! 💰',
@@ -865,6 +970,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (data.transaction) {
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
+        packageRewardNotificationService.markAllPackagesClaimed(Date.now() + 86400000);
         fireConfetti();
         showToast(
           'All Daily Profits Claimed! 💰',
@@ -953,6 +1059,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (data.transaction) {
           setTransactions((prev) => [data.transaction!, ...prev]);
         }
+        const todayDate = new Date().toISOString().split('T')[0];
+        const nextReward =
+          dailyRewardTiers.find((t) => t.day === (data.dailyStreak >= 7 ? 1 : data.dailyStreak + 1))?.reward || 250;
+        packageRewardNotificationService.markStreakClaimed(todayDate, data.dailyStreak, nextReward);
         fireConfetti();
         if (data.streakBroken) {
           showToast('Streak Reset to Day 1 🔄', `Previous check-in was missed! Started fresh at Day 1 and earned Rs. ${data.reward}.`, 'info');
@@ -1172,6 +1282,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const profitPerHour = totalDailyProfitRate / 24;
   const totalLiveUnclaimedProfit = activeInvestments.reduce((acc, curr) => acc + (Number(curr.unclaimedProfit) || 0), 0);
 
+  const readyToCollectPackages = activeInvestments.filter(
+    (inv) => inv.status === 'active' && currentTimestamp >= (Number(inv.nextClaimTimestamp) || (Number(inv.lastClaimTimestamp) + 86400000))
+  );
+  const readyToCollectPackagesCount = readyToCollectPackages.length;
+  const readyToCollectTotalAmount = readyToCollectPackages.reduce(
+    (sum, inv) => sum + (Number(inv.dailyProfitAmount) || 0),
+    0
+  );
+
   return (
     <AppContext.Provider
       value={{
@@ -1241,6 +1360,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalDailyProfitRate,
         profitPerSecond,
         profitPerHour,
+        readyToCollectPackagesCount,
+        readyToCollectTotalAmount,
         hideBalance,
         toggleHideBalance,
       }}

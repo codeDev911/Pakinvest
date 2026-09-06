@@ -16,6 +16,7 @@ import {
   Moon,
   Zap,
   Gift,
+  Bell,
 } from 'lucide-react';
 import { useCrmTheme } from './context/CrmThemeContext';
 
@@ -75,6 +76,11 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
       id: 'rewards',
       label: 'Rewards & Streaks',
       icon: <Gift className="w-4 h-4" />,
+    },
+    {
+      id: 'notifications',
+      label: 'Push & Broadcasts',
+      icon: <Bell className="w-4 h-4" />,
     },
     {
       id: 'users',

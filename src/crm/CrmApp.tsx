@@ -17,6 +17,7 @@ import { CrmWithdrawalsView } from './views/CrmWithdrawalsView';
 import { CrmActivePlansView } from './views/CrmActivePlansView';
 import { CrmPlansView } from './views/CrmPlansView';
 import { CrmRewardsView } from './views/CrmRewardsView';
+import { CrmNotificationsView } from './views/CrmNotificationsView';
 import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
@@ -447,6 +448,13 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
             showToast={showToast}
           />
         );
+      case 'notifications':
+        return (
+          <CrmNotificationsView
+            adminName={adminName || 'Admin Operator'}
+            showToast={showToast}
+          />
+        );
       case 'users':
         return (
           <CrmUsersView
@@ -519,6 +527,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
               { id: 'active-plans', label: `Active Contracts (${stats.activeInvestmentsCount})` },
               { id: 'plans', label: 'Investment Packages' },
               { id: 'rewards', label: 'Rewards & Streaks' },
+              { id: 'notifications', label: 'Push & Broadcasts' },
               { id: 'users', label: 'Investors Directory' },
               { id: 'gateways', label: 'Payment Channels' },
               { id: 'ledger', label: 'Master Financial Ledger' },

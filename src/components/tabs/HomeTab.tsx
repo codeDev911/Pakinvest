@@ -52,6 +52,9 @@ export const HomeTab: React.FC = () => {
     totalLiveUnclaimedProfit,
     totalDailyProfitRate,
     profitPerSecond,
+    profitPerHour,
+    readyToCollectPackagesCount,
+    readyToCollectTotalAmount,
     hideBalance,
     toggleHideBalance,
   } = useApp();
@@ -152,6 +155,57 @@ export const HomeTab: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Rewards Ready to Collect Alert Card (Shows Rs. amount and 1-tap collect) */}
+      {readyToCollectPackagesCount > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-lg shadow-emerald-950/20 border border-emerald-400/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/25">
+              <Sparkles className="w-6 h-6 text-amber-300 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider bg-amber-400 text-slate-950 px-2 py-0.5 rounded-md">
+                  Yield Ready
+                </span>
+                <span className="text-xs text-emerald-100 font-semibold">
+                  {readyToCollectPackagesCount} {readyToCollectPackagesCount === 1 ? 'Contract Ready' : 'Contracts Ready'}
+                </span>
+              </div>
+              <h4 className="text-sm sm:text-base font-extrabold mt-0.5">
+                Collect your daily rewards of <span className="text-amber-300 font-black">{formatPKR(readyToCollectTotalAmount)}</span>
+              </h4>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              disabled={isClaimingAll}
+              onClick={handleClaimAll}
+              className="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>{isClaimingAll ? 'Collecting...' : `Collect All (${formatPKR(readyToCollectTotalAmount)})`}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPlansTabSection('active');
+                setCurrentTab('plans');
+              }}
+              className="py-2.5 px-3 rounded-xl bg-black/20 hover:bg-black/30 text-white text-xs font-bold transition-all shrink-0"
+              title="View Active Contracts"
+            >
+              Details
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* 2. Quick Actions */}
       <div className="space-y-2.5">

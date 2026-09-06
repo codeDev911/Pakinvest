@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   Info,
   Clock,
+  Gift,
+  ShieldAlert,
+  ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserNotification } from '../types';
@@ -26,12 +29,61 @@ export const NotificationModal: React.FC = () => {
     unreadNotificationsCount,
     markNotificationAsRead,
     clearAllNotifications,
+    setCurrentTab,
+    setIsDepositModalOpen,
+    setIsWithdrawModalOpen,
+    setIsStreakModalOpen,
   } = useApp();
 
   if (!isNotificationModalOpen) return null;
 
+  const handleNotificationClick = (notif: UserNotification) => {
+    if (!notif.read) {
+      markNotificationAsRead(notif.id);
+    }
+
+    const action = String(notif.actionTab || '').toLowerCase();
+    const lowerTitle = notif.title.toLowerCase();
+    const lowerMsg = notif.message.toLowerCase();
+
+    if (action === 'deposit' || lowerTitle.includes('deposit bonus') || lowerMsg.includes('deposit rs.')) {
+      setIsNotificationModalOpen(false);
+      setIsDepositModalOpen(true);
+    } else if (action === 'plans' || action === 'invest' || lowerTitle.includes('package') || lowerTitle.includes('invest')) {
+      setIsNotificationModalOpen(false);
+      setCurrentTab('plans');
+    } else if (action === 'rewards' || action === 'streak' || lowerTitle.includes('streak') || lowerTitle.includes('reward')) {
+      setIsNotificationModalOpen(false);
+      setIsStreakModalOpen(true);
+    } else if (action === 'referral' || action === 'team' || lowerTitle.includes('referral') || lowerTitle.includes('commission')) {
+      setIsNotificationModalOpen(false);
+      setCurrentTab('referral');
+    } else if (action === 'wallet' || lowerTitle.includes('payout') || lowerTitle.includes('cashout')) {
+      setIsNotificationModalOpen(false);
+      setCurrentTab('wallet');
+    }
+  };
+
   const getNotificationIcon = (type: UserNotification['type']) => {
     switch (type) {
+      case 'promo':
+        return (
+          <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-200 dark:border-purple-800">
+            <Gift className="w-5 h-5" />
+          </div>
+        );
+      case 'alert':
+        return (
+          <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-800">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+        );
+      case 'broadcast':
+        return (
+          <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200 dark:border-blue-800">
+            <Bell className="w-5 h-5" />
+          </div>
+        );
       case 'withdrawal_approved':
         return (
           <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200 dark:border-emerald-800">
@@ -179,8 +231,8 @@ export const NotificationModal: React.FC = () => {
               notifications.map((notif) => (
                 <div
                   key={notif.id}
-                  onClick={() => !notif.read && markNotificationAsRead(notif.id)}
-                  className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 relative cursor-pointer ${
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 relative cursor-pointer hover:border-emerald-400/80 active:scale-[0.99] ${
                     notif.read
                       ? 'bg-white dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 opacity-90'
                       : 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/90 dark:border-emerald-800/80 shadow-xs'
@@ -210,13 +262,22 @@ export const NotificationModal: React.FC = () => {
                       {notif.message}
                     </p>
 
-                    <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-400 font-medium">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span>{notif.timestamp}</span>
-                      {!notif.read && (
-                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.2 rounded-md">
-                          New
-                        </span>
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>{notif.timestamp}</span>
+                        {!notif.read && (
+                          <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.2 rounded-md">
+                            New
+                          </span>
+                        )}
+                      </div>
+
+                      {notif.actionTab && (
+                        <div className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <span>Open</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </div>
                       )}
                     </div>
                   </div>

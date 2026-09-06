@@ -3823,6 +3823,281 @@ router.get('/admin/rewards/breakdown', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// CRM NOTIFICATION & BROADCAST SYSTEM WITH FILTERS
+// ----------------------------------------------------
+const BROADCAST_HISTORY_FILE = path.join(process.cwd(), 'crm_broadcast_history.json');
+let broadcastHistoryCache: any[] = [];
+try {
+  if (fs.existsSync(BROADCAST_HISTORY_FILE)) {
+    const raw = fs.readFileSync(BROADCAST_HISTORY_FILE, 'utf-8');
+    broadcastHistoryCache = JSON.parse(raw);
+  }
+} catch (e) {
+  broadcastHistoryCache = [];
+}
+
+function summarizeAudienceFilter(filter: any = {}): string {
+  const target = filter.target || 'all';
+  switch (target) {
+    case 'all':
+      return 'All Registered Users';
+    case 'active_investors':
+      return 'Active Investors (Has Running Contracts)';
+    case 'non_investors':
+      return 'Inactive / Non-Investors (0 Active Contracts)';
+    case 'balance_range':
+      return `Balance between Rs. ${(filter.minBalance || 0).toLocaleString()} - ${filter.maxBalance ? 'Rs. ' + filter.maxBalance.toLocaleString() : 'Unlimited'}`;
+    case 'pending_deposits':
+      return 'Users with Pending Deposits';
+    case 'pending_withdrawals':
+      return 'Users with Pending Withdrawals';
+    case 'top_earners':
+      return `Top Earners (Profits >= Rs. ${(filter.minProfit || 2000).toLocaleString()})`;
+    case 'specific_users':
+      return `Specific Users (${filter.specificUserIds?.length || 0} selected)`;
+    default:
+      return 'Custom Filter';
+  }
+}
+
+function buildAudienceWhere(filter: any = {}) {
+  const where: any = {};
+  const target = filter.target || 'all';
+
+  if (target === 'active_investors') {
+    where.investments = { some: {} };
+  } else if (target === 'non_investors') {
+    where.investments = { none: {} };
+  } else if (target === 'balance_range') {
+    where.balance = {};
+    if (typeof filter.minBalance === 'number' && !isNaN(filter.minBalance)) {
+      where.balance.gte = filter.minBalance;
+    }
+    if (typeof filter.maxBalance === 'number' && !isNaN(filter.maxBalance) && filter.maxBalance > 0) {
+      where.balance.lte = filter.maxBalance;
+    }
+  } else if (target === 'pending_deposits') {
+    where.transactions = { some: { type: 'deposit', status: 'pending' } };
+  } else if (target === 'pending_withdrawals') {
+    where.transactions = { some: { type: 'withdrawal', status: 'pending' } };
+  } else if (target === 'top_earners') {
+    where.totalEarnedProfit = { gte: typeof filter.minProfit === 'number' ? filter.minProfit : 2000 };
+  } else if (target === 'specific_users') {
+    if (Array.isArray(filter.specificUserIds) && filter.specificUserIds.length > 0) {
+      where.id = { in: filter.specificUserIds };
+    }
+  }
+
+  // Intersecting secondary balance filter
+  if (target !== 'balance_range') {
+    if (typeof filter.minBalance === 'number' && filter.minBalance > 0) {
+      where.balance = { ...(where.balance || {}), gte: filter.minBalance };
+    }
+    if (typeof filter.maxBalance === 'number' && filter.maxBalance > 0) {
+      where.balance = { ...(where.balance || {}), lte: filter.maxBalance };
+    }
+  }
+
+  // Intersecting search query
+  if (filter.searchQuery && String(filter.searchQuery).trim()) {
+    const q = String(filter.searchQuery).trim();
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q } },
+      { referralCode: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  // Intersecting registration date range
+  if (typeof filter.registrationDays === 'number' && filter.registrationDays > 0) {
+    const thresholdDate = new Date(Date.now() - filter.registrationDays * 24 * 60 * 60 * 1000);
+    where.createdAt = { gte: thresholdDate };
+  }
+
+  return where;
+}
+
+// 1. Preview Audience Endpoint (Calculates matched users dynamically)
+router.post('/admin/notifications/preview-audience', async (req, res) => {
+  try {
+    const filter = req.body.filter || req.body || {};
+    const where = buildAudienceWhere(filter);
+
+    const [totalUsers, matchedCount, sampleUsersRaw] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        take: 30,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          balance: true,
+          investedCapital: true,
+          avatar: true,
+          joinedDate: true,
+          _count: {
+            select: { investments: true },
+          },
+        },
+      }),
+    ]);
+
+    const sampleUsers = sampleUsersRaw.map((u) => ({
+      id: u.id,
+      name: u.name,
+      phone: u.phone,
+      email: u.email,
+      balance: u.balance,
+      investedCapital: u.investedCapital,
+      avatar: u.avatar,
+      joinedDate: u.joinedDate,
+      activePackagesCount: u._count.investments,
+    }));
+
+    res.json({
+      success: true,
+      count: matchedCount,
+      totalUsers,
+      filterSummary: summarizeAudienceFilter(filter),
+      sampleUsers,
+    });
+  } catch (err: any) {
+    console.error('[Audience Preview Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to calculate audience preview' });
+  }
+});
+
+// 2. Broadcast / Send Notifications to Filtered Users
+router.post('/admin/notifications/broadcast', async (req, res) => {
+  try {
+    const {
+      title,
+      message,
+      type = 'system',
+      amount,
+      actionTab,
+      filter = {},
+      adminName = 'CRM Operator',
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: 'Notification title is required.' });
+    }
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Notification message body is required.' });
+    }
+
+    const where = buildAudienceWhere(filter);
+    const targetUsers = await prisma.user.findMany({
+      where,
+      select: { id: true, name: true, phone: true },
+    });
+
+    if (targetUsers.length === 0) {
+      return res.status(400).json({
+        error: 'No registered users match the selected audience filter.',
+      });
+    }
+
+    const nowStr = getFormattedNow();
+    const formattedAmount = amount ? Number(amount) : null;
+
+    // Bulk create notifications in database
+    const notificationsData = targetUsers.map((u) => ({
+      userId: u.id,
+      title: title.trim(),
+      message: message.trim(),
+      type: type || 'system',
+      amount: formattedAmount,
+      read: false,
+      timestamp: nowStr,
+    }));
+
+    await prisma.notification.createMany({
+      data: notificationsData,
+    });
+
+    // Atomically increment unread count for all target users
+    const targetUserIds = targetUsers.map((u) => u.id);
+    await prisma.user.updateMany({
+      where: { id: { in: targetUserIds } },
+      data: {
+        notificationsCount: {
+          increment: 1,
+        },
+      },
+    });
+
+    // Record campaign in CRM history
+    const campaignLog = {
+      id: `camp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      title: title.trim(),
+      message: message.trim(),
+      type: type || 'system',
+      amount: formattedAmount,
+      actionTab: actionTab && actionTab !== 'none' ? actionTab : undefined,
+      filterTarget: filter?.target || 'all',
+      filterSummary: summarizeAudienceFilter(filter),
+      recipientsCount: targetUsers.length,
+      sentAt: nowStr,
+      adminName,
+    };
+
+    broadcastHistoryCache.unshift(campaignLog);
+    if (broadcastHistoryCache.length > 200) {
+      broadcastHistoryCache.pop();
+    }
+
+    try {
+      fs.writeFileSync(BROADCAST_HISTORY_FILE, JSON.stringify(broadcastHistoryCache, null, 2));
+    } catch (writeErr) {
+      console.warn('[Broadcast History Save Warning]:', writeErr);
+    }
+
+    res.json({
+      success: true,
+      count: targetUsers.length,
+      recipientsCount: targetUsers.length,
+      campaign: campaignLog,
+      message: `Successfully delivered notification to ${targetUsers.length} user(s).`,
+    });
+  } catch (err: any) {
+    console.error('[Send Broadcast Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to dispatch notifications' });
+  }
+});
+
+// 3. Get Past Broadcast Campaigns History
+router.get('/admin/notifications/history', async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      history: broadcastHistoryCache,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to load broadcast history' });
+  }
+});
+
+// 4. Delete Campaign Entry from History
+router.delete('/admin/notifications/history/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    broadcastHistoryCache = broadcastHistoryCache.filter((c) => c.id !== id);
+    try {
+      fs.writeFileSync(BROADCAST_HISTORY_FILE, JSON.stringify(broadcastHistoryCache, null, 2));
+    } catch (e) {}
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete campaign from history' });
+  }
+});
+
 // Mount router on both '/api' and '/' for complete versatility
 app.use('/api', router);
 app.use(router);

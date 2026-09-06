@@ -55,6 +55,8 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
         return 'Official Deposit Channels & Till Numbers';
       case 'ledger':
         return 'Master Audit Ledger & Financial Records';
+      case 'notifications':
+        return 'Push & In-App Broadcast Center';
       default:
         return 'Management CRM';
     }

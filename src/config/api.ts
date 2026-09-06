@@ -6,18 +6,32 @@ import { Capacitor } from '@capacitor/core';
  * via VITE_API_BASE_URL or VITE_API_URL.
  * 
  * In standard web hosting, this can be empty to use same-origin relative URLs (/api/...).
- * In native Android builds, VITE_API_BASE_URL is provided during workflow dispatch.
+ * In native Android builds, VITE_API_BASE_URL is provided during manual workflow dispatch.
  */
 
-const envApiUrl =
+function normalizeUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  let url = rawUrl.trim().replace(/\/+$/, '');
+  // If protocol is missing, default to https
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`;
+  }
+  // Strip duplicate trailing /api if user specified e.g. https://my-server.com/api
+  if (url.endsWith('/api')) {
+    url = url.slice(0, -4).replace(/\/+$/, '');
+  }
+  return url;
+}
+
+const rawEnvApiUrl =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
   '';
 
 export const isNativePlatform = Capacitor.isNativePlatform();
 
-// Strips any trailing slashes from the API base URL
-export const API_BASE_URL = envApiUrl ? String(envApiUrl).replace(/\/+$/, '') : '';
+// Normalized API base URL (e.g. "https://api.yourdomain.com")
+export const API_BASE_URL = normalizeUrl(rawEnvApiUrl);
 
 // Direct APK download URL (can be customized via VITE_ANDROID_APK_URL or defaults to /investify.apk)
 const envApkUrl =

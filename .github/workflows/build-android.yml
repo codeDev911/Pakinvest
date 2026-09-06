@@ -7,10 +7,6 @@ on:
         description: 'Backend API URL (e.g. https://your-backend.run.app or https://api.yourdomain.com)'
         required: true
         type: string
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
 
 jobs:
   build-apk:
@@ -20,6 +16,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate Backend API URL
+        run: |
+          RAW_URL="${{ inputs.backend_api_url }}"
+          if [ -z "$RAW_URL" ]; then
+            echo "::error::Backend API URL input is empty! You must specify your backend URL when triggering the workflow."
+            exit 1
+          fi
+          echo "Specified Backend API URL: $RAW_URL"
 
       - name: Set up Java Development Kit (JDK 21)
         uses: actions/setup-java@v4
@@ -43,9 +48,18 @@ jobs:
 
       - name: Configure Backend API Environment
         run: |
-          API_URL="${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}"
+          API_URL="${{ inputs.backend_api_url }}"
+          # Trim leading/trailing whitespace
+          API_URL=$(echo "$API_URL" | xargs)
           # Strip trailing slashes
           API_URL=$(echo "$API_URL" | sed 's:/*$::')
+          # Ensure protocol exists
+          if [[ ! "$API_URL" =~ ^https?:// ]]; then
+            API_URL="https://$API_URL"
+          fi
+          # Strip duplicate /api if entered
+          API_URL=$(echo "$API_URL" | sed 's:/api$::')
+
           echo "=================================================="
           echo "Baking Backend API URL into APK: $API_URL"
           echo "=================================================="
@@ -55,9 +69,6 @@ jobs:
           echo "VITE_API_URL=$API_URL" >> .env
 
       - name: Build Web Client Assets
-        env:
-          VITE_API_BASE_URL: ${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}
-          VITE_API_URL: ${{ inputs.backend_api_url || secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL || '' }}
         run: npm run build
 
       - name: Sync Capacitor Android Project

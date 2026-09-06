@@ -179,19 +179,19 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
           onClick={handleClaim}
           className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs ${
             isReady
-              ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-500/25 shadow-md ring-2 ring-emerald-400/60'
+              ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-500/25 shadow-md ring-2 ring-emerald-400/60 animate-pulse-subtle'
               : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-800'
           }`}
         >
           {isReady ? (
             <>
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isClaiming ? 'Collecting...' : 'Collect'}</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>{isClaiming ? 'Collecting...' : `Collect Rewards (${formatPKR(investment.dailyProfitAmount)})`}</span>
             </>
           ) : (
             <>
               <Lock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-              <span>Locked</span>
+              <span>Locked ({countdown.formatted})</span>
             </>
           )}
         </button>

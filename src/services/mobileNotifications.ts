@@ -22,17 +22,26 @@ class MobileNotificationService {
     this.isInitialized = true;
 
     if (!Capacitor.isNativePlatform()) {
-      // Browser fallback (Web Notifications API if allowed)
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        try {
-          if (Notification.permission === 'granted') {
-            this.hasPermission = true;
-          } else if (Notification.permission !== 'denied') {
-            const perm = await Notification.requestPermission();
-            this.hasPermission = perm === 'granted';
+      // Browser fallback (Web Notifications & ServiceWorker API)
+      if (typeof window !== 'undefined') {
+        // Register Service Worker for background interaction & Android Chrome compatibility
+        if ('serviceWorker' in navigator) {
+          try {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+          } catch {}
+        }
+
+        if ('Notification' in window) {
+          try {
+            if (Notification.permission === 'granted') {
+              this.hasPermission = true;
+            } else if (Notification.permission !== 'denied') {
+              const perm = await Notification.requestPermission();
+              this.hasPermission = perm === 'granted';
+            }
+          } catch {
+            // Ignore browser restriction
           }
-        } catch {
-          // Ignore browser restriction
         }
       }
       return this.hasPermission;
@@ -45,8 +54,10 @@ class MobileNotificationService {
         name: 'Investify Alerts & Payouts',
         description: 'Notifications for daily earnings, approval status, and team commissions',
         importance: 5, // High importance (heads-up notification)
-        visibility: 1,
+        visibility: 1, // Visible on lock screen
         vibration: true,
+        lights: true,
+        lightColor: '#10b981',
       });
 
       // 2. Request Local Notification Permissions
@@ -100,7 +111,15 @@ class MobileNotificationService {
               title: payload.title,
               body: payload.body,
               channelId: 'investify_alerts',
-              schedule: payload.scheduleAt ? { at: payload.scheduleAt } : undefined,
+              schedule: payload.scheduleAt
+                ? {
+                    at: payload.scheduleAt,
+                    allowWhileIdle: true, // Crucial: fires even when phone is sleeping/in Doze mode
+                  }
+                : undefined,
+              isExactNotification: true,
+              smallIcon: 'ic_launcher',
+              iconColor: '#10b981',
               extra: payload.extra,
             },
           ],
@@ -111,14 +130,96 @@ class MobileNotificationService {
       }
     }
 
-    // 2. Web browser fallback
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    // 2. Web browser fallback (Supports Service Worker on Android Chrome and Web Notification API)
+    if (typeof window !== 'undefined') {
+      // Prioritize ServiceWorker showNotification (mandatory on Chrome on Android)
+      if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if (reg && 'showNotification' in reg) {
+            await reg.showNotification(payload.title, {
+              body: payload.body,
+              icon: '/favicon.png',
+              badge: '/favicon.png',
+              data: payload.extra,
+            });
+            return;
+          }
+        } catch {
+          // Fallback to standard constructor
+        }
+      }
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(payload.title, {
+            body: payload.body,
+            icon: '/favicon.png',
+          });
+        } catch {}
+      }
+    }
+  }
+
+  /**
+   * Cancels a scheduled notification by numeric ID.
+   */
+  async cancelNotification(id: number): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
       try {
-        new Notification(payload.title, {
-          body: payload.body,
-          icon: '/favicon.png',
+        await LocalNotifications.cancel({
+          notifications: [{ id }],
         });
-      } catch {}
+      } catch (err) {
+        console.warn('[Investify] Failed to cancel local notification:', err);
+      }
+    }
+  }
+
+  /**
+   * Synthesizes a soft, pleasant coin/reward chime.
+   * Crash-safe and fails gracefully if audio context is blocked.
+   */
+  playRewardChime(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(880, now + 0.12);
+      osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.28); // D6
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.55);
+      osc2.start(now + 0.1);
+      osc2.stop(now + 0.55);
+
+      setTimeout(() => {
+        try {
+          ctx.close();
+        } catch {}
+      }, 700);
+    } catch {
+      // Audio context restricted or unavailable
     }
   }
 }

@@ -240,11 +240,15 @@ export interface UserNotification {
     | 'profit_unlocked'
     | 'profit_claimed'
     | 'referral_reward'
-    | 'system';
+    | 'system'
+    | 'broadcast'
+    | 'promo'
+    | 'alert';
   amount?: number;
   read: boolean;
   timestamp: string;
   createdAt: number;
+  actionTab?: string;
 }
 
 export interface DatabaseStatus {
@@ -263,7 +267,54 @@ export type CrmNavTab =
   | 'rewards'
   | 'users'
   | 'gateways'
-  | 'ledger';
+  | 'ledger'
+  | 'notifications';
+
+export type NotificationFilterTarget =
+  | 'all'
+  | 'active_investors'
+  | 'non_investors'
+  | 'balance_range'
+  | 'pending_deposits'
+  | 'pending_withdrawals'
+  | 'top_earners'
+  | 'specific_users';
+
+export interface NotificationAudienceFilter {
+  target: NotificationFilterTarget;
+  minBalance?: number;
+  maxBalance?: number;
+  minProfit?: number;
+  specificUserIds?: string[];
+  searchQuery?: string;
+  registrationDays?: number;
+}
+
+export interface CrmNotificationBroadcast {
+  id: string;
+  title: string;
+  message: string;
+  type: 'system' | 'broadcast' | 'promo' | 'alert' | 'profit_unlocked';
+  amount?: number;
+  actionTab?: string;
+  filterTarget: NotificationFilterTarget;
+  filterSummary: string;
+  recipientsCount: number;
+  sentAt: string;
+  adminName?: string;
+}
+
+export interface MatchedUserSummary {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  balance: number;
+  investedCapital: number;
+  activePackagesCount?: number;
+  avatar?: string;
+  joinedDate?: string;
+}
 
 export interface DailyRewardTier {
   day: number;
