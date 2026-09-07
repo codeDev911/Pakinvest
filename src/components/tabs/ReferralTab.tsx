@@ -18,6 +18,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { getReferralInviteUrl } from '../../config/appUrl';
 
 export const ReferralTab: React.FC = () => {
   const { user, claimReferralBonus, showToast, referralNetwork } = useApp();
@@ -26,7 +27,7 @@ export const ReferralTab: React.FC = () => {
   const [selectedTier, setSelectedTier] = useState<number | 'all'>('all');
   const [showQr, setShowQr] = useState(false);
 
-  const inviteUrl = `${window.location.origin}/join?ref=${user.referralCode}`;
+  const inviteUrl = getReferralInviteUrl(user.referralCode);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(user.referralCode);

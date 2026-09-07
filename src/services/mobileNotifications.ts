@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { App } from '@capacitor/app';
 
 export interface MobileNotificationPayload {
   id?: number;
@@ -14,7 +15,7 @@ class MobileNotificationService {
   private hasPermission = false;
 
   /**
-   * Initializes mobile notifications (Channels, Permissions).
+   * Initializes mobile notifications (Channels, Permissions, Background Listeners).
    * 100% crash-safe on both Native Android and Web browsers.
    */
   async initialize(): Promise<boolean> {
@@ -48,28 +49,40 @@ class MobileNotificationService {
     }
 
     try {
-      // 1. Check existing permission
+      // 1. Check & request permissions on native Android
       const checkStatus = await LocalNotifications.checkPermissions();
       if (checkStatus.display === 'granted') {
         this.hasPermission = true;
       } else {
         const localStatus = await LocalNotifications.requestPermissions();
-        if (localStatus.display === 'granted') {
-          this.hasPermission = true;
-        }
+        this.hasPermission = localStatus.display === 'granted';
       }
 
-      // 2. Create Android Notification Channel with high priority and lock screen visibility
+      // 2. Create Android Notification Channel with maximum importance and lock screen visibility
       await LocalNotifications.createChannel({
         id: 'investify_alerts',
         name: 'Investify Alerts & Payouts',
         description: 'Notifications for daily earnings, approval status, and team commissions',
-        importance: 5, // High importance (heads-up notification & sound)
-        visibility: 1, // Visible on lock screen
+        importance: 5, // High importance: heads-up notification and sound
+        visibility: 1, // NotificationCompat.VISIBILITY_PUBLIC (visible on secure lock screen)
         vibration: true,
         lights: true,
         lightColor: '#10b981',
       });
+
+      // 3. Listen to app state changes (when user minimizes or closes the app)
+      try {
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) {
+            console.log('[Investify] App transitioned to background/closed state');
+            import('./packageRewardNotificationService')
+              .then((m) => {
+                m.packageRewardNotificationService.ensureAlarmsScheduled();
+              })
+              .catch(() => {});
+          }
+        });
+      } catch {}
 
       return this.hasPermission;
     } catch (err) {
@@ -100,12 +113,30 @@ class MobileNotificationService {
     }
   }
 
+  /**
+   * Check if notification permission is currently granted.
+   */
+  async checkPermission(): Promise<boolean> {
+    if (!Capacitor.isNativePlatform()) {
+      return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+    }
+    try {
+      const status = await LocalNotifications.checkPermissions();
+      this.hasPermission = status.display === 'granted';
+      return this.hasPermission;
+    } catch {
+      return false;
+    }
+  }
+
   // Debounce & deduplication cache to prevent alert spam
   private lastNotificationHashes = new Map<string, number>();
   private lastChimeTime = 0;
 
   /**
-   * Triggers a mobile notification with heads-up display, sound, and vibration.
+   * Schedules or displays a mobile notification with heads-up display, sound, and vibration.
+   * On Android, scheduled notifications register with AlarmManager (RTC_WAKEUP) to reliably
+   * wake the device even when the app is completely swiped away or closed.
    */
   async sendNotification(payload: MobileNotificationPayload): Promise<void> {
     const isFutureSchedule = payload.scheduleAt && payload.scheduleAt.getTime() > Date.now();
@@ -124,10 +155,9 @@ class MobileNotificationService {
               schedule: payload.scheduleAt
                 ? {
                     at: payload.scheduleAt,
-                    allowWhileIdle: true, // Crucial: fires even when phone is sleeping/in Doze mode
+                    allowWhileIdle: true, // Wakes phone up even in deep Android Doze mode
                   }
                 : undefined,
-              isExactNotification: false, // Prevents Android 12+ ACTION_REQUEST_SCHEDULE_EXACT_ALARM redirect and ensures setAndAllowWhileIdle RTC_WAKEUP execution
               smallIcon: 'ic_launcher',
               iconColor: '#10b981',
               extra: payload.extra,
@@ -201,6 +231,32 @@ class MobileNotificationService {
         } catch {}
       }
     }
+  }
+
+  /**
+   * Schedules a quick test notification for X seconds from now (default 5 seconds),
+   * allowing the user to minimize or close the app to verify closed-app delivery.
+   */
+  async scheduleClosedAppTest(delaySeconds: number = 5): Promise<boolean> {
+    await this.initialize();
+    const hasPerm = await this.checkPermission();
+    if (!hasPerm) {
+      const granted = await this.requestPermission();
+      if (!granted) return false;
+    }
+
+    const triggerAt = new Date(Date.now() + delaySeconds * 1000);
+    const testId = 777888;
+
+    await this.sendNotification({
+      id: testId,
+      title: '🔔 Investify Closed-App Alert',
+      body: `Success! Notifications are functioning properly while the Investify app is closed.`,
+      scheduleAt: triggerAt,
+      extra: { test: true },
+    });
+
+    return true;
   }
 
   /**

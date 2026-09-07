@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Sun,
@@ -13,7 +13,12 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
+  Bell,
+  BellRing,
+  Smartphone,
+  Sparkles,
 } from 'lucide-react';
+import { mobileNotifications } from '../../services/mobileNotifications';
 
 export const SettingsTab: React.FC = () => {
   const {
@@ -46,6 +51,62 @@ export const SettingsTab: React.FC = () => {
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
+  // Mobile Notifications state
+  const [hasNotifPermission, setHasNotifPermission] = useState<boolean | null>(null);
+  const [testCountdown, setTestCountdown] = useState<number | null>(null);
+  const [isSchedulingTest, setIsSchedulingTest] = useState(false);
+
+  useEffect(() => {
+    mobileNotifications.checkPermission().then((granted) => {
+      setHasNotifPermission(granted);
+    });
+  }, []);
+
+  const handleRequestPermission = async () => {
+    const granted = await mobileNotifications.requestPermission();
+    setHasNotifPermission(granted);
+    if (granted) {
+      showToast('Notifications Enabled', 'You will now receive instant daily profit & payout alerts.', 'success');
+      mobileNotifications.playRewardChime();
+    } else {
+      showToast('Permission Denied', 'Please allow notifications in your device settings.', 'warning');
+    }
+  };
+
+  const handleTestClosedAppNotification = async () => {
+    setIsSchedulingTest(true);
+    try {
+      const scheduled = await mobileNotifications.scheduleClosedAppTest(5);
+      if (scheduled) {
+        setHasNotifPermission(true);
+        mobileNotifications.playRewardChime();
+        setTestCountdown(5);
+        showToast(
+          'Alert Scheduled in 5s!',
+          'Close or minimize the Investify app right now to test delivery while closed!',
+          'success'
+        );
+
+        let counter = 5;
+        const interval = setInterval(() => {
+          counter -= 1;
+          if (counter <= 0) {
+            clearInterval(interval);
+            setTestCountdown(null);
+          } else {
+            setTestCountdown(counter);
+          }
+        }, 1000);
+      } else {
+        showToast('Notification Blocked', 'Please enable notifications permission first.', 'error');
+      }
+    } catch {
+      showToast('Error', 'Failed to schedule test alert.', 'error');
+    } finally {
+      setIsSchedulingTest(false);
+    }
+  };
 
   const handlePinUpdate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,6 +291,83 @@ export const SettingsTab: React.FC = () => {
             </div>
             {theme === 'dark' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
           </button>
+        </div>
+      </div>
+
+      {/* Mobile Alerts & Background Delivery */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <BellRing className="w-4 h-4 text-emerald-500" />
+            <span>Mobile Alerts & Closed-App Delivery</span>
+          </h3>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              hasNotifPermission
+                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
+            }`}
+          >
+            {hasNotifPermission ? 'System Active' : 'Permission Required'}
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          Receive real-time alerts for package profit maturities, JazzCash/EasyPaisa approvals, and daily streak rewards on your device even when the Investify app is completely closed or screen is locked.
+        </p>
+
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                  AlarmManager & Heads-Up Alerts
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {hasNotifPermission
+                    ? 'Configured for background & lock screen wake-up'
+                    : 'Tap below to grant Android notification permissions'}
+                </span>
+              </div>
+            </div>
+
+            {!hasNotifPermission && (
+              <button
+                type="button"
+                onClick={handleRequestPermission}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors"
+              >
+                Enable Alerts
+              </button>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              Want to test delivery while closed? Tap the test button and immediately swipe the app away.
+            </div>
+
+            <button
+              type="button"
+              disabled={isSchedulingTest || testCountdown !== null}
+              onClick={handleTestClosedAppNotification}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+                testCountdown !== null
+                  ? 'bg-amber-500 text-white animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white disabled:opacity-50'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>
+                {testCountdown !== null
+                  ? `Fires in ${testCountdown}s! Close app now`
+                  : 'Test Closed-App Alert (5s)'}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 

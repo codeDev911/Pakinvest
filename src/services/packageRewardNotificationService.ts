@@ -440,6 +440,43 @@ class PackageRewardNotificationService {
     };
     this.saveStreakSchedule(updated);
   }
+
+  /**
+   * Called when the app transitions to background or closed state.
+   * Ensures that all active investments and pending streak rewards have
+   * alarms registered in Android AlarmManager.
+   */
+  ensureAlarmsScheduled(): void {
+    const schedules = this.getStoredPackageSchedules();
+    const now = Date.now();
+    schedules.forEach((pkg) => {
+      if (pkg.status === 'active' && pkg.nextClaimTimestamp > now) {
+        const notifId = getNumericId(`pkg-${pkg.id}`);
+        mobileNotifications.sendNotification({
+          id: notifId,
+          title: '🎁 Time to Collect Daily Profit!',
+          body: `Your ${pkg.planName} package has generated Rs. ${Math.round(pkg.dailyProfitAmount).toLocaleString()}. Collect your reward now!`,
+          scheduleAt: new Date(pkg.nextClaimTimestamp),
+          extra: {
+            actionTab: 'plans',
+            investmentId: pkg.id,
+          },
+        });
+      }
+    });
+
+    // Also schedule a reminder if user has no active packages
+    if (schedules.length === 0) {
+      const reminderTime = new Date(now + 4 * 60 * 60 * 1000); // 4 hours later
+      mobileNotifications.sendNotification({
+        id: 888111,
+        title: '📈 Investify Daily Opportunities',
+        body: 'Check your investment dashboard for today’s high-yield packages and earn up to 45% ROI!',
+        scheduleAt: reminderTime,
+        extra: { actionTab: 'plans' },
+      });
+    }
+  }
 }
 
 export const packageRewardNotificationService = new PackageRewardNotificationService();
