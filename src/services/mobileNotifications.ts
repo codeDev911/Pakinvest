@@ -95,15 +95,20 @@ class MobileNotificationService {
     }
   }
 
+  // Debounce & deduplication cache to prevent alert spam
+  private lastNotificationHashes = new Map<string, number>();
+  private lastChimeTime = 0;
+
   /**
    * Triggers a mobile notification with heads-up display, sound, and vibration.
    */
   async sendNotification(payload: MobileNotificationPayload): Promise<void> {
-    const notifId = payload.id ?? Math.floor(Math.random() * 1000000) + 1;
+    const isFutureSchedule = payload.scheduleAt && payload.scheduleAt.getTime() > Date.now();
 
     // 1. If Native Android (Capacitor)
     if (Capacitor.isNativePlatform()) {
       try {
+        const notifId = payload.id ?? Math.floor(Math.random() * 1000000) + 1;
         await LocalNotifications.schedule({
           notifications: [
             {
@@ -129,6 +134,21 @@ class MobileNotificationService {
         console.error('[Investify] Failed to schedule local notification on Android:', err);
       }
     }
+
+    // If this is a future scheduled alert and we are on the web/browser, DO NOT fire it now!
+    // In web browsers, scheduled alarms are checked by the service worker or checkReadyRewards() when the time comes.
+    if (isFutureSchedule) {
+      return;
+    }
+
+    // Deduplication check: prevent identical notifications from firing within 15 seconds
+    const hash = `${payload.title}|${payload.body}`;
+    const now = Date.now();
+    const lastTrigger = this.lastNotificationHashes.get(hash) || 0;
+    if (now - lastTrigger < 15000) {
+      return; // Suppress duplicate spam
+    }
+    this.lastNotificationHashes.set(hash, now);
 
     // 2. Web browser fallback (Supports Service Worker on Android Chrome and Web Notification API)
     if (typeof window !== 'undefined') {
@@ -179,9 +199,16 @@ class MobileNotificationService {
   /**
    * Synthesizes a soft, pleasant coin/reward chime.
    * Crash-safe and fails gracefully if audio context is blocked.
+   * Throttled to play at most once every 5 seconds.
    */
   playRewardChime(): void {
     if (typeof window === 'undefined') return;
+    const nowTime = Date.now();
+    if (nowTime - this.lastChimeTime < 5000) {
+      return; // Throttled
+    }
+    this.lastChimeTime = nowTime;
+
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;

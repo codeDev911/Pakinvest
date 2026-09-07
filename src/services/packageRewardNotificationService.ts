@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { ActiveInvestment, UserProfile, DailyRewardTier } from '../types';
 import { mobileNotifications } from './mobileNotifications';
 
@@ -21,6 +22,27 @@ export interface StoredStreakSchedule {
 
 const STORAGE_KEY_PACKAGES = 'pakinvest_package_schedules';
 const STORAGE_KEY_STREAK = 'pakinvest_streak_reward_schedule';
+const STORAGE_KEY_NOTIFIED_CYCLES = 'pakinvest_notified_reward_cycles_v2';
+
+function getNotifiedCycles(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_NOTIFIED_CYCLES);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNotifiedCycle(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getNotifiedCycles();
+    set.add(key);
+    const arr = Array.from(set).slice(-100);
+    localStorage.setItem(STORAGE_KEY_NOTIFIED_CYCLES, JSON.stringify(arr));
+  } catch {}
+}
 
 /**
  * Deterministically generates a safe 32-bit positive integer hash for Capacitor local notifications.
@@ -58,7 +80,7 @@ class PackageRewardNotificationService {
     this.onPackageReadyCallback = options.onPackageReady || null;
     this.onStreakReadyCallback = options.onStreakReady || null;
 
-    // Check immediately on initialization (e.g. user re-opened app while offline/online)
+    // Check on initialization
     this.checkReadyRewards();
 
     // 1. Listen when tab becomes visible (user unlocks device or returns from another app)
@@ -81,11 +103,11 @@ class PackageRewardNotificationService {
       });
     }
 
-    // 3. Periodic background pulse check (every 5 seconds while active)
+    // 3. Periodic background pulse check (calm 30-second interval, avoids battery/alert churn)
     if (typeof window !== 'undefined') {
       this.checkInterval = setInterval(() => {
         this.checkReadyRewards();
-      }, 5000);
+      }, 30000);
     }
   }
 
@@ -144,6 +166,7 @@ class PackageRewardNotificationService {
   async syncActiveInvestments(investments: ActiveInvestment[]): Promise<void> {
     const existing = this.getStoredPackageSchedules();
     const existingMap = new Map<string, StoredPackageSchedule>(existing.map((p) => [p.id, p]));
+    const notifiedSet = getNotifiedCycles();
 
     const updated: StoredPackageSchedule[] = [];
 
@@ -167,19 +190,23 @@ class PackageRewardNotificationService {
 
       updated.push(scheduleItem);
 
-      // Schedule native offline notification if on Capacitor and in the future
-      if (inv.status === 'active' && nextClaim > Date.now()) {
-        const notifId = getNumericId(`pkg-${inv.id}`);
-        mobileNotifications.sendNotification({
-          id: notifId,
-          title: '🎁 Time to Collect Daily Profit!',
-          body: `Your ${inv.planName} package has generated Rs. ${Math.round(inv.dailyProfitAmount).toLocaleString()}. Collect your reward now!`,
-          scheduleAt: new Date(nextClaim),
-          extra: {
-            actionTab: 'plans',
-            investmentId: inv.id,
-          },
-        });
+      // Schedule native offline notification ONLY if on Capacitor Android Native and NOT already scheduled for this cycle
+      if (Capacitor.isNativePlatform() && inv.status === 'active' && nextClaim > Date.now()) {
+        const scheduleCycleKey = `native_sched_${inv.id}_${nextClaim}`;
+        if (!notifiedSet.has(scheduleCycleKey)) {
+          saveNotifiedCycle(scheduleCycleKey);
+          const notifId = getNumericId(`pkg-${inv.id}`);
+          mobileNotifications.sendNotification({
+            id: notifId,
+            title: '🎁 Time to Collect Daily Profit!',
+            body: `Your ${inv.planName} package has generated Rs. ${Math.round(inv.dailyProfitAmount).toLocaleString()}. Collect your reward now!`,
+            scheduleAt: new Date(nextClaim),
+            extra: {
+              actionTab: 'plans',
+              investmentId: inv.id,
+            },
+          });
+        }
       }
     }
 
@@ -232,6 +259,7 @@ class PackageRewardNotificationService {
   } {
     const now = Date.now();
     const schedules = this.getStoredPackageSchedules();
+    const notifiedSet = getNotifiedCycles();
     let hasScheduleChanges = false;
     const readyPackages: StoredPackageSchedule[] = [];
 
@@ -242,10 +270,13 @@ class PackageRewardNotificationService {
       if (isReady) {
         readyPackages.push(pkg);
 
+        const cycleKey = `ready_${pkg.id}_${pkg.nextClaimTimestamp}`;
+
         // Check if we haven't notified for this specific cycle yet
-        if (pkg.lastNotifiedCycleTimestamp !== pkg.nextClaimTimestamp) {
+        if (!notifiedSet.has(cycleKey) && pkg.lastNotifiedCycleTimestamp !== pkg.nextClaimTimestamp) {
           pkg.lastNotifiedCycleTimestamp = pkg.nextClaimTimestamp;
           hasScheduleChanges = true;
+          saveNotifiedCycle(cycleKey);
 
           // 1. Deliver System / Mobile / Push Notification
           const notifId = getNumericId(`ready-${pkg.id}-${pkg.nextClaimTimestamp}`);
@@ -286,10 +317,13 @@ class PackageRewardNotificationService {
       if (!isAlreadyClaimedToday) {
         streakReady = true;
 
+        const streakKey = `streak_${today}`;
+
         // Notify once per calendar day
-        if (streakSchedule.lastNotifiedDate !== today) {
+        if (!notifiedSet.has(streakKey) && streakSchedule.lastNotifiedDate !== today) {
           streakSchedule.lastNotifiedDate = today;
           this.saveStreakSchedule(streakSchedule);
+          saveNotifiedCycle(streakKey);
 
           mobileNotifications.sendNotification({
             id: getNumericId(`streak-${today}`),

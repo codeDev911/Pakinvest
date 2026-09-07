@@ -200,6 +200,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const knownNotificationIds = useRef<Set<string>>(new Set());
+  const isInitialNotifLoad = useRef<boolean>(true);
 
   // Modals state
   const [isDepositModalOpen, setIsDepositModalOpen] = useState<boolean>(false);
@@ -507,7 +508,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const interval = setInterval(() => {
       const now = Date.now();
       setCurrentTimestamp(now);
-      packageRewardNotificationService.checkReadyRewards();
       setActiveInvestments((prevInvestments) => {
         if (prevInvestments.length === 0) return prevInvestments;
         return prevInvestments.map((inv) => {
@@ -1217,27 +1217,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ok && data?.success && Array.isArray(data.notifications)) {
           let hasApprovalOrStatusChange = false;
 
-          // Check for new notifications to toast in real-time
-          data.notifications.forEach((n) => {
-            if (!knownNotificationIds.current.has(n.id)) {
-              knownNotificationIds.current.add(n.id);
-              if (!n.read) {
-                showToast(
-                  n.title,
-                  n.message,
-                  n.type.includes('declined') ? 'warning' : 'success'
-                );
-                // Trigger native mobile notification with sound & vibration
-                mobileNotifications.sendNotification({
-                  title: n.title,
-                  body: n.message,
-                });
-                if (n.type.includes('approved') || n.type.includes('declined')) {
-                  hasApprovalOrStatusChange = true;
+          // On first load, seed known IDs without blasting the user with past alerts
+          if (isInitialNotifLoad.current) {
+            data.notifications.forEach((n) => knownNotificationIds.current.add(n.id));
+            isInitialNotifLoad.current = false;
+          } else {
+            // Check for truly new incoming notifications to toast in real-time
+            data.notifications.forEach((n) => {
+              if (!knownNotificationIds.current.has(n.id)) {
+                knownNotificationIds.current.add(n.id);
+                if (!n.read) {
+                  showToast(
+                    n.title,
+                    n.message,
+                    n.type.includes('declined') ? 'warning' : 'success'
+                  );
+                  // Trigger native mobile notification with sound & vibration
+                  mobileNotifications.sendNotification({
+                    title: n.title,
+                    body: n.message,
+                  });
+                  if (n.type.includes('approved') || n.type.includes('declined')) {
+                    hasApprovalOrStatusChange = true;
+                  }
                 }
               }
-            }
-          });
+            });
+          }
 
           setNotifications(data.notifications);
           setUnreadNotificationsCount(data.unreadCount ?? 0);
