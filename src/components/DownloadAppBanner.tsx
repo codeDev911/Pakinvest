@@ -31,33 +31,23 @@ export const DownloadAppBanner: React.FC = () => {
   return (
     <div
       id="download-app-banner"
-      className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between gap-3 transition-all hover:border-emerald-500/50"
+      className="p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between gap-3 transition-all hover:border-emerald-500/50"
     >
-      {/* App Icon + Title */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 overflow-hidden shadow-2xs">
+      {/* App Icon + Title Only */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 overflow-hidden shadow-2xs">
           <img
             src="/favicon.png"
-            alt="Investify App Icon"
-            className="w-7 h-7 object-contain"
+            alt="Investify"
+            className="w-6 h-6 object-contain"
           />
         </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-              Investify Android App
-            </h4>
-            <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 shrink-0">
-              APK
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-            Fast 1-tap login & payout alerts
-          </p>
-        </div>
+        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+          Investify App
+        </h4>
       </div>
 
-      {/* Compact Download Button */}
+      {/* Download Button */}
       <button
         id="download-apk-action-btn"
         type="button"

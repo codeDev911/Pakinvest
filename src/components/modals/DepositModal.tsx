@@ -3,17 +3,13 @@ import { useApp } from '../../context/AppContext';
 import { GatewayType } from '../../types';
 import { OFFICIAL_DEPOSIT_CHANNELS } from '../../data/mockData';
 import { formatPKR } from '../../utils/formatters';
+import { GatewayLogo } from '../common/GatewayLogo';
 import {
   X,
   Copy,
   Check,
   ShieldAlert,
-  Smartphone,
-  CreditCard,
-  Building2,
-  Coins,
   ArrowRight,
-  Sparkles,
   Info,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -86,18 +82,7 @@ export const DepositModal: React.FC = () => {
   };
 
   const getGatewayIcon = (gw: GatewayType) => {
-    switch (gw) {
-      case 'JazzCash':
-        return <Smartphone className="w-5 h-5 text-amber-500" />;
-      case 'EasyPaisa':
-        return <CreditCard className="w-5 h-5 text-emerald-500" />;
-      case 'Raast':
-        return <Sparkles className="w-5 h-5 text-orange-500" />;
-      case 'Bank_Transfer':
-        return <Building2 className="w-5 h-5 text-blue-500" />;
-      case 'USDT_TRC20':
-        return <Coins className="w-5 h-5 text-teal-400" />;
-    }
+    return <GatewayLogo gateway={gw} size="sm" />;
   };
 
   return (
@@ -169,7 +154,7 @@ export const DepositModal: React.FC = () => {
                               : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                           }`}
                         >
-                          <div className="p-1.5 bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-slate-200/50 dark:border-slate-700/50">
+                          <div className="shrink-0">
                             {getGatewayIcon(gw)}
                           </div>
                           <div className="min-w-0">
@@ -260,9 +245,12 @@ export const DepositModal: React.FC = () => {
                 {/* Company Payment Info Box */}
                 <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
-                      Official {selectedGateway} Receiving Account
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <GatewayLogo gateway={selectedGateway} size="xs" />
+                      <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                        Official {selectedGateway === 'Bank_Transfer' ? 'Meezan / Bank' : selectedGateway} Receiving Account
+                      </span>
+                    </div>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold">
                       Verified
                     </span>

@@ -190,9 +190,9 @@ class PackageRewardNotificationService {
 
       updated.push(scheduleItem);
 
-      // Schedule native offline notification ONLY if on Capacitor Android Native and NOT already scheduled for this cycle
-      if (Capacitor.isNativePlatform() && inv.status === 'active' && nextClaim > Date.now()) {
-        const scheduleCycleKey = `native_sched_${inv.id}_${nextClaim}`;
+      // Schedule background notification (Native AlarmManager on Android, Service Worker in browser)
+      if (inv.status === 'active' && nextClaim > Date.now()) {
+        const scheduleCycleKey = `sched_cycle_${inv.id}_${nextClaim}`;
         if (!notifiedSet.has(scheduleCycleKey)) {
           saveNotifiedCycle(scheduleCycleKey);
           const notifId = getNumericId(`pkg-${inv.id}`);
@@ -214,7 +214,7 @@ class PackageRewardNotificationService {
   }
 
   /**
-   * Syncs daily streak reward schedule in localStorage.
+   * Syncs daily streak reward schedule in localStorage and schedules future reminder.
    */
   syncStreakReward(user: UserProfile, tiers?: DailyRewardTier[]): void {
     const streakDays =
@@ -246,6 +246,33 @@ class PackageRewardNotificationService {
     };
 
     this.saveStreakSchedule(streakSchedule);
+
+    // Schedule next daily streak reward notification (e.g. tomorrow at 9:00 AM or 24h cycle)
+    if (user.lastCheckInDate) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (user.lastCheckInDate === todayStr) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0); // 9:00 AM tomorrow
+        if (tomorrow.getTime() > Date.now()) {
+          const streakCycleKey = `streak_sched_${tomorrow.toISOString().split('T')[0]}`;
+          const notifiedSet = getNotifiedCycles();
+          if (!notifiedSet.has(streakCycleKey)) {
+            saveNotifiedCycle(streakCycleKey);
+            mobileNotifications.sendNotification({
+              id: 999999,
+              title: '🔥 Daily Streak Reward Ready!',
+              body: `Day ${nextStreakDay} streak reward of Rs. ${nextReward.toLocaleString()} is waiting for you. Tap to claim!`,
+              scheduleAt: tomorrow,
+              extra: {
+                actionTab: 'home',
+                openStreakModal: true,
+              },
+            });
+          }
+        }
+      }
+    }
   }
 
   /**

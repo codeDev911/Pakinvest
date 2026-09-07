@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { GatewayType, PaymentAccount } from '../../types';
 import { formatPKR } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
+import { GatewayLogo } from '../common/GatewayLogo';
 import {
   X,
   Lock,
@@ -11,11 +12,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  Smartphone,
-  CreditCard,
-  Building2,
-  Coins,
-  Sparkles,
   Tag,
   Clock,
 } from 'lucide-react';
@@ -189,18 +185,7 @@ export const WithdrawModal: React.FC = () => {
   };
 
   const getGatewayIcon = (gw: GatewayType) => {
-    switch (gw) {
-      case 'JazzCash':
-        return <Smartphone className="w-4 h-4 text-amber-500" />;
-      case 'EasyPaisa':
-        return <CreditCard className="w-4 h-4 text-emerald-500" />;
-      case 'Raast':
-        return <Sparkles className="w-4 h-4 text-orange-500" />;
-      case 'Bank_Transfer':
-        return <Building2 className="w-4 h-4 text-blue-500" />;
-      case 'USDT_TRC20':
-        return <Coins className="w-4 h-4 text-teal-400" />;
-    }
+    return <GatewayLogo gateway={gw} size="sm" />;
   };
 
   return (
@@ -321,7 +306,7 @@ export const WithdrawModal: React.FC = () => {
                               : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                           }`}
                         >
-                          <div className="p-1 bg-white dark:bg-slate-900 rounded-lg shadow-2xs mb-1">
+                          <div className="mb-1">
                             {getGatewayIcon(gw)}
                           </div>
                           <span className="text-[11px] font-bold">
@@ -367,6 +352,7 @@ export const WithdrawModal: React.FC = () => {
                             ) : (
                               <div className="w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600" />
                             )}
+                            <GatewayLogo gateway={acc.gateway} size="xs" />
                             <div>
                               <p className="text-xs font-bold text-slate-800 dark:text-white">
                                 {acc.accountTitle}
@@ -500,9 +486,15 @@ export const WithdrawModal: React.FC = () => {
                   <h4 className="text-base font-bold text-slate-900 dark:text-white">
                     Enter 4-Digit Withdrawal PIN
                   </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Disbursement of <strong className="text-emerald-600 dark:text-emerald-400">{formatPKR(netReceivable)}</strong> via {selectedGateway}
-                  </p>
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    <span>Disbursement of</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400">{formatPKR(netReceivable)}</strong>
+                    <span>via</span>
+                    <div className="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
+                      <GatewayLogo gateway={selectedGateway} size="xs" />
+                      <span>{selectedGateway === 'Bank_Transfer' ? 'Bank / Raast' : selectedGateway}</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* PIN Input */}

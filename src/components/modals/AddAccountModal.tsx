@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GatewayType } from '../../types';
-import { X, Smartphone, CreditCard, Building2, Sparkles, Check } from 'lucide-react';
+import { GatewayLogo } from '../common/GatewayLogo';
+import { X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AddAccountModal: React.FC = () => {
@@ -79,13 +80,14 @@ export const AddAccountModal: React.FC = () => {
                     key={gw}
                     type="button"
                     onClick={() => setGateway(gw)}
-                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all ${
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center gap-2 ${
                       gateway === gw
                         ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-slate-900 dark:text-white ring-1 ring-emerald-500'
                         : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    {gw === 'Bank_Transfer' ? 'Bank Account' : gw}
+                    <GatewayLogo gateway={gw} size="sm" />
+                    <span className="truncate">{gw === 'Bank_Transfer' ? 'Bank Account' : gw}</span>
                   </button>
                 ))}
               </div>

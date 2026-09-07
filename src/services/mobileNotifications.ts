@@ -48,23 +48,28 @@ class MobileNotificationService {
     }
 
     try {
-      // 1. Create Android Notification Channel
+      // 1. Check existing permission
+      const checkStatus = await LocalNotifications.checkPermissions();
+      if (checkStatus.display === 'granted') {
+        this.hasPermission = true;
+      } else {
+        const localStatus = await LocalNotifications.requestPermissions();
+        if (localStatus.display === 'granted') {
+          this.hasPermission = true;
+        }
+      }
+
+      // 2. Create Android Notification Channel with high priority and lock screen visibility
       await LocalNotifications.createChannel({
         id: 'investify_alerts',
         name: 'Investify Alerts & Payouts',
         description: 'Notifications for daily earnings, approval status, and team commissions',
-        importance: 5, // High importance (heads-up notification)
+        importance: 5, // High importance (heads-up notification & sound)
         visibility: 1, // Visible on lock screen
         vibration: true,
         lights: true,
         lightColor: '#10b981',
       });
-
-      // 2. Request Local Notification Permissions
-      const localStatus = await LocalNotifications.requestPermissions();
-      if (localStatus.display === 'granted') {
-        this.hasPermission = true;
-      }
 
       return this.hasPermission;
     } catch (err) {
@@ -122,7 +127,7 @@ class MobileNotificationService {
                     allowWhileIdle: true, // Crucial: fires even when phone is sleeping/in Doze mode
                   }
                 : undefined,
-              isExactNotification: true,
+              isExactNotification: false, // Prevents Android 12+ ACTION_REQUEST_SCHEDULE_EXACT_ALARM redirect and ensures setAndAllowWhileIdle RTC_WAKEUP execution
               smallIcon: 'ic_launcher',
               iconColor: '#10b981',
               extra: payload.extra,
@@ -135,9 +140,26 @@ class MobileNotificationService {
       }
     }
 
-    // If this is a future scheduled alert and we are on the web/browser, DO NOT fire it now!
-    // In web browsers, scheduled alarms are checked by the service worker or checkReadyRewards() when the time comes.
+    // If this is a future scheduled alert and we are on the web/browser, delegate to Service Worker
     if (isFutureSchedule) {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const target = reg.active || navigator.serviceWorker.controller;
+          if (target) {
+            target.postMessage({
+              type: 'SCHEDULE_NOTIFICATION',
+              payload: {
+                id: payload.id ?? Math.floor(Math.random() * 1000000) + 1,
+                title: payload.title,
+                body: payload.body,
+                scheduleTimestamp: payload.scheduleAt!.getTime(),
+                extra: payload.extra,
+              },
+            });
+          }
+        } catch {}
+      }
       return;
     }
 
@@ -193,6 +215,14 @@ class MobileNotificationService {
       } catch (err) {
         console.warn('[Investify] Failed to cancel local notification:', err);
       }
+    } else if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const target = reg.active || navigator.serviceWorker.controller;
+        if (target) {
+          target.postMessage({ type: 'CANCEL_NOTIFICATION', id });
+        }
+      } catch {}
     }
   }
 

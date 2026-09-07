@@ -29,6 +29,7 @@ import {
 import { motion } from 'motion/react';
 import { LivePlatformFeed } from '../LivePlatformFeed';
 import { DownloadAppBanner } from '../DownloadAppBanner';
+import { WhatsAppChannelCard } from '../home/WhatsAppChannelCard';
 
 export const HomeTab: React.FC = () => {
   const {
@@ -305,6 +306,9 @@ export const HomeTab: React.FC = () => {
 
       {/* Download Android Mobile App (Only rendered in Web browser, hidden inside APK) */}
       <DownloadAppBanner />
+
+      {/* Official WhatsApp Channel Link for Daily Updates */}
+      <WhatsAppChannelCard />
 
       {/* 3. Live Simulated Platform Activity (Unlimited Upward Feed) */}
       <LivePlatformFeed />

@@ -5,13 +5,10 @@ import {
   Moon,
   ShieldCheck,
   Lock,
-  Smartphone,
   HelpCircle,
-  MessageCircle,
   ChevronRight,
   CheckCircle2,
   Fingerprint,
-  Globe,
   KeyRound,
   Eye,
   EyeOff,
@@ -476,56 +473,6 @@ export const SettingsTab: React.FC = () => {
               />
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* 24/7 Pakistani Support */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <MessageCircle className="w-4 h-4 text-emerald-500" />
-          <span>24/7 Pakistani Customer Support</span>
-        </h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <button
-            onClick={() => {
-              window.open('https://api.whatsapp.com/send?phone=923001234567&text=Hello%20Investify%20Support,%20I%20need%20assistance', '_blank');
-            }}
-            className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-left flex items-center justify-between hover:bg-emerald-100 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <div>
-                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 block">
-                  Official WhatsApp Support
-                </span>
-                <span className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                  Urdu & English • 24/7 Live
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-emerald-500" />
-          </button>
-
-          <button
-            onClick={() => {
-              showToast('Telegram Channel', 'Opening official announcement telegram channel: @InvestifyOfficial', 'info');
-            }}
-            className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-left flex items-center justify-between hover:bg-blue-100 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <div>
-                <span className="text-xs font-bold text-blue-900 dark:text-blue-200 block">
-                  Telegram VIP Channel
-                </span>
-                <span className="text-[10px] text-blue-700 dark:text-blue-400">
-                  Daily Payout Proofs & Updates
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-blue-500" />
-          </button>
         </div>
       </div>
 
