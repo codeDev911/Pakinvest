@@ -169,6 +169,42 @@ const INITIAL_CHANNELS = [
     isActive: true,
   },
   {
+    gateway: 'Raast',
+    accountTitle: 'PakInvest State Bank Raast ID',
+    accountNumber: '03045645642',
+    bankName: 'State Bank of Pakistan (Raast Instant)',
+    branchCode: 'RAAST-P2M',
+    instructions: 'Send money instantly via Raast ID / Mobile Number with 0% transfer fee. Enter your 12-digit transaction ID.',
+    minDeposit: 1000,
+    maxDeposit: 2500000,
+    processingTime: 'Instant 24/7 verification',
+    isActive: true,
+  },
+  {
+    gateway: 'SadaPay',
+    accountTitle: 'PakInvest Official SadaPay Wallet',
+    accountNumber: '03045645642',
+    bankName: 'SadaPay (SadaPay Microfinance/EMI)',
+    branchCode: 'SADA-01',
+    instructions: 'Transfer to our official SadaPay account from your SadaPay app or IBFT bank. Enter your 12-digit payment reference/TRX ID.',
+    minDeposit: 1000,
+    maxDeposit: 1000000,
+    processingTime: 'Instant 24/7 verification',
+    isActive: true,
+  },
+  {
+    gateway: 'NayaPay',
+    accountTitle: 'PakInvest Official NayaPay Wallet',
+    accountNumber: '03045645642',
+    bankName: 'NayaPay (NayaPay EMI)',
+    branchCode: 'NAYA-01',
+    instructions: 'Transfer to our official NayaPay mobile wallet or NayaPay ID. Enter your 12-digit payment transaction ID.',
+    minDeposit: 1000,
+    maxDeposit: 1000000,
+    processingTime: 'Instant 24/7 verification',
+    isActive: true,
+  },
+  {
     gateway: 'Bank_Transfer',
     accountTitle: 'PakInvest Global Technologies Ltd',
     accountNumber: '01020304050607',
@@ -254,6 +290,15 @@ async function ensureInitialDatabaseData() {
     if (channelsCount === 0) {
       for (const c of INITIAL_CHANNELS) {
         await prisma.depositChannel.create({ data: c });
+      }
+    } else {
+      // Ensure all supported gateways exist in DB
+      const existing = await prisma.depositChannel.findMany();
+      const existingGateways = new Set(existing.map((c: any) => c.gateway));
+      for (const c of INITIAL_CHANNELS) {
+        if (!existingGateways.has(c.gateway)) {
+          await prisma.depositChannel.create({ data: c });
+        }
       }
     }
 
@@ -1378,6 +1423,7 @@ interface DynamicWithdrawalFeeConfig {
   standardPercent: number; // default fee percentage when no tier matches (e.g. 1% or 2%)
   standardFlatFee?: number; // optional flat PKR fee
   minWithdrawal: number;
+  maxWithdrawal: number; // Maximum single withdrawal request limit in PKR
   maxDailyRequests: number; // Daily withdrawal request limit (default 3)
   description: string;
   tiers: WithdrawalFeeTier[];
@@ -1388,6 +1434,7 @@ let withdrawalFeeConfig: DynamicWithdrawalFeeConfig = {
   standardPercent: 1.0, // 1% standard
   standardFlatFee: 0,
   minWithdrawal: 300,
+  maxWithdrawal: 500000,
   maxDailyRequests: 3,
   description: 'Dynamic processing fee tiering for PKR withdrawals',
   tiers: [
@@ -1429,6 +1476,7 @@ async function syncWithdrawalFeeConfigFromDb(): Promise<DynamicWithdrawalFeeConf
       withdrawalFeeConfig = {
         ...withdrawalFeeConfig,
         ...parsed,
+        maxWithdrawal: Number(parsed.maxWithdrawal) || withdrawalFeeConfig.maxWithdrawal || 500000,
         tiers: Array.isArray(parsed.tiers) && parsed.tiers.length > 0 ? parsed.tiers : withdrawalFeeConfig.tiers,
       };
     } else {
@@ -1549,11 +1597,13 @@ router.get('/withdraw/daily-status', authenticate, async (req, res) => {
 
     const maxDaily = withdrawalFeeConfig.maxDailyRequests || 3;
     const minWithdrawal = withdrawalFeeConfig.minWithdrawal || 300;
+    const maxWithdrawal = withdrawalFeeConfig.maxWithdrawal || 500000;
     const remaining = Math.max(0, maxDaily - todayCount);
 
     res.json({
       success: true,
       minWithdrawal,
+      maxWithdrawal,
       maxDailyRequests: maxDaily,
       todayRequestsCount: todayCount,
       remainingRequests: remaining,
@@ -1567,11 +1617,12 @@ router.get('/withdraw/daily-status', authenticate, async (req, res) => {
 // Admin endpoint to adjust the dynamic withdrawal fee rules and limits (persisted to DB)
 router.post('/admin/withdrawal-fee-config', async (req, res) => {
   try {
-    const { enabled, standardPercent, standardFlatFee, minWithdrawal, maxDailyRequests, description, tiers } = req.body;
+    const { enabled, standardPercent, standardFlatFee, minWithdrawal, maxWithdrawal, maxDailyRequests, description, tiers } = req.body;
     if (typeof enabled === 'boolean') withdrawalFeeConfig.enabled = enabled;
     if (typeof standardPercent === 'number' && !isNaN(standardPercent)) withdrawalFeeConfig.standardPercent = Math.max(0, standardPercent);
     if (typeof standardFlatFee === 'number' && !isNaN(standardFlatFee)) withdrawalFeeConfig.standardFlatFee = Math.max(0, standardFlatFee);
     if (typeof minWithdrawal === 'number' && !isNaN(minWithdrawal)) withdrawalFeeConfig.minWithdrawal = Math.max(50, minWithdrawal);
+    if (typeof maxWithdrawal === 'number' && !isNaN(maxWithdrawal)) withdrawalFeeConfig.maxWithdrawal = Math.max(withdrawalFeeConfig.minWithdrawal, maxWithdrawal);
     if (typeof maxDailyRequests === 'number' && !isNaN(maxDailyRequests)) withdrawalFeeConfig.maxDailyRequests = Math.max(1, maxDailyRequests);
     if (typeof description === 'string') withdrawalFeeConfig.description = description;
     if (Array.isArray(tiers) && tiers.length > 0) {
@@ -1610,6 +1661,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
 
     const withdrawAmount = Number(amount);
     const minLimit = withdrawalFeeConfig.minWithdrawal || 300;
+    const maxLimit = withdrawalFeeConfig.maxWithdrawal || 500000;
     if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
       return res.status(400).json({ error: `Please enter a valid withdrawal amount.` });
     }
@@ -1617,6 +1669,11 @@ router.post('/withdraw', authenticate, async (req, res) => {
     // Explicit check: Min amount is 300 PKR
     if (withdrawAmount < minLimit) {
       return res.status(400).json({ error: `Minimum withdrawal amount is Rs. ${minLimit.toLocaleString()}.` });
+    }
+
+    // Explicit check: Max limit
+    if (withdrawAmount > maxLimit) {
+      return res.status(400).json({ error: `Maximum withdrawal limit is Rs. ${maxLimit.toLocaleString()}.` });
     }
 
     // Daily limit check: Up to 3 withdrawal requests per day

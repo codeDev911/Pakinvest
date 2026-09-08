@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { OfficialDepositChannel, GatewayType } from '../../types';
 import { formatPKR } from '../../utils/formatters';
 import { getApiUrl } from '../../config/api';
+import { GatewayLogo } from '../../components/common/GatewayLogo';
 import {
   CreditCard,
   Smartphone,
@@ -38,6 +39,8 @@ const GATEWAY_OPTIONS: { type: GatewayType; label: string; sub: string }[] = [
   { type: 'JazzCash', label: 'JazzCash', sub: 'Till / Mobile Account' },
   { type: 'EasyPaisa', label: 'EasyPaisa', sub: 'Merchant / Mobile Account' },
   { type: 'Raast', label: 'Raast P2M / Instant', sub: 'State Bank 0% Fee ID' },
+  { type: 'SadaPay', label: 'SadaPay', sub: 'Personal / Business Wallet' },
+  { type: 'NayaPay', label: 'NayaPay', sub: 'Fintech Wallet / Merchant ID' },
   { type: 'Bank_Transfer', label: 'Commercial Bank IBFT', sub: 'Meezan, HBL, UBL, Alfalah' },
   { type: 'USDT_TRC20', label: 'USDT (TRC20)', sub: 'Binance / Tron Wallet' },
 ];
@@ -224,9 +227,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
       header: 'Payment Gateway',
       render: (c) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-500 text-xs shrink-0">
-            <Smartphone className="w-4 h-4" />
-          </div>
+          <GatewayLogo gateway={c.gateway} size="sm" />
           <div>
             <div className="font-bold text-white tracking-tight">{c.gateway}</div>
             <div className="text-[10px] text-slate-400 font-mono">ID: {c.id}</div>
@@ -493,9 +494,7 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400">
-                    <Smartphone className="w-5 h-5" />
-                  </div>
+                  <GatewayLogo gateway={c.gateway} size="md" />
                   <div>
                     <h3 className="text-sm font-bold text-white">{c.gateway}</h3>
                     <p className="text-[10px] text-slate-400">{c.bankName || 'Mobile Account'}</p>

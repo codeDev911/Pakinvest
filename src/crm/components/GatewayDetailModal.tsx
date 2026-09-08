@@ -1,6 +1,7 @@
 import React from 'react';
 import { OfficialDepositChannel } from '../../types';
 import { formatPKR } from '../../utils/formatters';
+import { GatewayLogo } from '../../components/common/GatewayLogo';
 import {
   CreditCard,
   X,
@@ -58,9 +59,7 @@ export const GatewayDetailModal: React.FC<GatewayDetailModalProps> = ({
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 font-black">
-              <CreditCard className="w-5 h-5" />
-            </div>
+            <GatewayLogo gateway={channel.gateway} size="md" />
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold tracking-tight">{channel.gateway}</h3>

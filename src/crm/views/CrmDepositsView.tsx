@@ -120,7 +120,7 @@ export const CrmDepositsView: React.FC<CrmDepositsViewProps> = ({
   };
 
   // Unique gateways list
-  const standardGateways = ['JazzCash', 'EasyPaisa', 'Bank_Transfer', 'Raast', 'Direct'];
+  const standardGateways = ['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer', 'USDT_TRC20', 'Direct'];
   const dynamicGateways = Array.from(new Set(depositsList.map((d) => d.gateway).filter((g): g is string => Boolean(g))));
   const allGateways = Array.from(new Set([...standardGateways, ...dynamicGateways]));
 

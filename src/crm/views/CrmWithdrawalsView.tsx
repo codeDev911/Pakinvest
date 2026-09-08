@@ -42,6 +42,7 @@ interface DynamicWithdrawalFeeConfig {
   standardPercent: number;
   standardFlatFee?: number;
   minWithdrawal: number;
+  maxWithdrawal: number;
   maxDailyRequests?: number;
   description: string;
   tiers: WithdrawalFeeTier[];
@@ -82,6 +83,7 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
     standardPercent: 1.0,
     standardFlatFee: 0,
     minWithdrawal: 300,
+    maxWithdrawal: 500000,
     maxDailyRequests: 3,
     description: 'Dynamic processing fee tiering for PKR withdrawals',
     tiers: [
@@ -272,7 +274,7 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
   const withdrawalTxs = withdrawalsList.filter((tx) => tx.type === 'withdrawal');
 
   // Gateways
-  const standardGateways = ['JazzCash', 'EasyPaisa', 'Bank_Transfer', 'Raast', 'Direct'];
+  const standardGateways = ['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer', 'USDT_TRC20', 'Direct'];
   const dynamicGateways = Array.from(new Set(withdrawalsList.map((w) => w.gateway).filter((g): g is string => Boolean(g))));
   const allGateways = Array.from(new Set([...standardGateways, ...dynamicGateways]));
 
@@ -660,6 +662,21 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
                     }`}
                   />
                   <p className="text-[10px] text-slate-400 mt-1">Minimum withdrawal threshold (Rs. 300 default).</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-white block mb-1">Max Withdrawal Limit (PKR)</label>
+                  <input
+                    type="number"
+                    step="500"
+                    min="500"
+                    value={feeConfig.maxWithdrawal || 500000}
+                    onChange={(e) => setFeeConfig({ ...feeConfig, maxWithdrawal: parseInt(e.target.value, 10) || 500000 })}
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold border ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Maximum single payout limit (Rs. 500,000 default).</p>
                 </div>
 
                 <div>

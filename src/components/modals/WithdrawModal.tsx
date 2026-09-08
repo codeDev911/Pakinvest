@@ -81,6 +81,7 @@ export const WithdrawModal: React.FC = () => {
   if (!isWithdrawModalOpen) return null;
 
   const minWithdrawal = feeConfig?.minWithdrawal ?? 300;
+  const maxWithdrawal = feeConfig?.maxWithdrawal ?? 500000;
   const maxDaily = feeConfig?.maxDailyRequests ?? dailyStats.maxDaily ?? 3;
 
   // Dynamic fee calculation:
@@ -119,7 +120,7 @@ export const WithdrawModal: React.FC = () => {
 
   const handlePercentageSelect = (percent: number) => {
     const calculated = Math.floor((user.balance * percent) / 100);
-    const validAmount = Math.max(minWithdrawal, calculated);
+    const validAmount = Math.min(maxWithdrawal, Math.max(minWithdrawal, calculated));
     setAmount(validAmount);
     setCustomAmountInput(validAmount.toString());
   };
@@ -138,6 +139,10 @@ export const WithdrawModal: React.FC = () => {
     }
     if (amount < minWithdrawal) {
       showToast('Amount too low', `Minimum withdrawal amount is Rs. ${minWithdrawal.toLocaleString()}`, 'warning');
+      return;
+    }
+    if (amount > maxWithdrawal) {
+      showToast('Amount too high', `Maximum withdrawal limit is Rs. ${maxWithdrawal.toLocaleString()}`, 'warning');
       return;
     }
     if (amount > user.balance) {
@@ -248,8 +253,10 @@ export const WithdrawModal: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Min. Limit</span>
-                      <span className="text-xs font-black text-amber-300 font-mono">{formatPKR(minWithdrawal)}</span>
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Limits (Min - Max)</span>
+                      <span className="text-xs font-black text-amber-300 font-mono">
+                        {formatPKR(minWithdrawal)} - {formatPKR(maxWithdrawal)}
+                      </span>
                     </div>
                   </div>
 
@@ -462,7 +469,7 @@ export const WithdrawModal: React.FC = () => {
                 {/* Continue button */}
                 <button
                   type="submit"
-                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > user.balance}
+                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > maxWithdrawal || amount > user.balance}
                   className="w-full py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition-colors shadow-lg shadow-amber-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
@@ -471,6 +478,10 @@ export const WithdrawModal: React.FC = () => {
                       ? `Daily Limit Reached (${maxDaily}/${maxDaily} Used Today)`
                       : amount < minWithdrawal
                       ? `Minimum Rs. ${minWithdrawal.toLocaleString()} Required`
+                      : amount > maxWithdrawal
+                      ? `Maximum Rs. ${maxWithdrawal.toLocaleString()} Limit Exceeded`
+                      : amount > user.balance
+                      ? 'Insufficient Balance'
                       : 'Verify with Security PIN'}
                   </span>
                 </button>
