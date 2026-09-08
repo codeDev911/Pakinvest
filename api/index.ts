@@ -2037,6 +2037,70 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
 // ----------------------------------------------------
 // NOTIFICATIONS API (Real Persistent in Database)
 // ----------------------------------------------------
+// Background sync endpoint for native mobile client & closed-app alarms
+router.get('/notifications/sync-background', async (req, res) => {
+  try {
+    let userId = req.query.userId as string | undefined;
+    const token = (req.query.token as string | undefined) || req.headers.authorization?.replace('Bearer ', '');
+    const lastId = req.query.lastId as string | undefined;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        if (decoded?.id) userId = decoded.id;
+      } catch {}
+    }
+
+    if (!userId) {
+      // Fallback: return recent broadcast campaigns from memory cache if unauthenticated
+      const broadcasts = (broadcastHistoryCache || []).slice(0, 5);
+      const notifs = broadcasts.map((b: any) => ({
+        id: b.id,
+        title: b.title,
+        message: b.message,
+        type: b.type || 'broadcast',
+        timestamp: b.sentAt,
+        read: false,
+      }));
+      return res.json({
+        success: true,
+        notifications: notifs,
+        latestId: broadcasts[0]?.id || '',
+      });
+    }
+
+    // Query user's real persistent notifications
+    const notifications = await prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    let newNotifications = notifications;
+    if (lastId) {
+      const idx = notifications.findIndex((n) => n.id === lastId);
+      if (idx > 0) {
+        newNotifications = notifications.slice(0, idx);
+      } else if (idx === 0) {
+        newNotifications = [];
+      } else {
+        newNotifications = notifications.filter((n) => !n.read);
+      }
+    } else {
+      newNotifications = notifications.filter((n) => !n.read);
+    }
+
+    const latestId = notifications[0]?.id || lastId || '';
+    res.json({
+      success: true,
+      notifications: newNotifications,
+      latestId,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to sync background notifications' });
+  }
+});
+
 router.get('/notifications', authenticate, async (req, res) => {
   try {
     const user = (req as any).user;

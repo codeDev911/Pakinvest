@@ -1248,6 +1248,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setNotifications(data.notifications);
           setUnreadNotificationsCount(data.unreadCount ?? 0);
 
+          if (data.notifications.length > 0) {
+            const latestId = data.notifications[0].id;
+            localStorage.setItem('investify_last_crm_notif_id', latestId);
+            localStorage.setItem('investify_user_id', user.id);
+            localStorage.setItem('investify_auth_token', activeToken);
+            mobileNotifications.configureBackgroundSync(activeToken, user.id, latestId).catch(() => {});
+          }
+
           // If admin approved or declined a transaction, cleanly sync user balances
           if (hasApprovalOrStatusChange) {
             refreshAllData();

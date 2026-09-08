@@ -2,7 +2,14 @@ export type AppTheme = 'dark' | 'light';
 
 export type NavTab = 'home' | 'plans' | 'transactions' | 'wallet' | 'referral' | 'settings';
 
-export type GatewayType = 'JazzCash' | 'EasyPaisa' | 'Raast' | 'Bank_Transfer' | 'USDT_TRC20';
+export type GatewayType =
+  | 'JazzCash'
+  | 'EasyPaisa'
+  | 'Raast'
+  | 'SadaPay'
+  | 'NayaPay'
+  | 'Bank_Transfer'
+  | 'USDT_TRC20';
 
 export type TransactionType =
   | 'deposit'

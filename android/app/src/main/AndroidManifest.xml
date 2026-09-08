@@ -35,6 +35,18 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
+        <!-- Native Receiver for CRM broadcasts & server notifications when app is closed -->
+        <receiver
+            android:name=".CrmNotificationSyncReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="com.investify.app.ACTION_SYNC_NOTIFICATIONS" />
+            </intent-filter>
+        </receiver>
+
         <!-- Capacitor Local Notifications Receivers for background and closed app alarms -->
         <receiver
             android:name="com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher"

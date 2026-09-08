@@ -287,8 +287,8 @@ export const WithdrawModal: React.FC = () => {
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                     Select Receiving Gateway
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {(['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer'] as GatewayType[]).map((gw) => {
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {(['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer'] as GatewayType[]).map((gw) => {
                       const isSelected = selectedGateway === gw;
                       return (
                         <button
@@ -300,7 +300,7 @@ export const WithdrawModal: React.FC = () => {
                             if (match) setSelectedAccountId(match.id);
                             else setSelectedAccountId('custom');
                           }}
-                          className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
+                          className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all ${
                             isSelected
                               ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20 text-slate-900 dark:text-white'
                               : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
@@ -309,8 +309,8 @@ export const WithdrawModal: React.FC = () => {
                           <div className="mb-1">
                             {getGatewayIcon(gw)}
                           </div>
-                          <span className="text-[11px] font-bold">
-                            {gw === 'Bank_Transfer' ? 'Bank / Raast' : gw}
+                          <span className="text-[10px] font-bold truncate w-full">
+                            {gw === 'Bank_Transfer' ? 'Bank' : gw}
                           </span>
                         </button>
                       );

@@ -35,7 +35,7 @@ export const DepositModal: React.FC = () => {
     : OFFICIAL_DEPOSIT_CHANNELS;
 
   const availableGateways = Array.from(new Set(activeChannels.map((c) => c.gateway)));
-  const displayGateways = availableGateways.length > 0 ? availableGateways : (['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer', 'USDT_TRC20'] as GatewayType[]);
+  const displayGateways = availableGateways.length > 0 ? availableGateways : (['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer', 'USDT_TRC20'] as GatewayType[]);
 
   const effectiveGateway = displayGateways.includes(selectedGateway) ? selectedGateway : displayGateways[0];
 

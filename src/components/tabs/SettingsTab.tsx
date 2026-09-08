@@ -54,8 +54,6 @@ export const SettingsTab: React.FC = () => {
 
   // Mobile Notifications state
   const [hasNotifPermission, setHasNotifPermission] = useState<boolean | null>(null);
-  const [testCountdown, setTestCountdown] = useState<number | null>(null);
-  const [isSchedulingTest, setIsSchedulingTest] = useState(false);
 
   useEffect(() => {
     mobileNotifications.checkPermission().then((granted) => {
@@ -71,40 +69,6 @@ export const SettingsTab: React.FC = () => {
       mobileNotifications.playRewardChime();
     } else {
       showToast('Permission Denied', 'Please allow notifications in your device settings.', 'warning');
-    }
-  };
-
-  const handleTestClosedAppNotification = async () => {
-    setIsSchedulingTest(true);
-    try {
-      const scheduled = await mobileNotifications.scheduleClosedAppTest(5);
-      if (scheduled) {
-        setHasNotifPermission(true);
-        mobileNotifications.playRewardChime();
-        setTestCountdown(5);
-        showToast(
-          'Alert Scheduled in 5s!',
-          'Close or minimize the Investify app right now to test delivery while closed!',
-          'success'
-        );
-
-        let counter = 5;
-        const interval = setInterval(() => {
-          counter -= 1;
-          if (counter <= 0) {
-            clearInterval(interval);
-            setTestCountdown(null);
-          } else {
-            setTestCountdown(counter);
-          }
-        }, 1000);
-      } else {
-        showToast('Notification Blocked', 'Please enable notifications permission first.', 'error');
-      }
-    } catch {
-      showToast('Error', 'Failed to schedule test alert.', 'error');
-    } finally {
-      setIsSchedulingTest(false);
     }
   };
 
@@ -328,13 +292,13 @@ export const SettingsTab: React.FC = () => {
                 </span>
                 <span className="text-[11px] text-slate-400">
                   {hasNotifPermission
-                    ? 'Configured for background & lock screen wake-up'
-                    : 'Tap below to grant Android notification permissions'}
+                    ? 'Active: instant alerts enabled for daily rewards and announcements'
+                    : 'Tap enable to receive instant alerts when app is closed'}
                 </span>
               </div>
             </div>
 
-            {!hasNotifPermission && (
+            {!hasNotifPermission ? (
               <button
                 type="button"
                 onClick={handleRequestPermission}
@@ -342,31 +306,12 @@ export const SettingsTab: React.FC = () => {
               >
                 Enable Alerts
               </button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Enabled</span>
+              </div>
             )}
-          </div>
-
-          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-              Want to test delivery while closed? Tap the test button and immediately swipe the app away.
-            </div>
-
-            <button
-              type="button"
-              disabled={isSchedulingTest || testCountdown !== null}
-              onClick={handleTestClosedAppNotification}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs ${
-                testCountdown !== null
-                  ? 'bg-amber-500 text-white animate-pulse'
-                  : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white disabled:opacity-50'
-              }`}
-            >
-              <Bell className="w-3.5 h-3.5" />
-              <span>
-                {testCountdown !== null
-                  ? `Fires in ${testCountdown}s! Close app now`
-                  : 'Test Closed-App Alert (5s)'}
-              </span>
-            </button>
           </div>
         </div>
       </div>

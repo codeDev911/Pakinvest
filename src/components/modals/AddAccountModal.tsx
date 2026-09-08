@@ -74,8 +74,8 @@ export const AddAccountModal: React.FC = () => {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                 Select Account Type
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['JazzCash', 'EasyPaisa', 'Raast', 'Bank_Transfer'] as GatewayType[]).map((gw) => (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {(['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer'] as GatewayType[]).map((gw) => (
                   <button
                     key={gw}
                     type="button"

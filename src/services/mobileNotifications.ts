@@ -1,6 +1,20 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { App } from '@capacitor/app';
+import { getAppBaseUrl } from '../config/appUrl';
+
+interface BackgroundSyncPluginType {
+  configure(options: {
+    serverUrl: string;
+    token?: string;
+    userId?: string;
+    lastSeenId?: string;
+    intervalSeconds?: number;
+  }): Promise<void>;
+  syncNow(): Promise<void>;
+}
+
+export const BackgroundSync = registerPlugin<BackgroundSyncPluginType>('BackgroundSync');
 
 export interface MobileNotificationPayload {
   id?: number;
@@ -75,6 +89,7 @@ class MobileNotificationService {
         App.addListener('appStateChange', ({ isActive }) => {
           if (!isActive) {
             console.log('[Investify] App transitioned to background/closed state');
+            this.configureBackgroundSync().catch(() => {});
             import('./packageRewardNotificationService')
               .then((m) => {
                 m.packageRewardNotificationService.ensureAlarmsScheduled();
@@ -83,6 +98,9 @@ class MobileNotificationService {
           }
         });
       } catch {}
+
+      // 4. Arm native background CRM sync alarm
+      this.configureBackgroundSync().catch(() => {});
 
       return this.hasPermission;
     } catch (err) {
@@ -230,6 +248,38 @@ class MobileNotificationService {
           });
         } catch {}
       }
+    }
+  }
+
+  /**
+   * Configures native Android background sync to fetch CRM announcements & broadcasts
+   * even when the application is terminated or phone screen is locked.
+   */
+  async configureBackgroundSync(token?: string, userId?: string, lastSeenId?: string): Promise<void> {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const activeToken =
+        token ||
+        (typeof window !== 'undefined' ? localStorage.getItem('investify_auth_token') || localStorage.getItem('token') || '' : '');
+      const activeUserId =
+        userId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('investify_user_id') || '' : '');
+      const activeLastId =
+        lastSeenId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('investify_last_crm_notif_id') || '' : '');
+
+      const serverUrl = getAppBaseUrl();
+
+      await BackgroundSync.configure({
+        serverUrl,
+        token: activeToken,
+        userId: activeUserId,
+        lastSeenId: activeLastId,
+        intervalSeconds: 60, // Poll every 60 seconds while closed
+      });
+      console.log('[Investify] BackgroundSync configured successfully for CRM closed-app alerts');
+    } catch (e) {
+      console.warn('[Investify] BackgroundSync configure warning:', e);
     }
   }
 
