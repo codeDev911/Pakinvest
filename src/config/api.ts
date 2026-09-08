@@ -55,8 +55,14 @@ export function getEffectiveApiBaseUrl(): string {
  */
 export function getApiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  if (!API_BASE_URL) {
-    return normalizedPath;
+  
+  // In native Capacitor mobile apps (Android/iOS), route to the configured external API URL
+  if (isNativePlatform && API_BASE_URL) {
+    return `${API_BASE_URL}${normalizedPath}`;
   }
-  return `${API_BASE_URL}${normalizedPath}`;
+
+  // In web browsers (desktop, mobile web, preview iframe, Cloud Run container),
+  // always use same-origin relative URLs (/api/...) so requests hit the local Express server
+  // without cross-origin CORS blocks, DNS failures, or 'Failed to fetch' errors.
+  return normalizedPath;
 }

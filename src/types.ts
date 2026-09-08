@@ -156,6 +156,8 @@ export interface Transaction {
   createdAt?: string | Date;
   notes?: string;
   planName?: string;
+  proofImage?: string; // Cloudinary receipt image URL or upload proof
+  receiptUrl?: string;
   // Bank-Grade Ledger & Fraud Prevention properties
   ledger?: LedgerAuditRecord;
   ledgerId?: string;

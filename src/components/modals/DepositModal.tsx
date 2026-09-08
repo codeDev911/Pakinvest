@@ -4,6 +4,7 @@ import { GatewayType } from '../../types';
 import { OFFICIAL_DEPOSIT_CHANNELS } from '../../data/mockData';
 import { formatPKR } from '../../utils/formatters';
 import { GatewayLogo } from '../common/GatewayLogo';
+import { getApiUrl } from '../../config/api';
 import {
   X,
   Copy,
@@ -11,22 +12,107 @@ import {
   ShieldAlert,
   ArrowRight,
   Info,
+  UploadCloud,
+  Loader2,
+  ExternalLink,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const QUICK_AMOUNTS = [1500, 3500, 5000, 10000, 25000, 50000];
 
 export const DepositModal: React.FC = () => {
-  const { isDepositModalOpen, setIsDepositModalOpen, depositFunds, user, officialChannels } = useApp();
+  const { isDepositModalOpen, setIsDepositModalOpen, depositFunds, officialChannels } = useApp();
   const [selectedGateway, setSelectedGateway] = useState<GatewayType>('JazzCash');
   const [amount, setAmount] = useState<number>(5000);
   const [customAmountInput, setCustomAmountInput] = useState<string>('5000');
-  const [senderTitle, setSenderTitle] = useState<string>(user.name);
-  const [senderNumber, setSenderNumber] = useState<string>('03028876543');
+  const [senderTitle, setSenderTitle] = useState<string>('');
+  const [senderNumber, setSenderNumber] = useState<string>('');
   const [trxId, setTrxId] = useState<string>('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Cloudinary Receipt Image Upload State (Deferred until submit)
+  const [selectedReceiptData, setSelectedReceiptData] = useState<string>(''); // Local compressed base64 preview
+  const [receiptFileName, setReceiptFileName] = useState<string>('');
+  const [receiptFileSize, setReceiptFileSize] = useState<string>('');
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Fast client-side image compression helper (downscales huge camera photos to max 1600px for instant upload)
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1600;
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return resolve(e.target?.result as string);
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 20 * 1024 * 1024) {
+      setUploadError('Image exceeds 20MB limit. Please choose a smaller photo.');
+      return;
+    }
+
+    const sizeFormatted =
+      file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+
+    setReceiptFileName(file.name);
+    setReceiptFileSize(sizeFormatted);
+    setUploadError(null);
+
+    try {
+      // Compress locally for instant crisp preview without initiating server network upload yet
+      const compressedData = await compressImage(file);
+      if (compressedData) {
+        setSelectedReceiptData(compressedData);
+      } else {
+        setUploadError('Unable to process selected image.');
+      }
+    } catch {
+      setUploadError('Failed to prepare receipt image.');
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedReceiptData('');
+    setReceiptFileName('');
+    setReceiptFileSize('');
+    setUploadError(null);
+  };
 
   if (!isDepositModalOpen) return null;
 
@@ -67,18 +153,67 @@ export const DepositModal: React.FC = () => {
       alert(`Minimum deposit for ${selectedGateway} is Rs. ${currentChannel.minDeposit.toLocaleString()}`);
       return;
     }
-    if (!trxId.trim()) {
-      alert('Please enter your 11 or 12 digit Transaction ID (TID) from the SMS/receipt.');
+
+    if (!selectedReceiptData) {
+      setUploadError('Payment receipt screenshot is required. Please select and upload your transfer proof.');
       return;
     }
 
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 900)); // Smooth UX transition
-    await depositFunds(amount, selectedGateway, trxId, senderNumber, senderTitle);
+
+    let finalProofUrl: string | undefined = undefined;
+
+    // 1. Upload photo now (deferred until submit button click)
+    if (selectedReceiptData) {
+      setIsUploadingImage(true);
+      try {
+        const uploadRes = await fetch(getApiUrl('/api/upload/receipt'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: selectedReceiptData,
+            fileName: receiptFileName || 'receipt_proof.jpg',
+          }),
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData && uploadData.url) {
+          finalProofUrl = uploadData.url;
+        } else {
+          finalProofUrl = selectedReceiptData;
+        }
+      } catch (uploadErr) {
+        console.warn('[Receipt Upload Error]: Falling back to local data URI', uploadErr);
+        finalProofUrl = selectedReceiptData;
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
+
+    // 2. Reference / Transaction ID is optional. If empty, generate a readable reference.
+    const effectiveTrxId =
+      trxId.trim() ||
+      `DEP-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // 3. Submit deposit request
+    const success = await depositFunds(
+      amount,
+      selectedGateway,
+      effectiveTrxId,
+      senderNumber || undefined,
+      senderTitle || undefined,
+      finalProofUrl
+    );
+
     setIsSubmitting(false);
-    setIsDepositModalOpen(false);
-    setStep(1);
-    setTrxId('');
+
+    if (success) {
+      setIsDepositModalOpen(false);
+      setStep(1);
+      setTrxId('');
+      setSenderTitle('');
+      setSenderNumber('');
+      handleRemoveImage();
+    }
   };
 
   const getGatewayIcon = (gw: GatewayType) => {
@@ -312,21 +447,128 @@ export const DepositModal: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Transaction ID Input */}
+                {/* Receipt Image Upload (Above Enter Transaction ID) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Upload Payment Receipt Screenshot
+                    </label>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-400 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                      Optional
+                    </span>
+                  </div>
+
+                  {!selectedReceiptData && !isUploadingImage && (
+                    <label
+                      htmlFor="deposit-receipt-file-input"
+                      className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50/80 dark:bg-slate-800/40 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all text-center group"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+                        <UploadCloud className="w-5 h-5" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Tap to Select Receipt / Transfer Proof
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">
+                        PNG, JPG, JPEG or WEBP (JazzCash/EasyPaisa/Bank success screen)
+                      </span>
+                      <input
+                        id="deposit-receipt-file-input"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageSelect}
+                      />
+                    </label>
+                  )}
+
+                  {isUploadingImage && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-500/40 flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 text-emerald-500 animate-spin flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                          Uploading receipt proof...
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {receiptFileName} {receiptFileSize ? `(${receiptFileSize})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedReceiptData && !isUploadingImage && (
+                    <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/90 border border-emerald-500/40 flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-emerald-500/30 bg-black/20 flex-shrink-0">
+                          <img
+                            src={selectedReceiptData}
+                            alt="Receipt preview"
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[140px] sm:max-w-[190px]">
+                              {receiptFileName || 'Receipt Screenshot'}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" />
+                              <span>Ready</span>
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {receiptFileSize ? `${receiptFileSize} • ` : ''}Receipt will be attached upon submit
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <a
+                          href={selectedReceiptData}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:text-emerald-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                          title="Preview full image"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          title="Remove this receipt"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {uploadError && (
+                    <p className="text-[11px] text-rose-500 font-medium">{uploadError}</p>
+                  )}
+                </div>
+
+                {/* Transaction ID Input (Optional) */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Enter Transaction ID (TID / TRX ID / Reference No.) *
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Transaction ID (TID / TRX ID / Reference No.)
+                    </label>
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                      Optional
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    required
                     value={trxId}
                     onChange={(e) => setTrxId(e.target.value)}
-                    placeholder="e.g. 029841029381 (from SMS receipt)"
+                    placeholder="e.g. 029841029381 (or leave blank if receipt attached)"
                     className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <span className="text-[11px] text-slate-400 mt-1 block">
-                    You received this in the JazzCash/EasyPaisa confirmation message.
+                    Optional: Enter 11/12 digit TID from SMS receipt, or upload your payment screenshot above.
                   </span>
                 </div>
 
@@ -340,6 +582,7 @@ export const DepositModal: React.FC = () => {
                       type="text"
                       value={senderTitle}
                       onChange={(e) => setSenderTitle(e.target.value)}
+                      placeholder="Account title"
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                   </div>
@@ -351,6 +594,7 @@ export const DepositModal: React.FC = () => {
                       type="text"
                       value={senderNumber}
                       onChange={(e) => setSenderNumber(e.target.value)}
+                      placeholder="Account number"
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                   </div>
@@ -367,13 +611,13 @@ export const DepositModal: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmitting || !trxId}
+                    disabled={isSubmitting}
                     className="w-2/3 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-1.5">
                         <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Verifying Deposit...
+                        {isUploadingImage ? 'Uploading Receipt Proof...' : 'Submitting Deposit...'}
                       </span>
                     ) : (
                       <span>Confirm & Credit Balance</span>

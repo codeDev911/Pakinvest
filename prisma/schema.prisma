@@ -110,6 +110,7 @@ model Transaction {
   timestamp     String
   notes         String?
   planName      String?
+  proofImage    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

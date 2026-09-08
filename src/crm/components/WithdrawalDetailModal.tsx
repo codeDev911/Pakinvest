@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Transaction } from '../../types';
 import { formatPKR, formatPakistanDateTime } from '../../utils/formatters';
+import { getApiUrl } from '../../config/api';
 import {
   ArrowUpRight,
   X,
@@ -19,6 +20,9 @@ import {
   FileText,
   RotateCcw,
   Sparkles,
+  ExternalLink,
+  Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -42,6 +46,44 @@ export const WithdrawalDetailModal: React.FC<WithdrawalDetailModalProps> = ({
   const [isDeclining, setIsDeclining] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Receipt image verification state
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(withdrawal?.proofImage || (withdrawal as any)?.receiptUrl || null);
+  const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (withdrawal?.proofImage || (withdrawal as any)?.receiptUrl) {
+      setReceiptUrl(withdrawal?.proofImage || (withdrawal as any)?.receiptUrl);
+      return;
+    }
+
+    // Lookup user's latest deposit proof receipt if not directly attached to this record
+    if (withdrawal?.userId) {
+      setIsLoadingReceipt(true);
+      fetch(getApiUrl(`/api/admin/users/${withdrawal.userId}/transactions?limit=25`))
+        .then((res) => res.json())
+        .then((data) => {
+          if (!isMounted) return;
+          const list: Transaction[] = data?.transactions || [];
+          const matchedDeposit = list.find(
+            (t) => (t.type as string) === 'deposit' && (t.proofImage || (t as any).receiptUrl)
+          );
+          if (matchedDeposit) {
+            setReceiptUrl(matchedDeposit.proofImage || (matchedDeposit as any).receiptUrl);
+          }
+        })
+        .catch((err) => console.warn('Could not fetch user deposit receipt for withdrawal:', err))
+        .finally(() => {
+          if (isMounted) setIsLoadingReceipt(false);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [withdrawal]);
 
   if (!withdrawal) return null;
 
@@ -235,6 +277,90 @@ export const WithdrawalDetailModal: React.FC<WithdrawalDetailModalProps> = ({
             </div>
           </div>
 
+          {/* User's Uploaded Receipt Image Proof Card */}
+          <div
+            className={`p-4 rounded-2xl border space-y-3 ${
+              isDark ? 'bg-slate-950/90 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-emerald-500">
+                <ImageIcon className="w-4 h-4" />
+                <span>Uploaded Payment Receipt Proof</span>
+              </h4>
+              {receiptUrl && (
+                <a
+                  href={receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-300 px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all"
+                >
+                  <span>Open Receipt Image</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+
+            {receiptUrl ? (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-3 rounded-2xl bg-slate-900/60 dark:bg-slate-950/80 border border-slate-700/60">
+                <div
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="relative w-20 h-20 rounded-xl overflow-hidden border border-emerald-500/40 cursor-pointer group bg-black/40 flex-shrink-0"
+                  title="Click to zoom receipt"
+                >
+                  <img
+                    src={receiptUrl}
+                    alt="Receipt Proof"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold">
+                    View
+                  </div>
+                </div>
+
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-100">
+                      Payment Confirmation Receipt
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      Cloudinary Linked
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Click the link below or tap thumbnail to inspect high-resolution screenshot before approving payout.
+                  </p>
+                  <div className="pt-0.5">
+                    <a
+                      href={receiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-400 hover:underline break-all"
+                    >
+                      <span className="truncate max-w-[280px] sm:max-w-[400px]">{receiptUrl}</span>
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : isLoadingReceipt ? (
+              <div className="p-3 text-xs text-slate-400 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                <span>Checking for uploaded receipt image...</span>
+              </div>
+            ) : (
+              <div
+                className={`p-3 rounded-xl border text-xs text-slate-400 flex items-center justify-between ${
+                  isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'
+                }`}
+              >
+                <span>No receipt screenshot uploaded for this user.</span>
+                <span className="text-[11px] text-slate-500">Verified via account title & TID</span>
+              </div>
+            )}
+          </div>
+
           {/* Audit Notes */}
           {withdrawal.notes && (
             <div
@@ -326,6 +452,51 @@ export const WithdrawalDetailModal: React.FC<WithdrawalDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Full-Screen Receipt Image Lightbox Modal */}
+      {isPreviewOpen && receiptUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 text-white">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold font-mono text-emerald-400">RECEIPT PROOF</span>
+                <span className="text-xs text-slate-400">({withdrawal.userName || 'Investor'})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Open Full Resolution</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(false)}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <img
+              src={receiptUrl}
+              alt="Receipt Verification"
+              className="max-h-[78vh] max-w-full rounded-2xl shadow-2xl object-contain border border-slate-700 bg-black/60"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

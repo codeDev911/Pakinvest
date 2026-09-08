@@ -16,6 +16,8 @@ import {
   Info,
   Layers,
   Check,
+  ExternalLink,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -220,6 +222,24 @@ export const DispatchPayoutModal: React.FC<DispatchPayoutModalProps> = ({
                 </span>
               </div>
             </div>
+
+            {(withdrawal.proofImage || (withdrawal as any).receiptUrl) && (
+              <div className="pt-2 border-t border-slate-800/40 flex items-center justify-between">
+                <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
+                  <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Attached Proof Receipt:</span>
+                </span>
+                <a
+                  href={withdrawal.proofImage || (withdrawal as any).receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-lg hover:underline transition-all"
+                >
+                  <span>Open Image</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
           </div>
 
           {/* 2. Channel Selection Section */}

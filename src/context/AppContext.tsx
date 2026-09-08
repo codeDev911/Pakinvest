@@ -89,7 +89,7 @@ interface AppContextType {
   connectPostgresUrl: (url: string) => Promise<{ success: boolean; error?: string; message?: string }>;
 
   // Financial & Operational Actions
-  depositFunds: (amount: number, gateway: GatewayType, refNumber: string, senderPhone?: string, senderTitle?: string) => Promise<boolean>;
+  depositFunds: (amount: number, gateway: GatewayType, refNumber: string, senderPhone?: string, senderTitle?: string, proofImage?: string) => Promise<boolean>;
   withdrawFunds: (amount: number, gateway: GatewayType, accountTitle: string, accountNumber: string, bankName?: string, pin?: string) => Promise<boolean>;
   investInPlan: (plan: InvestmentPlan, customAmount?: number) => Promise<boolean>;
   claimProfit: (investmentId: string) => Promise<void>;
@@ -702,7 +702,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     gateway: GatewayType,
     refNumber: string,
     senderPhone?: string,
-    senderTitle?: string
+    senderTitle?: string,
+    proofImage?: string
   ): Promise<boolean> => {
     if (!isAuthenticated) {
       setIsAuthModalOpen(true);
@@ -720,6 +721,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           referenceCode: refNumber,
           senderPhone,
           senderTitle,
+          proofImage,
         }),
       });
 

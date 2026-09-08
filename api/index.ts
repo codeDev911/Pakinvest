@@ -362,7 +362,8 @@ async function createUserNotification(
 }
 
 export const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // CORS & Preflight
 app.use((req, res, next) => {
@@ -1322,6 +1323,113 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
 // ----------------------------------------------------
 // TRANSACTIONS & DEPOSIT / WITHDRAWAL API
 // ----------------------------------------------------
+
+// Cloudinary Configuration from Environment (.env)
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
+const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || '';
+
+// Public Cloudinary Config Endpoint for client
+router.get('/cloudinary-config', (req, res) => {
+  res.json({
+    success: true,
+    cloudName: CLOUDINARY_CLOUD_NAME,
+    apiKey: CLOUDINARY_API_KEY,
+    uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+    isConfigured: Boolean(CLOUDINARY_CLOUD_NAME && (CLOUDINARY_API_KEY || CLOUDINARY_UPLOAD_PRESET)),
+  });
+});
+
+// Secure Server-side Cloudinary Receipt Image Upload Endpoint
+router.post('/upload/receipt', async (req, res) => {
+  try {
+    const { image, fileName } = req.body;
+    if (!image || typeof image !== 'string') {
+      return res.status(400).json({ error: 'Please provide an image (base64 data URL or URL) to upload.' });
+    }
+
+    // If Cloudinary credentials are configured in .env, upload to Cloudinary
+    if (CLOUDINARY_CLOUD_NAME) {
+      try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const folder = 'pakinvest_receipts';
+
+        const formData = new FormData();
+        formData.append('file', image);
+
+        if (CLOUDINARY_API_SECRET && CLOUDINARY_API_KEY) {
+          // Cloudinary Signed Upload
+          const strToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+          const signature = crypto.createHash('sha1').update(strToSign).digest('hex');
+          formData.append('api_key', CLOUDINARY_API_KEY);
+          formData.append('timestamp', timestamp.toString());
+          formData.append('folder', folder);
+          formData.append('signature', signature);
+        } else if (CLOUDINARY_UPLOAD_PRESET) {
+          // Unsigned Upload with Preset
+          formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+          if (CLOUDINARY_API_KEY) {
+            formData.append('api_key', CLOUDINARY_API_KEY);
+          }
+        } else if (CLOUDINARY_API_KEY) {
+          formData.append('api_key', CLOUDINARY_API_KEY);
+          formData.append('timestamp', timestamp.toString());
+        }
+
+        const cloudRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+          {
+            method: 'POST',
+            body: formData,
+          }
+        );
+
+        const cloudData: any = await cloudRes.json();
+        if (cloudData && cloudData.secure_url) {
+          return res.json({
+            success: true,
+            url: cloudData.secure_url,
+            publicId: cloudData.public_id,
+            format: cloudData.format,
+            bytes: cloudData.bytes,
+            cloudName: CLOUDINARY_CLOUD_NAME,
+          });
+        } else {
+          console.warn('[Cloudinary Response Error]:', cloudData);
+          // If Cloudinary responds with an issue (e.g. preset not enabled or key mismatch):
+          // Return the image data fallback so the user's deposit submission is never blocked
+          return res.json({
+            success: true,
+            url: image,
+            isFallback: true,
+            warning: cloudData?.error?.message || 'Cloudinary upload rejected, preserved image locally.',
+          });
+        }
+      } catch (cloudErr: any) {
+        console.error('[Cloudinary Upload Request Error]:', cloudErr);
+        return res.json({
+          success: true,
+          url: image,
+          isFallback: true,
+          warning: cloudErr?.message || 'Failed to connect to Cloudinary, preserved image locally.',
+        });
+      }
+    }
+
+    // If Cloudinary not configured in .env yet:
+    return res.json({
+      success: true,
+      url: image,
+      isFallback: true,
+      warning: 'CLOUDINARY_CLOUD_NAME is not set in .env. Receipt image preserved locally.',
+    });
+  } catch (err: any) {
+    console.error('[Upload Receipt Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to upload receipt image' });
+  }
+});
+
 router.get('/transactions', authenticate, async (req, res) => {
   try {
     const user = (req as any).user;
@@ -1340,31 +1448,37 @@ router.get('/transactions', authenticate, async (req, res) => {
 router.post('/deposit', authenticate, async (req, res) => {
   try {
     const user = (req as any).user;
-    const { amount, gateway, referenceCode, senderPhone, senderTitle } = req.body;
+    const { amount, gateway, referenceCode, senderPhone, senderTitle, proofImage } = req.body;
 
     const depositAmount = Number(amount);
-    if (isNaN(depositAmount) || depositAmount < 1000) {
-      return res.status(400).json({ error: 'Minimum deposit amount is Rs. 1,000.' });
+    if (isNaN(depositAmount) || depositAmount < 300) {
+      return res.status(400).json({ error: 'Minimum deposit amount is Rs. 300.' });
     }
 
-    if (!referenceCode || typeof referenceCode !== 'string' || referenceCode.trim().length < 4) {
-      return res.status(400).json({ error: 'Please enter transaction ID / Reference TID proof from your payment app.' });
+    if (!proofImage || typeof proofImage !== 'string' || !proofImage.trim()) {
+      return res.status(400).json({ error: 'Payment receipt screenshot proof is required.' });
     }
 
-    const cleanRef = referenceCode.trim().toUpperCase();
+    // Reference code is optional. If provided, check for duplicate submission; otherwise auto-generate.
+    let cleanRef = '';
+    if (referenceCode && typeof referenceCode === 'string' && referenceCode.trim().length >= 3) {
+      cleanRef = referenceCode.trim().toUpperCase();
 
-    // Check for duplicate reference code
-    const existingTid = await prisma.transaction.findFirst({
-      where: {
-        referenceCode: { equals: cleanRef, mode: 'insensitive' },
-        type: 'deposit',
-      },
-    });
-
-    if (existingTid) {
-      return res.status(409).json({
-        error: `Transaction ID (${cleanRef}) has already been submitted. Please check your transaction history.`,
+      // Check for duplicate reference code
+      const existingTid = await prisma.transaction.findFirst({
+        where: {
+          referenceCode: { equals: cleanRef, mode: 'insensitive' },
+          type: 'deposit',
+        },
       });
+
+      if (existingTid) {
+        return res.status(409).json({
+          error: `Transaction ID (${cleanRef}) has already been submitted. Please check your transaction history.`,
+        });
+      }
+    } else {
+      cleanRef = `DEP-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
     }
 
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -1383,6 +1497,7 @@ router.post('/deposit', authenticate, async (req, res) => {
         senderPhone: senderPhone || user.phone,
         senderTitle: senderTitle || user.name,
         referenceCode: cleanRef,
+        proofImage: proofImage ? String(proofImage) : null,
         timestamp: getFormattedNow(),
         notes: `Deposit submitted via ${gateway || 'JazzCash'}. Awaiting manual verification.`,
       },

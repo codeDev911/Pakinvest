@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   FileText,
   Lock,
+  ExternalLink,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -41,8 +43,11 @@ export const DepositDetailModal: React.FC<DepositDetailModalProps> = ({
   const [isDeclining, setIsDeclining] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   if (!deposit) return null;
+
+  const proofUrl = deposit.proofImage || (deposit as any).receiptUrl;
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -196,6 +201,85 @@ export const DepositDetailModal: React.FC<DepositDetailModalProps> = ({
             <p className="text-lg font-black font-mono tracking-wider text-amber-400">
               {deposit.referenceCode || 'NO-REF-PROVIDED'}
             </p>
+          </div>
+
+          {/* Uploaded Payment Receipt Proof Card */}
+          <div
+            className={`p-4 rounded-2xl border space-y-3 ${
+              isDark ? 'bg-slate-950/90 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-emerald-500">
+                <ImageIcon className="w-4 h-4" />
+                <span>Uploaded Payment Receipt Screenshot</span>
+              </h4>
+              {proofUrl && (
+                <a
+                  href={proofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-300 px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all"
+                >
+                  <span>Open Receipt Image</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+
+            {proofUrl ? (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-3 rounded-2xl bg-slate-900/60 dark:bg-slate-950/80 border border-slate-700/60">
+                <div
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="relative w-20 h-20 rounded-xl overflow-hidden border border-emerald-500/40 cursor-pointer group bg-black/40 flex-shrink-0"
+                  title="Click to zoom receipt"
+                >
+                  <img
+                    src={proofUrl}
+                    alt="Deposit Receipt"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold">
+                    View
+                  </div>
+                </div>
+
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-100">
+                      Payment Transfer Proof
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      Verified Attachment
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Click the link below or tap thumbnail to inspect high-resolution screenshot before approving deposit.
+                  </p>
+                  <div className="pt-0.5">
+                    <a
+                      href={proofUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-400 hover:underline break-all"
+                    >
+                      <span className="truncate max-w-[280px] sm:max-w-[400px]">{proofUrl}</span>
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`p-3 rounded-xl border text-xs text-slate-400 flex items-center justify-between ${
+                  isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'
+                }`}
+              >
+                <span>No receipt screenshot uploaded for this deposit.</span>
+                <span className="text-[11px] text-slate-500">Verify TID manually in JazzCash/Bank portal</span>
+              </div>
+            )}
           </div>
 
           {/* Investor Details & Origin Account */}
@@ -399,6 +483,51 @@ export const DepositDetailModal: React.FC<DepositDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Full-Screen Receipt Image Lightbox Modal */}
+      {isPreviewOpen && proofUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 text-white">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold font-mono text-emerald-400">DEPOSIT RECEIPT</span>
+                <span className="text-xs text-slate-400">({deposit.userName || 'Investor'})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={proofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Open Full Resolution</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(false)}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <img
+              src={proofUrl}
+              alt="Deposit Verification Receipt"
+              className="max-h-[78vh] max-w-full rounded-2xl shadow-2xl object-contain border border-slate-700 bg-black/60"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
