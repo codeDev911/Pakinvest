@@ -17,6 +17,7 @@ import {
   Zap,
   Gift,
   Bell,
+  HelpCircle,
 } from 'lucide-react';
 import { useCrmTheme } from './context/CrmThemeContext';
 
@@ -91,6 +92,11 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
       id: 'gateways',
       label: 'Payment Channels',
       icon: <CreditCard className="w-4 h-4" />,
+    },
+    {
+      id: 'faqs',
+      label: 'Helpdesk & FAQs',
+      icon: <HelpCircle className="w-4 h-4" />,
     },
     {
       id: 'ledger',

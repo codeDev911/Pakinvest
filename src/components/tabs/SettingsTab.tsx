@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Lock,
   HelpCircle,
+  FileText,
   ChevronRight,
   CheckCircle2,
   Fingerprint,
@@ -30,6 +31,7 @@ export const SettingsTab: React.FC = () => {
     changePassword,
     showToast,
     setIsAuthModalOpen,
+    setCurrentTab,
     logout,
   } = useApp();
 
@@ -559,38 +561,57 @@ export const SettingsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Frequently Asked Questions */}
+      {/* Support & Platform Policies Navigation */}
       <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <HelpCircle className="w-4 h-4 text-slate-500" />
-          <span>Frequently Asked Questions (FAQs)</span>
+          <HelpCircle className="w-4 h-4 text-emerald-500" />
+          <span>Help, Support & Legal Policies</span>
         </h3>
 
         <div className="space-y-2">
-          {faqs.map((faq, index) => {
-            const isOpen = activeFaq === index;
-            return (
-              <div
-                key={index}
-                className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
-              >
-                <button
-                  onClick={() => setActiveFaq(isOpen ? null : index)}
-                  className="w-full p-3 text-left text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                >
-                  <span>{faq.q}</span>
-                  <ChevronRight
-                    className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-90 text-emerald-500' : ''}`}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="px-3 pb-3 pt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                    {faq.a}
-                  </div>
-                )}
+          {/* Support Page Link */}
+          <button
+            type="button"
+            onClick={() => setCurrentTab('support')}
+            className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 text-left flex items-center justify-between transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800 shrink-0">
+                <HelpCircle className="w-4 h-4" />
               </div>
-            );
-          })}
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  VIP Support & FAQ Knowledge Base
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  24/7 WhatsApp desk, Telegram community & FAQs
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
+          </button>
+
+          {/* Terms & Policies Link */}
+          <button
+            type="button"
+            onClick={() => setCurrentTab('terms')}
+            className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 text-left flex items-center justify-between transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-200 dark:border-amber-800 shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white block group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                  Terms & Platform Policies
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Deposited capital rules, daily quotas, withdrawal limits & security
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-500 group-hover:translate-x-0.5 transition-all" />
+          </button>
         </div>
       </div>
 

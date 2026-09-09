@@ -21,6 +21,7 @@ import { CrmNotificationsView } from './views/CrmNotificationsView';
 import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
+import { CrmFaqView } from './views/CrmFaqView';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
@@ -472,6 +473,10 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
             onDeleteChannel={handleDeleteChannel}
           />
         );
+      case 'faqs':
+        return (
+          <CrmFaqView />
+        );
       case 'ledger':
         return (
           <CrmLedgerView />
@@ -530,6 +535,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
               { id: 'notifications', label: 'Push & Broadcasts' },
               { id: 'users', label: 'Investors Directory' },
               { id: 'gateways', label: 'Payment Channels' },
+              { id: 'faqs', label: 'Helpdesk & FAQs' },
               { id: 'ledger', label: 'Master Financial Ledger' },
             ].map((item) => (
               <button

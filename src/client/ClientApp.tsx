@@ -20,9 +20,11 @@ import { AddAccountModal } from '../components/modals/AddAccountModal';
 import { NotificationModal } from '../components/NotificationModal';
 import { AuthModal } from '../components/auth/AuthModal';
 import { AuthScreen } from './AuthScreen';
+import { TermsAndPoliciesPage } from '../components/pages/TermsAndPoliciesPage';
+import { SupportPage } from '../components/pages/SupportPage';
 
 export const ClientApp: React.FC = () => {
-  const { currentTab, isAuthModalOpen, setIsAuthModalOpen, isAuthenticated } = useApp();
+  const { currentTab, setCurrentTab, isAuthModalOpen, setIsAuthModalOpen, isAuthenticated } = useApp();
 
   // If not authenticated, require user to Login or Register first
   if (!isAuthenticated) {
@@ -31,6 +33,29 @@ export const ClientApp: React.FC = () => {
         <AuthScreen />
         <ToastContainer />
       </>
+    );
+  }
+
+  // Standalone full-screen pages (without standard header and bottom tabs, with top bar and back button)
+  if (currentTab === 'terms') {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+        <TermsAndPoliciesPage onBack={() => setCurrentTab('home')} />
+        <DepositModal />
+        <WithdrawModal />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  if (currentTab === 'support') {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+        <SupportPage onBack={() => setCurrentTab('home')} />
+        <DepositModal />
+        <WithdrawModal />
+        <ToastContainer />
+      </div>
     );
   }
 

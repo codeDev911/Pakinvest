@@ -26,6 +26,9 @@ export const WithdrawModal: React.FC = () => {
     savedPaymentAccounts,
     setIsAddAccountModalOpen,
     showToast,
+    withdrawableBalance,
+    unspentDeposit,
+    setCurrentTab,
   } = useApp();
 
   const [selectedGateway, setSelectedGateway] = useState<GatewayType>('JazzCash');
@@ -119,7 +122,7 @@ export const WithdrawModal: React.FC = () => {
   const matchedAccounts = savedPaymentAccounts.filter((a) => a.gateway === selectedGateway);
 
   const handlePercentageSelect = (percent: number) => {
-    const calculated = Math.floor((user.balance * percent) / 100);
+    const calculated = Math.floor((withdrawableBalance * percent) / 100);
     const validAmount = Math.min(maxWithdrawal, Math.max(minWithdrawal, calculated));
     setAmount(validAmount);
     setCustomAmountInput(validAmount.toString());
@@ -145,8 +148,16 @@ export const WithdrawModal: React.FC = () => {
       showToast('Amount too high', `Maximum withdrawal limit is Rs. ${maxWithdrawal.toLocaleString()}`, 'warning');
       return;
     }
-    if (amount > user.balance) {
-      showToast('Insufficient Balance', `You only have Rs. ${user.balance.toLocaleString()} available.`, 'error');
+    if (amount > withdrawableBalance) {
+      if (unspentDeposit > 0) {
+        showToast(
+          'Deposited Funds Non-Withdrawable',
+          `You have Rs. ${unspentDeposit.toLocaleString()} in deposited funds which must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}.`,
+          'warning'
+        );
+      } else {
+        showToast('Insufficient Withdrawable Balance', `Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}`, 'error');
+      }
       return;
     }
     setStep(2);
@@ -249,7 +260,7 @@ export const WithdrawModal: React.FC = () => {
                     <div>
                       <span className="text-[11px] text-slate-400 block font-medium">Available Withdrawable Balance</span>
                       <span className="text-xl font-black text-emerald-400 font-display">
-                        {formatPKR(user.balance)}
+                        {formatPKR(withdrawableBalance)}
                       </span>
                     </div>
                     <div className="text-right">
@@ -416,7 +427,7 @@ export const WithdrawModal: React.FC = () => {
                       Withdrawal Amount (Rs.)
                     </label>
                     <span className="text-[11px] text-slate-400">
-                      Max: {formatPKR(user.balance)}
+                      Withdrawable: {formatPKR(withdrawableBalance)}
                     </span>
                   </div>
 
@@ -469,7 +480,7 @@ export const WithdrawModal: React.FC = () => {
                 {/* Continue button */}
                 <button
                   type="submit"
-                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > maxWithdrawal || amount > user.balance}
+                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > maxWithdrawal || amount > withdrawableBalance}
                   className="w-full py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition-colors shadow-lg shadow-amber-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
@@ -480,11 +491,27 @@ export const WithdrawModal: React.FC = () => {
                       ? `Minimum Rs. ${minWithdrawal.toLocaleString()} Required`
                       : amount > maxWithdrawal
                       ? `Maximum Rs. ${maxWithdrawal.toLocaleString()} Limit Exceeded`
-                      : amount > user.balance
-                      ? 'Insufficient Balance'
+                      : amount > withdrawableBalance
+                      ? 'Insufficient Withdrawable Balance'
                       : 'Verify with Security PIN'}
                   </span>
                 </button>
+
+                <div className="text-center pt-1">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Withdrawal guidelines apply.{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsWithdrawModalOpen(false);
+                        setCurrentTab('terms');
+                      }}
+                      className="text-amber-600 dark:text-amber-400 font-bold hover:underline"
+                    >
+                      Read Terms & Policies
+                    </button>
+                  </p>
+                </div>
               </form>
             ) : (
               /* PIN STEP */

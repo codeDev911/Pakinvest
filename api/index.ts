@@ -633,6 +633,7 @@ router.post('/auth/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = user;
+    const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
 
     res.json({
       success: true,
@@ -640,6 +641,8 @@ router.post('/auth/login', async (req, res) => {
       token,
       user: {
         ...safeUser,
+        withdrawableBalance: balCalc.withdrawableBalance,
+        unspentDeposit: balCalc.unspentDeposit,
         notificationsCount: unreadNotifs,
       },
     });
@@ -655,10 +658,13 @@ router.get('/auth/me', authenticate, async (req, res) => {
     where: { userId: user.id, read: false },
   });
   const { password: _, ...safeUser } = user;
+  const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
   res.json({
     success: true,
     user: {
       ...safeUser,
+      withdrawableBalance: balCalc.withdrawableBalance,
+      unspentDeposit: balCalc.unspentDeposit,
       notificationsCount: unreadNotifs,
     },
   });
@@ -1651,11 +1657,57 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
   };
 }
 
+// Helper: Calculate withdrawable balance vs unspent deposited funds
+// Deposited money cannot be withdrawn directly and must be spent on investment packages.
+// This prevents referral exploitation where a user deposits to trigger sponsor commission and immediately withdraws.
+// Only package yields, streak bonuses, and referral commissions are withdrawable.
+async function calculateUserWithdrawableBalance(userId: string, currentBalance: number) {
+  try {
+    const depositAgg = await prisma.transaction.aggregate({
+      where: {
+        userId,
+        type: 'deposit',
+        status: 'completed',
+      },
+      _sum: { amount: true },
+    });
+    const totalDeposited = Number(depositAgg._sum.amount || 0);
+
+    const investAgg = await prisma.activeInvestment.aggregate({
+      where: {
+        userId,
+      },
+      _sum: { investedAmount: true },
+    });
+    const totalInvested = Number(investAgg._sum.investedAmount || 0);
+
+    const rawUnspent = Math.max(0, totalDeposited - totalInvested);
+    // Crucial: Unspent deposit in the user's wallet can never exceed their actual current balance
+    const unspentDeposit = Math.min(Math.max(0, currentBalance), rawUnspent);
+    const withdrawableBalance = Math.max(0, currentBalance - unspentDeposit);
+
+    return {
+      totalDeposited,
+      totalInvested,
+      unspentDeposit,
+      withdrawableBalance,
+    };
+  } catch (e) {
+    console.error('[calculateUserWithdrawableBalance error]:', e);
+    return {
+      totalDeposited: 0,
+      totalInvested: 0,
+      unspentDeposit: 0,
+      withdrawableBalance: currentBalance,
+    };
+  }
+}
+
 // Public endpoint for clients to get current dynamic withdrawal fee config & limits
 router.get('/withdrawal-fee-config', async (req, res) => {
   await syncWithdrawalFeeConfigFromDb();
 
-  let userDailyStats = {
+  let userDailyStats: any = {
     todayCount: 0,
     maxDaily: withdrawalFeeConfig.maxDailyRequests || 3,
     remaining: withdrawalFeeConfig.maxDailyRequests || 3,
@@ -1677,11 +1729,17 @@ router.get('/withdrawal-fee-config', async (req, res) => {
           },
         });
         const maxDaily = withdrawalFeeConfig.maxDailyRequests || 3;
+        const liveUser = await prisma.user.findUnique({ where: { id: decoded.userId } });
+        const balCalc = await calculateUserWithdrawableBalance(decoded.userId, liveUser?.balance || 0);
+
         userDailyStats = {
           todayCount: count,
           maxDaily,
           remaining: Math.max(0, maxDaily - count),
           canWithdraw: count < maxDaily,
+          unspentDeposit: balCalc.unspentDeposit,
+          withdrawableBalance: balCalc.withdrawableBalance,
+          totalBalance: liveUser?.balance || 0,
         };
       }
     } catch {
@@ -1696,11 +1754,13 @@ router.get('/withdrawal-fee-config', async (req, res) => {
   });
 });
 
-// Dedicated endpoint to check daily withdrawal quota
+// Dedicated endpoint to check daily withdrawal quota & withdrawable earnings
 router.get('/withdraw/daily-status', authenticate, async (req, res) => {
   try {
     await syncWithdrawalFeeConfigFromDb();
     const user = (req as any).user;
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    const currentBalance = liveUser?.balance || 0;
     const startOfDay = getStartOfToday();
     const todayCount = await prisma.transaction.count({
       where: {
@@ -1715,6 +1775,8 @@ router.get('/withdraw/daily-status', authenticate, async (req, res) => {
     const maxWithdrawal = withdrawalFeeConfig.maxWithdrawal || 500000;
     const remaining = Math.max(0, maxDaily - todayCount);
 
+    const balCalc = await calculateUserWithdrawableBalance(user.id, currentBalance);
+
     res.json({
       success: true,
       minWithdrawal,
@@ -1723,6 +1785,9 @@ router.get('/withdraw/daily-status', authenticate, async (req, res) => {
       todayRequestsCount: todayCount,
       remainingRequests: remaining,
       canWithdraw: remaining > 0,
+      unspentDeposit: balCalc.unspentDeposit,
+      withdrawableBalance: balCalc.withdrawableBalance,
+      totalBalance: currentBalance,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch daily withdrawal status' });
@@ -1813,9 +1878,30 @@ router.post('/withdraw', authenticate, async (req, res) => {
       });
     }
 
+    // Anti-leak deposit protection:
+    // Deposited funds cannot be withdrawn directly and must be spent on investment packages.
+    // This stops exploiters from depositing, collecting referral commission via sponsor, and instantly withdrawing.
+    const balCalc = await calculateUserWithdrawableBalance(user.id, liveUser.balance);
+    const { unspentDeposit, withdrawableBalance } = balCalc;
+
     if (liveUser.balance < withdrawAmount) {
       return res.status(400).json({
         error: `Insufficient balance. Available: Rs. ${liveUser.balance.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}`,
+      });
+    }
+
+    if (withdrawAmount > withdrawableBalance) {
+      if (unspentDeposit > 0) {
+        return res.status(400).json({
+          error: `Deposited funds (Rs. ${unspentDeposit.toLocaleString()}) cannot be withdrawn directly and must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}. Requested: Rs. ${withdrawAmount.toLocaleString()}`,
+          unspentDeposit,
+          withdrawableBalance,
+        });
+      }
+      return res.status(400).json({
+        error: `Insufficient withdrawable earnings. Available: Rs. ${withdrawableBalance.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}`,
+        unspentDeposit,
+        withdrawableBalance,
       });
     }
 
@@ -2093,6 +2179,21 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
     const user = (req as any).user;
     const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
     if (!liveUser) return res.status(404).json({ error: 'User not found' });
+
+    // Streaks only work for users who have at least one active investment package
+    const activePackage = await prisma.activeInvestment.findFirst({
+      where: {
+        userId: user.id,
+        status: 'active',
+      },
+    });
+
+    if (!activePackage) {
+      return res.status(400).json({
+        error: 'Daily streak rewards are only available for members with at least one active investment package. Please activate a package to unlock daily streaks.',
+        requiresActivePackage: true,
+      });
+    }
 
     const todayStr = getTodayPktDateString();
 
@@ -4331,6 +4432,208 @@ router.delete('/admin/notifications/history/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to delete campaign from history' });
+  }
+});
+
+// ==========================================
+// FAQ & SUPPORT MANAGEMENT (CRM & CLIENT)
+// ==========================================
+const DEFAULT_FAQS = [
+  {
+    id: 'faq-1',
+    category: 'Deposits & Withdrawals',
+    question: 'Can I withdraw my deposited capital directly without investing?',
+    answer: 'No. To maintain the financial security of the platform and prevent referral commission exploitation, all deposited funds are designated for purchasing investment packages. Once invested, your packages generate daily profits, streak bonuses, and referral commissions—all of which are 100% withdrawable to your JazzCash, EasyPaisa, Raast, or Bank Account at any time.',
+    order: 1,
+    isActive: true,
+  },
+  {
+    id: 'faq-2',
+    category: 'Deposits & Withdrawals',
+    question: 'What are the withdrawal limits and daily quotas?',
+    answer: 'Each account can request up to 3 withdrawals per 24-hour cycle. The minimum withdrawal threshold is Rs. 300, and the maximum is Rs. 500,000 per request. Withdrawals are processed through JazzCash, EasyPaisa, Raast, and all registered commercial banks in Pakistan.',
+    order: 2,
+    isActive: true,
+  },
+  {
+    id: 'faq-3',
+    category: 'Deposits & Withdrawals',
+    question: 'How long does it take for deposits to reflect in my balance?',
+    answer: 'Once you transfer the funds to our official merchant account and submit the transaction receipt, our automated reconciliation and finance desk approves and credits your balance within 5 to 20 minutes during working hours.',
+    order: 3,
+    isActive: true,
+  },
+  {
+    id: 'faq-4',
+    category: 'Investment Packages',
+    question: 'How does daily profit crediting work?',
+    answer: 'Profits accrue continuously on your active investment packages based on the contractual ROI percentage. You can claim or withdraw your earned profits daily into your withdrawable balance.',
+    order: 4,
+    isActive: true,
+  },
+  {
+    id: 'faq-5',
+    category: 'Streaks & Rewards',
+    question: 'Why are daily check-in streaks locked on my account?',
+    answer: 'Daily streak loyalty rewards are an exclusive benefit for active investors. You must hold at least one active investment package to claim daily check-in cash bonuses. Simply activate any package to unlock your 7-day bonus roadmap.',
+    order: 5,
+    isActive: true,
+  },
+  {
+    id: 'faq-6',
+    category: 'Account & Security',
+    question: 'What is the 4-digit security PIN and how is it used?',
+    answer: 'The 4-digit security PIN safeguards your payouts and sensitive settings. Default PIN is set to 1234. You can change your PIN anytime in Settings > Security. Never share your PIN or OTP with anyone.',
+    order: 6,
+    isActive: true,
+  },
+  {
+    id: 'faq-7',
+    category: 'Referrals & Earnings',
+    question: 'How do referral commissions work?',
+    answer: 'When a new member registers using your referral invite link and activates an investment package, you automatically earn instant referral commission credited directly to your withdrawable balance.',
+    order: 7,
+    isActive: true,
+  },
+  {
+    id: 'faq-8',
+    category: 'Support & Help',
+    question: 'How do I contact customer support if I have an issue?',
+    answer: 'Our VIP Helpdesk operates 24/7. You can contact our dedicated support agents directly through WhatsApp, join our official Telegram community, or email our support desk at support@investify.pk.',
+    order: 8,
+    isActive: true,
+  },
+];
+
+async function getFaqsFromDb(): Promise<any[]> {
+  try {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'crm_faqs' },
+    });
+    if (setting && setting.value) {
+      const parsed = JSON.parse(setting.value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+    // Seed default FAQs into database
+    await prisma.systemSetting.upsert({
+      where: { key: 'crm_faqs' },
+      update: { value: JSON.stringify(DEFAULT_FAQS) },
+      create: { key: 'crm_faqs', value: JSON.stringify(DEFAULT_FAQS) },
+    });
+    return DEFAULT_FAQS;
+  } catch (e) {
+    console.error('[getFaqsFromDb error]:', e);
+    return DEFAULT_FAQS;
+  }
+}
+
+async function saveFaqsToDb(faqs: any[]) {
+  try {
+    await prisma.systemSetting.upsert({
+      where: { key: 'crm_faqs' },
+      update: { value: JSON.stringify(faqs) },
+      create: { key: 'crm_faqs', value: JSON.stringify(faqs) },
+    });
+  } catch (e) {
+    console.error('[saveFaqsToDb error]:', e);
+  }
+}
+
+// Public endpoint for clients to get active FAQs
+router.get('/faqs', async (req, res) => {
+  try {
+    const faqs = await getFaqsFromDb();
+    const activeFaqs = faqs.filter((f) => f.isActive !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
+    res.json({ success: true, faqs: activeFaqs });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch FAQs' });
+  }
+});
+
+// Admin endpoint: get all FAQs including inactive ones
+router.get('/admin/faqs', async (req, res) => {
+  try {
+    const faqs = await getFaqsFromDb();
+    res.json({ success: true, faqs: faqs.sort((a, b) => (a.order || 0) - (b.order || 0)) });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch CRM FAQs' });
+  }
+});
+
+// Admin endpoint: create new FAQ
+router.post('/admin/faqs', async (req, res) => {
+  try {
+    const { question, answer, category, order, isActive } = req.body;
+    if (!question || !answer) {
+      return res.status(400).json({ error: 'Question and answer are required' });
+    }
+    const faqs = await getFaqsFromDb();
+    const newFaq = {
+      id: `faq-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      question: String(question).trim(),
+      answer: String(answer).trim(),
+      category: String(category || 'General').trim(),
+      order: Number(order) || faqs.length + 1,
+      isActive: isActive !== false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    faqs.push(newFaq);
+    await saveFaqsToDb(faqs);
+    res.json({ success: true, faq: newFaq, message: 'FAQ created successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to create FAQ' });
+  }
+});
+
+// Admin endpoint: update FAQ
+router.put('/admin/faqs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { question, answer, category, order, isActive } = req.body;
+    const faqs = await getFaqsFromDb();
+    const index = faqs.findIndex((f) => f.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'FAQ not found' });
+    }
+    faqs[index] = {
+      ...faqs[index],
+      question: question !== undefined ? String(question).trim() : faqs[index].question,
+      answer: answer !== undefined ? String(answer).trim() : faqs[index].answer,
+      category: category !== undefined ? String(category).trim() : faqs[index].category,
+      order: order !== undefined ? Number(order) : faqs[index].order,
+      isActive: isActive !== undefined ? Boolean(isActive) : faqs[index].isActive,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveFaqsToDb(faqs);
+    res.json({ success: true, faq: faqs[index], message: 'FAQ updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update FAQ' });
+  }
+});
+
+// Admin endpoint: delete FAQ
+router.delete('/admin/faqs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let faqs = await getFaqsFromDb();
+    faqs = faqs.filter((f) => f.id !== id);
+    await saveFaqsToDb(faqs);
+    res.json({ success: true, message: 'FAQ deleted successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete FAQ' });
+  }
+});
+
+// Admin endpoint: reset to defaults
+router.post('/admin/faqs/reset', async (req, res) => {
+  try {
+    await saveFaqsToDb(DEFAULT_FAQS);
+    res.json({ success: true, faqs: DEFAULT_FAQS, message: 'FAQs reset to defaults' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to reset FAQs' });
   }
 });
 

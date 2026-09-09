@@ -1,6 +1,6 @@
 export type AppTheme = 'dark' | 'light';
 
-export type NavTab = 'home' | 'plans' | 'transactions' | 'wallet' | 'referral' | 'settings';
+export type NavTab = 'home' | 'plans' | 'transactions' | 'wallet' | 'referral' | 'settings' | 'terms' | 'support';
 
 export type GatewayType =
   | 'JazzCash'
@@ -31,6 +31,8 @@ export interface UserProfile {
   referredBy?: string;
   referralTier: number;
   balance: number; // Available Balance in PKR (Rs.)
+  withdrawableBalance?: number; // Earnings available for withdrawal (excluding unspent deposit funds)
+  unspentDeposit?: number; // Deposited funds that must be invested in packages
   investedCapital: number; // Currently locked in active plans
   totalWithdrawn: number;
   totalEarnedProfit: number;
@@ -277,7 +279,19 @@ export type CrmNavTab =
   | 'users'
   | 'gateways'
   | 'ledger'
-  | 'notifications';
+  | 'notifications'
+  | 'faqs';
+
+export interface FaqItem {
+  id: string;
+  category: string;
+  question: string;
+  answer: string;
+  order: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export type NotificationFilterTarget =
   | 'all'

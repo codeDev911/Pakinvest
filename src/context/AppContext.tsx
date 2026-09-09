@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useMemo } from 'react';
 import {
   UserProfile,
   InvestmentPlan,
@@ -112,6 +112,8 @@ interface AppContextType {
   profitPerHour: number;
   readyToCollectPackagesCount: number;
   readyToCollectTotalAmount: number;
+  withdrawableBalance: number;
+  unspentDeposit: number;
   hideBalance: boolean;
   toggleHideBalance: () => void;
 }
@@ -763,6 +765,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
+    if (amount > withdrawableBalance) {
+      if (unspentDeposit > 0) {
+        showToast(
+          'Deposited Funds Not Withdrawable',
+          `You have Rs. ${unspentDeposit.toLocaleString()} in deposited funds which must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}.`,
+          'warning'
+        );
+      } else {
+        showToast('Insufficient Withdrawable Balance', `Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}`, 'error');
+      }
+      return false;
+    }
+
     try {
       const res = await fetch(getApiUrl('/api/withdraw'), {
         method: 'POST',
@@ -1036,6 +1051,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    const hasActive = activeInvestments && activeInvestments.some((inv) => inv.status === 'active');
+    if (!hasActive) {
+      showToast(
+        'Active Package Required',
+        'Daily streaks are only available for members with at least one active investment package. Please invest in a package first.',
+        'warning'
+      );
+      return;
+    }
+
     try {
       const res = await fetch(getApiUrl('/api/streak/checkin'), {
         method: 'POST',
@@ -1050,6 +1075,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         message?: string;
         transaction?: Transaction;
         error?: string;
+        requiresActivePackage?: boolean;
       }>(res);
       if (ok && data?.success) {
         setUser((prev) => ({
@@ -1072,7 +1098,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           showToast('Check-in Bonus Claimed! 🎁', `Earned Rs. ${data.reward} for Day ${data.dailyStreak} streak!`, 'success');
         }
       } else {
-        showToast('Already Claimed', data?.error || 'Already claimed today', 'info');
+        if (data?.requiresActivePackage) {
+          showToast('Active Package Required', data.error || 'Please activate an investment package to unlock streaks.', 'warning');
+        } else {
+          showToast('Streak Status', data?.error || 'Unable to claim streak today', 'info');
+        }
       }
     } catch (err: any) {
       showToast('Error', err?.message || 'Failed to check-in', 'error');
@@ -1307,6 +1337,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     0
   );
 
+  // Anti-leak deposit protection:
+  // Deposited funds cannot be withdrawn directly and must be invested in packages.
+  // Only yields, streak rewards, and referral commissions can be withdrawn.
+  const totalDeposited = useMemo(() => {
+    return transactions
+      .filter((t) => t.type === 'deposit' && t.status === 'completed')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [transactions]);
+
+  const totalInvested = useMemo(() => {
+    return activeInvestments.reduce((sum, inv) => sum + (Number(inv.investedAmount) || 0), 0);
+  }, [activeInvestments]);
+
+  const unspentDeposit = useMemo(() => {
+    const rawUnspent = Math.max(0, totalDeposited - totalInvested);
+    return Math.min(Math.max(0, user.balance), rawUnspent);
+  }, [totalDeposited, totalInvested, user.balance]);
+
+  const withdrawableBalance = useMemo(() => {
+    return Math.max(0, user.balance - unspentDeposit);
+  }, [user.balance, unspentDeposit]);
+
   return (
     <AppContext.Provider
       value={{
@@ -1378,6 +1430,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         profitPerHour,
         readyToCollectPackagesCount,
         readyToCollectTotalAmount,
+        withdrawableBalance,
+        unspentDeposit,
         hideBalance,
         toggleHideBalance,
       }}

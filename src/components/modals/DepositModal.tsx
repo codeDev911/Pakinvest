@@ -33,7 +33,7 @@ export const DepositModal: React.FC = () => {
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Cloudinary Receipt Image Upload State (Deferred until submit)
+  // Receipt Image Upload State (Deferred until submit)
   const [selectedReceiptData, setSelectedReceiptData] = useState<string>(''); // Local compressed base64 preview
   const [receiptFileName, setReceiptFileName] = useState<string>('');
   const [receiptFileSize, setReceiptFileSize] = useState<string>('');
@@ -451,26 +451,30 @@ export const DepositModal: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Upload Payment Receipt Screenshot
+                      Upload Payment Receipt Screenshot <span className="text-rose-500">*</span>
                     </label>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-400 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                      Optional
+                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 px-2 py-0.5 rounded-full">
+                      Required
                     </span>
                   </div>
 
                   {!selectedReceiptData && !isUploadingImage && (
                     <label
                       htmlFor="deposit-receipt-file-input"
-                      className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50/80 dark:bg-slate-800/40 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all text-center group"
+                      className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed ${
+                        uploadError
+                          ? 'border-rose-400 dark:border-rose-600 bg-rose-50/40 dark:bg-rose-950/20'
+                          : 'border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 bg-slate-50/80 dark:bg-slate-800/40 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20'
+                      } rounded-2xl cursor-pointer transition-all text-center group`}
                     >
                       <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
                         <UploadCloud className="w-5 h-5" />
                       </div>
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                        Tap to Select Receipt / Transfer Proof
+                        Tap to Select Receipt Proof <span className="text-rose-500">*</span>
                       </span>
                       <span className="text-[10px] text-slate-400 mt-0.5">
-                        PNG, JPG, JPEG or WEBP (JazzCash/EasyPaisa/Bank success screen)
+                        PNG, JPG, JPEG or WEBP (JazzCash/EasyPaisa/Bank transfer success screen)
                       </span>
                       <input
                         id="deposit-receipt-file-input"
@@ -514,7 +518,7 @@ export const DepositModal: React.FC = () => {
                             </span>
                             <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center gap-0.5">
                               <Check className="w-2.5 h-2.5" />
-                              <span>Ready</span>
+                              <span>Attached</span>
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-400 mt-0.5">
@@ -564,11 +568,11 @@ export const DepositModal: React.FC = () => {
                     type="text"
                     value={trxId}
                     onChange={(e) => setTrxId(e.target.value)}
-                    placeholder="e.g. 029841029381 (or leave blank if receipt attached)"
+                    placeholder="Optional: Enter TID / TRX ID from SMS receipt"
                     className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <span className="text-[11px] text-slate-400 mt-1 block">
-                    Optional: Enter 11/12 digit TID from SMS receipt, or upload your payment screenshot above.
+                    Optional: Enter 11/12 digit TID if available, or upload your payment screenshot above.
                   </span>
                 </div>
 
@@ -582,7 +586,7 @@ export const DepositModal: React.FC = () => {
                       type="text"
                       value={senderTitle}
                       onChange={(e) => setSenderTitle(e.target.value)}
-                      placeholder="Account title"
+                      placeholder="Account holder name"
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                   </div>
@@ -594,7 +598,7 @@ export const DepositModal: React.FC = () => {
                       type="text"
                       value={senderNumber}
                       onChange={(e) => setSenderNumber(e.target.value)}
-                      placeholder="Account number"
+                      placeholder="e.g. 03001234567"
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                   </div>
@@ -611,8 +615,9 @@ export const DepositModal: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="w-2/3 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={isSubmitting || !selectedReceiptData}
+                    className="w-2/3 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!selectedReceiptData ? 'Please select a receipt screenshot first' : undefined}
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-1.5">
@@ -620,7 +625,7 @@ export const DepositModal: React.FC = () => {
                         {isUploadingImage ? 'Uploading Receipt Proof...' : 'Submitting Deposit...'}
                       </span>
                     ) : (
-                      <span>Confirm & Credit Balance</span>
+                      <span>{!selectedReceiptData ? 'Upload Receipt to Submit' : 'Confirm & Credit Balance'}</span>
                     )}
                   </button>
                 </div>
