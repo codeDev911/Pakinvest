@@ -126,9 +126,9 @@ export const PlansTab: React.FC = () => {
         <div className="space-y-4">
           {/* Prominent Ready to Collect Banner */}
           {readyToCollectPackagesCount > 0 && (
-            <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md border border-emerald-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/20">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
                   <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
                 </div>
                 <div>
@@ -146,7 +146,7 @@ export const PlansTab: React.FC = () => {
                 type="button"
                 disabled={isClaimingAll}
                 onClick={handleClaimAll}
-                className="py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-extrabold text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                className="py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-extrabold text-xs hover:bg-emerald-50 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>{isClaimingAll ? 'Collecting...' : `Collect All (${formatPKR(readyToCollectTotalAmount)})`}</span>
@@ -155,7 +155,7 @@ export const PlansTab: React.FC = () => {
           )}
 
           {activeInvestments.length === 0 ? (
-            <div className="text-center py-12 p-6 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="text-center py-12 p-6 rounded-3xl bg-slate-50 dark:bg-slate-900/40 space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 mx-auto flex items-center justify-center">
                 <Layers className="w-6 h-6" />
               </div>
@@ -204,7 +204,7 @@ export const PlansTab: React.FC = () => {
               <div
                 key={plan.id}
                 onClick={() => setSelectedPlanForDetail(plan)}
-                className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                className="group relative p-5 rounded-3xl bg-white dark:bg-slate-900 transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div className="space-y-3">
                   {/* Full-width Title Header */}
@@ -214,7 +214,7 @@ export const PlansTab: React.FC = () => {
                         {plan.name}
                       </h4>
                       {plan.badge && (
-                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 shrink-0">
                           {plan.badge}
                         </span>
                       )}
@@ -228,7 +228,7 @@ export const PlansTab: React.FC = () => {
                   </div>
 
                   {/* Pricing Matrix */}
-                  <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
                     <div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 block uppercase tracking-wider font-semibold">
                         Price
@@ -269,7 +269,7 @@ export const PlansTab: React.FC = () => {
 
                   <button
                     type="button"
-                    className="py-2 px-4 rounded-xl bg-emerald-600 group-hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-xs"
+                    className="py-2 px-4 rounded-xl bg-emerald-600 group-hover:bg-emerald-500 text-white font-bold text-xs transition-colors"
                   >
                     Invest
                   </button>
@@ -279,10 +279,10 @@ export const PlansTab: React.FC = () => {
           </div>
 
           {/* Interactive Profit Calculator Tool */}
-          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 text-white border border-slate-800 shadow-xl space-y-4">
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 text-white space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <div className="p-2 rounded-2xl bg-amber-500/20 text-amber-400">
                   <Calculator className="w-5 h-5" />
                 </div>
                 <div>
@@ -334,7 +334,7 @@ export const PlansTab: React.FC = () => {
 
             {/* Projected Returns Box */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
-              <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-center">
+              <div className="p-3 rounded-2xl bg-slate-800/80 text-center">
                 <span className="text-[10px] text-slate-400 block">Daily Profit</span>
                 <span className="text-base font-black text-emerald-400 font-display">
                   +{formatPKR(calcDailyProfit)}
@@ -342,7 +342,7 @@ export const PlansTab: React.FC = () => {
                 <span className="text-[9px] text-slate-400 block">{calcPlan.dailyProfitPercent}% / 24h</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-center">
+              <div className="p-3 rounded-2xl bg-slate-800/80 text-center">
                 <span className="text-[10px] text-slate-400 block">7 Days Return</span>
                 <span className="text-base font-black text-emerald-400 font-display">
                   +{formatPKR(calcWeeklyProfit)}
@@ -350,7 +350,7 @@ export const PlansTab: React.FC = () => {
                 <span className="text-[9px] text-slate-400 block">Weekly Payout</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-center">
+              <div className="p-3 rounded-2xl bg-slate-800/80 text-center">
                 <span className="text-[10px] text-slate-400 block">Total Net Profit</span>
                 <span className="text-base font-black text-amber-400 font-display">
                   +{formatPKR(calcTotalProfit)}
@@ -358,7 +358,7 @@ export const PlansTab: React.FC = () => {
                 <span className="text-[9px] text-slate-400 block">Excl. Principal</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-center">
+              <div className="p-3 rounded-2xl bg-slate-800/80 text-center">
                 <span className="text-[10px] text-slate-400 block">Total Payout</span>
                 <span className="text-base font-black text-white font-display">
                   {formatPKR(calcTotalWithCapital)}
@@ -369,7 +369,7 @@ export const PlansTab: React.FC = () => {
 
             <button
               onClick={() => setSelectedPlanForDetail(calcPlan)}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-md shadow-emerald-600/20"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors"
             >
               Invest
             </button>

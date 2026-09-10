@@ -25,6 +25,7 @@ import {
   User,
   Layers,
   Flame,
+  Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { LivePlatformFeed } from '../LivePlatformFeed';
@@ -60,6 +61,7 @@ export const HomeTab: React.FC = () => {
     toggleHideBalance,
     withdrawableBalance,
     unspentDeposit,
+    isDataLoading,
   } = useApp();
 
   const [isClaimingAll, setIsClaimingAll] = useState<boolean>(false);
@@ -92,7 +94,7 @@ export const HomeTab: React.FC = () => {
   return (
     <div className="space-y-4 sm:space-y-6 pb-24 max-w-4xl mx-auto px-3.5 sm:px-4 pt-1">
       {/* 1. Main Hero Financial Card (Responsive, Light & Dark Theme Perfect) */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-950 text-white p-4.5 sm:p-6 border border-emerald-700/40 shadow-xl shadow-emerald-950/20">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-950 text-white p-4.5 sm:p-6">
         {/* Subtle Decorative Background Glow */}
         <div className="absolute -right-10 -top-10 w-44 h-44 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -left-10 -bottom-10 w-44 h-44 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -105,6 +107,12 @@ export const HomeTab: React.FC = () => {
               <span className="text-[11px] sm:text-xs font-semibold text-emerald-200 uppercase tracking-wider">
                 Total Portfolio Balance
               </span>
+              {isDataLoading && (
+                <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded-full">
+                  <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-400" />
+                  Syncing
+                </span>
+              )}
               <button
                 type="button"
                 onClick={toggleHideBalance}
@@ -115,7 +123,7 @@ export const HomeTab: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-emerald-300">
+            <div className="flex items-center gap-1.5 bg-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-emerald-300">
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
               <span>Verified PKR</span>
             </div>
@@ -127,49 +135,30 @@ export const HomeTab: React.FC = () => {
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black font-display tracking-tight text-white">
                 {hideBalance ? 'Rs. ••••••••' : formatPKR(user.balance)}
               </h1>
-              <span className="text-[11px] text-emerald-200/80 font-medium mt-0.5 block">
-                Total Wallet Balance (Deposits + Earnings)
+              <span className="text-xs sm:text-sm text-emerald-200/95 font-semibold mt-1 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                Withdrawable: {hideBalance ? 'Rs. ••••••••' : formatPKR(withdrawableBalance)}
               </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-              <div className="bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 rounded-xl flex items-center gap-1.5">
-                <span className="text-emerald-200 text-[10px] sm:text-[11px] font-semibold">Withdrawable:</span>
-                <span className="text-white font-bold font-display text-xs sm:text-sm">
-                  {hideBalance ? '••••' : formatPKR(withdrawableBalance)}
-                </span>
-              </div>
-              {unspentDeposit > 0 && (
-                <div
-                  className="bg-amber-500/20 border border-amber-400/30 px-2.5 py-1 rounded-xl flex items-center gap-1.5"
-                  title="Direct deposits must be invested into packages to generate withdrawable profits"
-                >
-                  <span className="text-amber-200 text-[10px] sm:text-[11px] font-semibold">Deposit:</span>
-                  <span className="text-amber-300 font-bold font-display text-xs sm:text-sm">
-                    {hideBalance ? '••••' : formatPKR(unspentDeposit)}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 
           {/* Sub-Metrics Grid (Invested, Lifetime Profit, Referral Bonus) */}
           <div className="grid grid-cols-3 gap-2 pt-3 border-t border-emerald-800/60 text-xs">
-            <div className="bg-emerald-900/40 p-2.5 rounded-2xl border border-emerald-700/30">
+            <div className="bg-emerald-900/40 p-2.5 rounded-2xl">
               <span className="text-[10px] text-emerald-200/80 block truncate">Locked Capital</span>
               <span className="font-bold text-white text-xs sm:text-sm font-display truncate block mt-0.5">
                 {hideBalance ? '••••' : formatPKR(user.investedCapital)}
               </span>
             </div>
 
-            <div className="bg-emerald-900/40 p-2.5 rounded-2xl border border-emerald-700/30">
+            <div className="bg-emerald-900/40 p-2.5 rounded-2xl">
               <span className="text-[10px] text-emerald-200/80 block truncate">Lifetime Profit</span>
               <span className="font-bold text-emerald-300 text-xs sm:text-sm font-display truncate block mt-0.5">
                 +{hideBalance ? '••••' : formatPKR(user.totalEarnedProfit)}
               </span>
             </div>
 
-            <div className="bg-emerald-900/40 p-2.5 rounded-2xl border border-emerald-700/30">
+            <div className="bg-emerald-900/40 p-2.5 rounded-2xl">
               <span className="text-[10px] text-emerald-200/80 block truncate">Team Bonus</span>
               <span className="font-bold text-amber-300 text-xs sm:text-sm font-display truncate block mt-0.5">
                 +{hideBalance ? '••••' : formatPKR(user.referralEarnings)}
@@ -184,10 +173,10 @@ export const HomeTab: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-lg shadow-emerald-950/20 border border-emerald-400/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+          className="relative overflow-hidden p-4 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
         >
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/25">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
               <Sparkles className="w-6 h-6 text-amber-300 animate-pulse" />
             </div>
             <div>
@@ -210,7 +199,7 @@ export const HomeTab: React.FC = () => {
               type="button"
               disabled={isClaimingAll}
               onClick={handleClaimAll}
-              className="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 sm:flex-initial py-2.5 px-4 rounded-xl bg-white text-emerald-900 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>{isClaimingAll ? 'Collecting...' : `Collect All (${formatPKR(readyToCollectTotalAmount)})`}</span>
@@ -239,9 +228,9 @@ export const HomeTab: React.FC = () => {
             id="home-btn-deposit"
             type="button"
             onClick={() => setIsDepositModalOpen(true)}
-            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-2xs hover:shadow-md transition-all flex items-center justify-center gap-3 active:scale-95"
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all flex items-center justify-center gap-3 active:scale-95"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
               <ArrowDownLeft className="w-5 h-5" />
             </div>
             <div className="text-left">
@@ -256,9 +245,9 @@ export const HomeTab: React.FC = () => {
             id="home-btn-withdrawal"
             type="button"
             onClick={() => setIsWithdrawModalOpen(true)}
-            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 shadow-2xs hover:shadow-md transition-all flex items-center justify-center gap-3 active:scale-95"
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all flex items-center justify-center gap-3 active:scale-95"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
               <ArrowUpRight className="w-5 h-5" />
             </div>
             <div className="text-left">
@@ -279,12 +268,12 @@ export const HomeTab: React.FC = () => {
               setPlansTabSection('active');
               setCurrentTab('plans');
             }}
-            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs relative">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 flex items-center justify-center transition-transform group-hover:scale-105 relative">
               <Layers className="w-5 h-5" />
               {activeInvestments.length > 0 && (
-                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-purple-600 text-white text-[9px] font-black shadow-xs">
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-purple-600 text-white text-[9px] font-black">
                   {activeInvestments.length}
                 </span>
               )}
@@ -299,9 +288,9 @@ export const HomeTab: React.FC = () => {
             id="home-btn-profile"
             type="button"
             onClick={() => setCurrentTab('settings')}
-            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-teal-500 dark:hover:border-teal-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center transition-transform group-hover:scale-105">
               <User className="w-5 h-5" />
             </div>
             <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
@@ -314,9 +303,9 @@ export const HomeTab: React.FC = () => {
             id="home-btn-rewards"
             type="button"
             onClick={() => setIsStreakModalOpen(true)}
-            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-rose-500 dark:hover:border-rose-500 shadow-2xs hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
+            className="group p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all flex flex-col items-center justify-center text-center gap-2 active:scale-95"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center transition-transform group-hover:scale-105">
               <Flame className="w-5 h-5 fill-rose-500 text-rose-500" />
             </div>
             <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
@@ -338,10 +327,10 @@ export const HomeTab: React.FC = () => {
       {/* 4. Live Activity & Notifications Alert Box */}
       <div
         onClick={() => setIsNotificationModalOpen(true)}
-        className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-all shadow-2xs group"
+        className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-between cursor-pointer transition-all group"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/60 dark:border-emerald-800/60 relative">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 relative">
             <Bell className="w-5 h-5" />
             {unreadNotificationsCount > 0 && (
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute -top-1 -right-1 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
@@ -398,7 +387,7 @@ export const HomeTab: React.FC = () => {
             <div
               key={plan.id}
               onClick={() => setSelectedPlanForDetail(plan)}
-              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 transition-all cursor-pointer flex flex-col justify-between shadow-2xs"
+              className="group p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all cursor-pointer flex flex-col justify-between"
             >
               <div className="space-y-2.5">
                 {/* Full width Title Header */}
@@ -407,7 +396,7 @@ export const HomeTab: React.FC = () => {
                     <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">
                       {plan.name}
                     </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 shrink-0">
                       {plan.dailyProfitPercent}%
                     </span>
                   </div>
@@ -457,7 +446,7 @@ export const HomeTab: React.FC = () => {
 
         <div className="space-y-2">
           {recentTransactions.length === 0 ? (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 text-center text-xs text-slate-400">
               No transactions recorded yet.
             </div>
           ) : (
@@ -467,7 +456,7 @@ export const HomeTab: React.FC = () => {
                 <div
                   key={tx.id}
                   onClick={() => setSelectedTransactionReceipt(tx)}
-                  className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer flex items-center justify-between shadow-2xs"
+                  className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-slate-900 transition-all cursor-pointer flex items-center justify-between"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0">

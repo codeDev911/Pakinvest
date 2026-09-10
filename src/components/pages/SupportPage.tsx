@@ -177,7 +177,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
       {/* Main Container */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-6 sm:py-8 space-y-6">
         {/* Support Hero Card */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white shadow-xl border border-slate-800 relative overflow-hidden">
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white relative overflow-hidden">
           <div className="absolute right-0 top-0 translate-x-6 -translate-y-6 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="relative z-10 space-y-2">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-emerald-300 text-[11px] font-bold uppercase tracking-wider">
@@ -194,16 +194,16 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
         </div>
 
         {/* Direct Channels Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* WhatsApp Support */}
           <a
             href="https://wa.me/923000000000?text=Hello%20Investify%20Support,%20I%20need%20assistance%20with%20my%20account"
             target="_blank"
             rel="noopener noreferrer"
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 transition-all shadow-xs group flex flex-col justify-between space-y-3"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all group flex flex-col justify-between space-y-3"
           >
             <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 <MessageSquare className="w-5 h-5" />
               </div>
               <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 transition-colors" />
@@ -226,10 +226,10 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
             href="https://t.me/investify_official"
             target="_blank"
             rel="noopener noreferrer"
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-sky-500 dark:hover:border-sky-500 transition-all shadow-xs group flex flex-col justify-between space-y-3"
+            className="p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all group flex flex-col justify-between space-y-3"
           >
             <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-950/80 text-sky-600 dark:text-sky-400 flex items-center justify-center border border-sky-200 dark:border-sky-800">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-950/80 text-sky-600 dark:text-sky-400 flex items-center justify-center">
                 <Send className="w-5 h-5" />
               </div>
               <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-sky-500 transition-colors" />
@@ -246,33 +246,6 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
               Join Community &rarr;
             </span>
           </a>
-
-          {/* Platform Policies */}
-          <button
-            type="button"
-            onClick={() => setCurrentTab('terms')}
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 transition-all shadow-xs group flex flex-col justify-between space-y-3 text-left"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-200 dark:border-amber-800">
-                <FileText className="w-5 h-5" />
-              </div>
-              <span className="text-xs text-slate-400 group-hover:text-amber-500 transition-colors font-bold">
-                View
-              </span>
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Terms & Policies
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Capital rules, daily quotas, withdrawal limits & security
-              </p>
-            </div>
-            <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-              Read Agreement &rarr;
-            </span>
-          </button>
         </div>
 
         {/* FAQs Knowledge Base Header & Controls */}
@@ -308,7 +281,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by topic, e.g. 'withdraw', 'streaks', 'deposit'..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
@@ -321,8 +294,8 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
                   selectedCategory === cat
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 {cat}
@@ -333,7 +306,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
           {/* FAQs Accordion */}
           <div className="space-y-2.5">
             {filteredFaqs.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+              <div className="p-8 rounded-2xl bg-white dark:bg-slate-900 text-center space-y-2">
                 <Search className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
                 <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                   No FAQs matching &quot;{searchQuery}&quot;
@@ -348,11 +321,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
                 return (
                   <div
                     key={faq.id}
-                    className={`rounded-2xl border transition-all overflow-hidden ${
-                      isExpanded
-                        ? 'bg-white dark:bg-slate-900 border-emerald-500/50 shadow-sm'
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
+                    className="rounded-2xl transition-all overflow-hidden bg-white dark:bg-slate-900"
                   >
                     <button
                       type="button"
@@ -377,7 +346,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
                     </button>
 
                     {isExpanded && (
-                      <div className="px-4 pb-4 pt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/60 mt-1">
+                      <div className="px-4 pb-4 pt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-1">
                         <p className="pt-2">{faq.answer}</p>
                       </div>
                     )}
@@ -389,7 +358,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
         </section>
 
         {/* Footer Support Notice */}
-        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-1">
+        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900 text-center space-y-1">
           <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Didn&apos;t find your answer?
           </p>

@@ -148,7 +148,7 @@ export const NotificationModal: React.FC = () => {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
           transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
-          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[88vh] flex flex-col overflow-hidden z-10"
+          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-h-[88vh] flex flex-col overflow-hidden z-10"
         >
           {/* Top handle bar for mobile feel */}
           <div className="pt-3 pb-1 flex justify-center sm:hidden">
@@ -158,7 +158,7 @@ export const NotificationModal: React.FC = () => {
           {/* Header */}
           <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                 <Bell className="w-5 h-5" />
               </div>
               <div>
@@ -232,10 +232,10 @@ export const NotificationModal: React.FC = () => {
                 <div
                   key={notif.id}
                   onClick={() => handleNotificationClick(notif)}
-                  className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 relative cursor-pointer hover:border-emerald-400/80 active:scale-[0.99] ${
+                  className={`p-3.5 rounded-2xl transition-all flex items-start gap-3 relative cursor-pointer active:scale-[0.99] ${
                     notif.read
-                      ? 'bg-white dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 opacity-90'
-                      : 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/90 dark:border-emerald-800/80 shadow-xs'
+                      ? 'bg-slate-50 dark:bg-slate-800/50 opacity-90'
+                      : 'bg-emerald-50/50 dark:bg-emerald-950/30'
                   }`}
                 >
                   {getNotificationIcon(notif.type)}

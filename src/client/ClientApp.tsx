@@ -22,9 +22,15 @@ import { AuthModal } from '../components/auth/AuthModal';
 import { AuthScreen } from './AuthScreen';
 import { TermsAndPoliciesPage } from '../components/pages/TermsAndPoliciesPage';
 import { SupportPage } from '../components/pages/SupportPage';
+import { LoadingScreen } from '../components/common/LoadingScreen';
 
 export const ClientApp: React.FC = () => {
-  const { currentTab, setCurrentTab, isAuthModalOpen, setIsAuthModalOpen, isAuthenticated } = useApp();
+  const { currentTab, setCurrentTab, isAuthModalOpen, setIsAuthModalOpen, isAuthenticated, isInitialLoading } = useApp();
+
+  // Full-screen loading screen until initial data is fully loaded
+  if (isInitialLoading) {
+    return <LoadingScreen />;
+  }
 
   // If not authenticated, require user to Login or Register first
   if (!isAuthenticated) {

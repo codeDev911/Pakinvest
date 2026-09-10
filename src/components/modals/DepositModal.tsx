@@ -238,7 +238,7 @@ export const DepositModal: React.FC = () => {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
           transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
-          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden z-10"
+          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col overflow-hidden z-10"
         >
           {/* Top handle bar for mobile feel */}
           <div className="pt-3 pb-1 flex justify-center sm:hidden">
@@ -248,7 +248,7 @@ export const DepositModal: React.FC = () => {
           {/* Header */}
           <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold">
                 Rs
               </div>
               <div>
@@ -353,7 +353,7 @@ export const DepositModal: React.FC = () => {
                 </div>
 
                 {/* Channel Notice */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex items-start gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 flex items-start gap-2.5">
                   <Info className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed space-y-1">
                     <p>
@@ -374,7 +374,7 @@ export const DepositModal: React.FC = () => {
                   type="button"
                   disabled={amount < currentChannel.minDeposit}
                   onClick={() => setStep(2)}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>Proceed to Payment Details</span>
                   <ArrowRight className="w-4 h-4" />
@@ -383,7 +383,7 @@ export const DepositModal: React.FC = () => {
             ) : (
               <form onSubmit={handleSubmitDeposit} className="space-y-4">
                 {/* Company Payment Info Box */}
-                <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-3">
+                <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <GatewayLogo gateway={selectedGateway} size="xs" />
@@ -397,7 +397,7 @@ export const DepositModal: React.FC = () => {
                   </div>
 
                   {/* Account Title */}
-                  <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900">
+                  <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl">
                     <div>
                       <p className="text-[10px] text-slate-400">Account Title</p>
                       <p className="text-xs font-bold text-slate-800 dark:text-white">
@@ -414,7 +414,7 @@ export const DepositModal: React.FC = () => {
                   </div>
 
                   {/* Account Number / IBAN */}
-                  <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900">
+                  <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl">
                     <div>
                       <p className="text-[10px] text-slate-400">
                         {selectedGateway === 'USDT_TRC20' ? 'TRC20 Wallet Address' : 'Account / Mobile / Raast Number'}
@@ -445,7 +445,7 @@ export const DepositModal: React.FC = () => {
                 </div>
 
                 {/* Amount to send summary */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Total Sending Amount:</span>
                   <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400">
                     {formatPKR(amount)}

@@ -94,7 +94,7 @@ export const TransactionReceiptModal: React.FC = () => {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
           transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
-          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden z-10"
+          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col overflow-hidden z-10"
         >
           {/* Mobile Handle */}
           <div className="pt-3 pb-1 flex justify-center sm:hidden">
@@ -135,7 +135,7 @@ export const TransactionReceiptModal: React.FC = () => {
             </div>
 
             {/* Receipt Details Breakdown */}
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-3 text-xs">
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 space-y-3 text-xs">
               <div className="flex justify-between items-center pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
                 <span className="text-slate-500 dark:text-slate-400">Transaction ID</span>
                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{tx.id}</span>
@@ -199,9 +199,8 @@ export const TransactionReceiptModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Note text */}
             {tx.notes && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl">
                 💬 {tx.notes}
               </p>
             )}
@@ -219,7 +218,7 @@ export const TransactionReceiptModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedTransactionReceipt(null)}
-                className="flex-1 py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
+                className="flex-1 py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5"
               >
                 <span>Done</span>
               </button>

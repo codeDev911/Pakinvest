@@ -93,7 +93,7 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
   return (
     <div
       id={`active-plan-card-${investment.id}`}
-      className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md transition-all space-y-4"
+      className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 transition-all space-y-4"
     >
       {/* 1. Header: Full Width Title with Status */}
       <div className="w-full space-y-1.5">
@@ -102,7 +102,7 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
             {investment.planName}
           </h4>
           {investment.status === 'active' ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Active
             </span>
@@ -127,7 +127,7 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
       </div>
 
       {/* 2. Primary Financial Stats: Invested & Total Claimed */}
-      <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+      <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50">
         <div className="space-y-0.5">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
             <Wallet className="w-3 h-3 text-slate-400" />
@@ -157,7 +157,7 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
 
       {/* 3. Clean Countdown Timer & To-The-Point Collect Action */}
       <div className="space-y-2.5">
-        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
           <div className="flex items-center gap-2">
             <Clock className={`w-4 h-4 ${isReady ? 'text-emerald-500' : 'text-amber-500'}`} />
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -177,10 +177,10 @@ export const ActiveInvestmentCard: React.FC<ActiveInvestmentCardProps> = ({
           type="button"
           disabled={!isReady || isClaiming}
           onClick={handleClaim}
-          className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+          className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
             isReady
-              ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-500/25 shadow-md ring-2 ring-emerald-400/60 animate-pulse-subtle'
-              : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-800'
+              ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer'
+              : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 cursor-not-allowed'
           }`}
         >
           {isReady ? (

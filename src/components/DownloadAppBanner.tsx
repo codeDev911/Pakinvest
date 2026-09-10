@@ -31,11 +31,11 @@ export const DownloadAppBanner: React.FC = () => {
   return (
     <div
       id="download-app-banner"
-      className="p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between gap-3 transition-all hover:border-emerald-500/50"
+      className="p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-between gap-3 transition-all"
     >
       {/* App Icon + Title Only */}
       <div className="flex items-center gap-2.5 min-w-0">
-        <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 overflow-hidden shadow-2xs">
+        <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 overflow-hidden">
           <img
             src="/favicon.png"
             alt="Investify"
@@ -53,7 +53,7 @@ export const DownloadAppBanner: React.FC = () => {
         type="button"
         onClick={handleDownload}
         disabled={downloading}
-        className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-75 active:scale-95"
+        className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-75 active:scale-95"
       >
         <Download className={`w-3.5 h-3.5 ${downloading ? 'animate-bounce' : ''}`} />
         <span>{downloading ? 'Downloading...' : 'Download'}</span>

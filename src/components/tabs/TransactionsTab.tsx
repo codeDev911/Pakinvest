@@ -85,7 +85,7 @@ export const TransactionsTab: React.FC = () => {
 
       {/* Summary Inflow / Outflow Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800 space-y-1">
+        <div className="p-4 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 space-y-1">
           <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
             <ArrowDownLeft className="w-3.5 h-3.5" />
             <span>Total Inflow (Credits)</span>
@@ -95,7 +95,7 @@ export const TransactionsTab: React.FC = () => {
           </p>
         </div>
 
-        <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
+        <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-900 space-y-1">
           <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400">
             <ArrowUpRight className="w-3.5 h-3.5 text-amber-500" />
             <span>Total Outflow (Debits)</span>
@@ -114,7 +114,7 @@ export const TransactionsTab: React.FC = () => {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search by Transaction ID, Reference, or Gateway..."
-          className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+          className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
       </div>
 
@@ -126,7 +126,7 @@ export const TransactionsTab: React.FC = () => {
             onClick={() => setActiveFilter(tab.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
               activeFilter === tab.id
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                ? 'bg-emerald-600 text-white border-emerald-600'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300'
             }`}
           >
@@ -138,7 +138,7 @@ export const TransactionsTab: React.FC = () => {
       {/* Transactions List */}
       <div className="space-y-2.5">
         {filteredTransactions.length === 0 ? (
-          <div className="text-center py-12 p-6 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
+          <div className="text-center py-12 p-6 rounded-3xl bg-slate-50 dark:bg-slate-900/40">
             <ReceiptText className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
             <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No transactions match your search</p>
           </div>
@@ -150,10 +150,10 @@ export const TransactionsTab: React.FC = () => {
               <div
                 key={tx.id}
                 onClick={() => setSelectedTransactionReceipt(tx)}
-                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/50 transition-all cursor-pointer flex items-center justify-between gap-3 group shadow-2xs"
+                className="p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all cursor-pointer flex items-center justify-between gap-3 group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0">
                     {getTransactionIcon(tx.type)}
                   </div>
                   <div className="min-w-0">

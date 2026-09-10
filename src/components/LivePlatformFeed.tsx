@@ -216,7 +216,7 @@ export const LivePlatformFeed: React.FC = () => {
   return (
     <div
       id="live-user-activity-banner"
-      className="my-3 sm:my-4 p-3 sm:p-3.5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/60 dark:shadow-black/50 overflow-hidden relative transition-all"
+      className="my-3 sm:my-4 p-3 sm:p-3.5 rounded-3xl bg-white dark:bg-slate-900 overflow-hidden relative transition-all"
     >
       {/* Feed Header: Title, Live Beacon & Description */}
       <div className="flex items-center justify-between gap-3 pb-2.5 mb-2.5 border-b border-slate-100 dark:border-slate-800/80">
@@ -230,7 +230,7 @@ export const LivePlatformFeed: React.FC = () => {
               <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
                 Live Platform Activity
               </h3>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60 uppercase tracking-wide shrink-0">
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 uppercase tracking-wide shrink-0">
                 24/7 Live
               </span>
             </div>
@@ -262,7 +262,7 @@ export const LivePlatformFeed: React.FC = () => {
                   duration: 0.38,
                   ease: [0.25, 1, 0.5, 1],
                 }}
-                className="w-full flex items-center justify-between py-1.5 px-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/70 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 transition-colors"
+                className="w-full flex items-center justify-between py-1.5 px-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 transition-colors"
               >
                 {/* Left: Small Icon & Name with Cut Number in a single flex line */}
                 <div className="flex items-center gap-2 min-w-0">

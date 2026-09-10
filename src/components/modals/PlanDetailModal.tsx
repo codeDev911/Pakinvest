@@ -84,7 +84,7 @@ export const PlanDetailModal: React.FC = () => {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
           transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
-          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden z-10"
+          className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col overflow-hidden z-10"
         >
           {/* Top handle bar */}
           <div className="pt-3 pb-1 flex justify-center sm:hidden">
@@ -94,7 +94,7 @@ export const PlanDetailModal: React.FC = () => {
           {/* Header */}
           <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                 {getPlanIcon(plan.category)}
               </div>
               <div>
@@ -103,7 +103,7 @@ export const PlanDetailModal: React.FC = () => {
                     {plan.name}
                   </h3>
                   {plan.badge && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                       {plan.badge}
                     </span>
                   )}
@@ -126,7 +126,7 @@ export const PlanDetailModal: React.FC = () => {
           <div className="p-5 overflow-y-auto space-y-4 flex-1">
             {/* Price & Daily Return Grid */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-800">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70">
                 <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
                   Package Price
                 </span>
@@ -138,7 +138,7 @@ export const PlanDetailModal: React.FC = () => {
                 </span>
               </div>
 
-              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40">
                 <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 block">
                   Daily Guaranteed ROI
                 </span>
@@ -152,10 +152,10 @@ export const PlanDetailModal: React.FC = () => {
             </div>
 
             {/* Total Return Projection Card */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white space-y-3 shadow-lg">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">Total Return on Maturity</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
                   {plan.totalRoiPercent}% Total ROI
                 </span>
               </div>
@@ -190,7 +190,7 @@ export const PlanDetailModal: React.FC = () => {
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                 About this Project
               </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl">
                 {plan.description}
               </p>
             </div>
@@ -224,7 +224,7 @@ export const PlanDetailModal: React.FC = () => {
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleInvest}
-                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm transition-all shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">
@@ -242,7 +242,7 @@ export const PlanDetailModal: React.FC = () => {
                   setSelectedPlanForDetail(null);
                   setIsDepositModalOpen(true);
                 }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-all shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
               >
                 Deposit
               </button>

@@ -65,7 +65,7 @@ export const ClaimRewardsModal: React.FC = () => {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: '100%', opacity: 0 }}
           transition={{ type: 'spring', damping: 24, stiffness: 440, mass: 0.4 }}
-          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden z-10"
+          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col overflow-hidden z-10"
         >
           {/* Mobile Handle */}
           <div className="pt-3 pb-1 flex justify-center sm:hidden">
@@ -92,9 +92,9 @@ export const ClaimRewardsModal: React.FC = () => {
             <div className="py-2">
               <div className={`w-16 h-16 rounded-3xl ${
                 hasActivePackage
-                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-500'
-                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-              } border flex items-center justify-center mx-auto mb-2`}>
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-500'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              } flex items-center justify-center mx-auto mb-2`}>
                 {hasActivePackage ? (
                   <Gift className="w-8 h-8 animate-bounce" />
                 ) : (
@@ -114,7 +114,7 @@ export const ClaimRewardsModal: React.FC = () => {
 
             {/* Active Package Gate Warning Banner */}
             {!hasActivePackage && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 text-left space-y-2">
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-left space-y-2">
                 <div className="flex items-start gap-2 text-amber-800 dark:text-amber-300">
                   <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                   <div className="text-xs">
@@ -127,7 +127,7 @@ export const ClaimRewardsModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleNavigateToPlans}
-                  className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                  className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
                 >
                   <span>Activate an Investment Package</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -175,7 +175,7 @@ export const ClaimRewardsModal: React.FC = () => {
                     claimDailyStreak();
                     setIsStreakModalOpen(false);
                   }}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-bold text-sm transition-all shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>
@@ -188,7 +188,7 @@ export const ClaimRewardsModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleNavigateToPlans}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
                 >
                   <Lock className="w-4 h-4 text-amber-400" />
                   <span>Activate Package to Unlock Streaks</span>

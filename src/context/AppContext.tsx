@@ -116,6 +116,8 @@ interface AppContextType {
   unspentDeposit: number;
   hideBalance: boolean;
   toggleHideBalance: () => void;
+  isInitialLoading: boolean;
+  isDataLoading: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -174,6 +176,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('pakinvest_jwt_token'));
   const [user, setUser] = useState<UserProfile>(GUEST_USER);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(Boolean(token));
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(false);
 
   // Dynamic Portfolio States
   const [activeInvestments, setActiveInvestments] = useState<ActiveInvestment[]>([]);
@@ -286,6 +290,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Load all user and server state on startup or token change
   const refreshAllData = async () => {
+    setIsDataLoading(true);
     try {
       const activeToken = localStorage.getItem('pakinvest_jwt_token');
 
@@ -419,8 +424,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch {}
     } catch (err) {
       console.error('API refresh error:', err);
+    } finally {
+      setIsDataLoading(false);
+      setIsInitialLoading(false);
     }
   };
+
+  // Fallback safety timer so initial loading never hangs indefinitely
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setIsInitialLoading(false);
+      setIsDataLoading(false);
+    }, 4500);
+    return () => clearTimeout(safetyTimer);
+  }, []);
 
   // URL referral code tracker & Mobile Notification Initializer + Package Reward Offline Service
   useEffect(() => {
@@ -1457,6 +1474,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         unspentDeposit,
         hideBalance,
         toggleHideBalance,
+        isInitialLoading,
+        isDataLoading,
       }}
     >
       {children}

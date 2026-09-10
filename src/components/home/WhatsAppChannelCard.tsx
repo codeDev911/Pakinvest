@@ -13,7 +13,7 @@ export const WhatsAppChannelCard: React.FC = () => {
     <div
       id="home-whatsapp-channel-card"
       onClick={handleJoin}
-      className="group relative overflow-hidden p-4 rounded-3xl bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 text-white shadow-lg shadow-emerald-950/20 border border-emerald-400/30 cursor-pointer hover:border-emerald-300/60 transition-all active:scale-[0.99]"
+      className="group relative overflow-hidden p-4 rounded-3xl bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 text-white cursor-pointer transition-all active:scale-[0.99]"
     >
       {/* Subtle Background Glow */}
       <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-400/20 rounded-full blur-2xl pointer-events-none" />
@@ -21,7 +21,7 @@ export const WhatsAppChannelCard: React.FC = () => {
       <div className="relative z-10 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3.5 min-w-0">
           {/* Authentic WhatsApp Icon Badge */}
-          <div className="w-12 h-12 rounded-2xl bg-[#25D366] flex items-center justify-center shrink-0 shadow-md shadow-emerald-950/30 border border-white/20 transition-transform group-hover:scale-105">
+          <div className="w-12 h-12 rounded-2xl bg-[#25D366] flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
             <svg
               viewBox="0 0 24 24"
               fill="none"

@@ -78,10 +78,10 @@ export const ReferralTab: React.FC = () => {
       </div>
 
       {/* Main Referral Hero Card */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 text-white border border-indigo-800/40 shadow-xl space-y-4 relative overflow-hidden">
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 text-white space-y-4 relative overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
               <Users className="w-5 h-5" />
             </div>
             <div>
@@ -90,7 +90,7 @@ export const ReferralTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold">
             <Gift className="w-3.5 h-3.5" />
             <span>Up to 15% Total</span>
           </div>
@@ -99,7 +99,7 @@ export const ReferralTab: React.FC = () => {
         {/* Code & Link Share Box */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           {/* Code Box */}
-          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-indigo-800/50 flex items-center justify-between">
+          <div className="p-3.5 rounded-2xl bg-slate-900/90 flex items-center justify-between">
             <div>
               <span className="text-[10px] text-slate-400 block">Your Referral Code</span>
               <span className="text-base font-mono font-black text-amber-400 tracking-wider">
@@ -119,7 +119,7 @@ export const ReferralTab: React.FC = () => {
           <div className="flex gap-2">
             <button
               onClick={handleWhatsAppShare}
-              className="flex-1 p-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/25 transition-all"
+              className="flex-1 p-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
             >
               <Smartphone className="w-4 h-4" />
               <span>Share on WhatsApp</span>
@@ -127,7 +127,7 @@ export const ReferralTab: React.FC = () => {
 
             <button
               onClick={handleCopyLink}
-              className="p-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+              className="p-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
               title="Copy Full Invite Link"
             >
               {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
@@ -136,7 +136,7 @@ export const ReferralTab: React.FC = () => {
         </div>
 
         {/* Unclaimed Commission Box */}
-        <div className="p-3.5 rounded-2xl bg-indigo-900/40 border border-indigo-700/40 flex items-center justify-between">
+        <div className="p-3.5 rounded-2xl bg-indigo-900/40 flex items-center justify-between">
           <div>
             <span className="text-[10px] text-indigo-300 block">Pending Unclaimed Commission</span>
             <span className="text-base font-extrabold text-amber-400 font-display">
@@ -162,7 +162,7 @@ export const ReferralTab: React.FC = () => {
         </h3>
 
         <div className="grid grid-cols-3 gap-2.5 text-center">
-          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 space-y-1">
             <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
               Level 1 (Direct)
             </span>
@@ -172,7 +172,7 @@ export const ReferralTab: React.FC = () => {
             <p className="text-[10px] text-slate-500 dark:text-slate-400">On every direct deposit</p>
           </div>
 
-          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 space-y-1">
             <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block">
               Level 2 (Team)
             </span>
@@ -182,7 +182,7 @@ export const ReferralTab: React.FC = () => {
             <p className="text-[10px] text-slate-500 dark:text-slate-400">From sub-referrals</p>
           </div>
 
-          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+          <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 space-y-1">
             <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider block">
               Level 3 (Network)
             </span>
@@ -196,28 +196,28 @@ export const ReferralTab: React.FC = () => {
 
       {/* Referral Team Stats Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900">
           <span className="text-[10px] text-slate-400 block font-medium">Total Team Size</span>
           <span className="text-base font-black text-slate-900 dark:text-white font-display">
             {members.length} Members
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900">
           <span className="text-[10px] text-slate-400 block font-medium">Active Investors</span>
           <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-display">
             {totalActiveInvestors} Active
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900">
           <span className="text-[10px] text-slate-400 block font-medium">Team Investment Volume</span>
           <span className="text-base font-black text-slate-900 dark:text-white font-display">
             {formatPKR(totalTeamVolume)}
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900">
           <span className="text-[10px] text-slate-400 block font-medium">Total Commission Earned</span>
           <span className="text-base font-black text-amber-500 font-display">
             +{formatPKR(user.referralEarnings)}
@@ -252,7 +252,7 @@ export const ReferralTab: React.FC = () => {
 
         <div className="space-y-2">
           {filteredMembers.length === 0 ? (
-            <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center space-y-3 shadow-xs">
+            <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 mx-auto flex items-center justify-center">
                 <Users className="w-6 h-6" />
               </div>
@@ -276,7 +276,7 @@ export const ReferralTab: React.FC = () => {
             filteredMembers.map((member) => (
               <div
                 key={member.id}
-                className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 shadow-2xs"
+                className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-between gap-3"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold text-xs">
