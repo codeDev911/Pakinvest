@@ -58,6 +58,8 @@ export const HomeTab: React.FC = () => {
     readyToCollectTotalAmount,
     hideBalance,
     toggleHideBalance,
+    withdrawableBalance,
+    unspentDeposit,
   } = useApp();
 
   const [isClaimingAll, setIsClaimingAll] = useState<boolean>(false);
@@ -120,14 +122,34 @@ export const HomeTab: React.FC = () => {
           </div>
 
           {/* Large Main PKR Balance Display */}
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black font-display tracking-tight text-white">
-              {hideBalance ? 'Rs. ••••••••' : formatPKR(user.balance)}
-            </h1>
+          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+            <div>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black font-display tracking-tight text-white">
+                {hideBalance ? 'Rs. ••••••••' : formatPKR(user.balance)}
+              </h1>
+              <span className="text-[11px] text-emerald-200/80 font-medium mt-0.5 block">
+                Total Wallet Balance (Deposits + Earnings)
+              </span>
+            </div>
 
-            <div className="text-xs text-emerald-200/90 flex items-center gap-1.5 font-medium">
-              <span>Liquid Withdrawable</span>
-              <span className="text-white font-bold">Rs. {user.balance.toLocaleString()}</span>
+            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+              <div className="bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 rounded-xl flex items-center gap-1.5">
+                <span className="text-emerald-200 text-[10px] sm:text-[11px] font-semibold">Withdrawable:</span>
+                <span className="text-white font-bold font-display text-xs sm:text-sm">
+                  {hideBalance ? '••••' : formatPKR(withdrawableBalance)}
+                </span>
+              </div>
+              {unspentDeposit > 0 && (
+                <div
+                  className="bg-amber-500/20 border border-amber-400/30 px-2.5 py-1 rounded-xl flex items-center gap-1.5"
+                  title="Direct deposits must be invested into packages to generate withdrawable profits"
+                >
+                  <span className="text-amber-200 text-[10px] sm:text-[11px] font-semibold">Deposit:</span>
+                  <span className="text-amber-300 font-bold font-display text-xs sm:text-sm">
+                    {hideBalance ? '••••' : formatPKR(unspentDeposit)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

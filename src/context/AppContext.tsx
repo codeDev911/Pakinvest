@@ -128,6 +128,8 @@ const GUEST_USER: UserProfile = {
   referralCode: 'PAK----',
   referralTier: 1,
   balance: 0,
+  withdrawableBalance: 0,
+  unspentDeposit: 0,
   investedCapital: 0,
   totalWithdrawn: 0,
   totalEarnedProfit: 0,
@@ -765,16 +767,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    if (amount > withdrawableBalance) {
-      if (unspentDeposit > 0) {
-        showToast(
-          'Deposited Funds Not Withdrawable',
-          `You have Rs. ${unspentDeposit.toLocaleString()} in deposited funds which must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}.`,
-          'warning'
-        );
-      } else {
-        showToast('Insufficient Withdrawable Balance', `Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}`, 'error');
-      }
+    const availableWithdrawable = Math.min(user.balance, Math.max(0, user.withdrawableBalance ?? 0));
+    if (amount > availableWithdrawable) {
+      const lockedDeposit = Math.max(0, user.balance - availableWithdrawable);
+      showToast(
+        'Insufficient Withdrawable Amount',
+        `Available to withdraw: Rs. ${availableWithdrawable.toLocaleString()}.${lockedDeposit > 0 ? ` Rs. ${lockedDeposit.toLocaleString()} deposit must be invested in packages to generate withdrawable profits.` : ''}`,
+        'error'
+      );
+      return false;
+    }
+
+    if (amount > user.balance) {
+      showToast('Insufficient Balance', `Available balance: Rs. ${user.balance.toLocaleString()}`, 'error');
       return false;
     }
 
@@ -792,12 +797,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }),
       });
 
-      const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; balance?: number; error?: string }>(res);
+      const { ok, data } = await safeParseJson<{ success?: boolean; transaction?: Transaction; balance?: number; withdrawableBalance?: number; error?: string }>(res);
       if (ok && data?.success && data?.transaction) {
         const newTx = data.transaction;
         setUser((prev) => ({
           ...prev,
           balance: data.balance !== undefined ? data.balance : Math.max(0, prev.balance - amount),
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : Math.max(0, (prev.withdrawableBalance || 0) - amount),
         }));
         setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
         showToast(
@@ -835,12 +841,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         body: JSON.stringify({ planId: plan.id, amount: investAmount }),
       });
 
-      const { ok, data } = await safeParseJson<{ success?: boolean; investment?: ActiveInvestment; user?: UserProfile; transaction?: Transaction; error?: string }>(res);
-      if (ok && data?.success && data?.investment && data?.user) {
+      const { ok, data } = await safeParseJson<{
+        success?: boolean;
+        investment?: ActiveInvestment;
+        user?: UserProfile;
+        balance?: number;
+        withdrawableBalance?: number;
+        transaction?: Transaction;
+        error?: string;
+      }>(res);
+      if (ok && data?.success && data?.investment) {
         setUser((prev) => ({
           ...prev,
-          balance: data.user!.balance,
-          investedCapital: data.user!.investedCapital,
+          balance: data.balance !== undefined ? data.balance : (data.user?.balance ?? Math.max(0, prev.balance - investAmount)),
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : (data.user?.withdrawableBalance ?? prev.withdrawableBalance),
+          investedCapital: data.user?.investedCapital ?? (prev.investedCapital + investAmount),
         }));
         setActiveInvestments((prev) => [data.investment!, ...prev]);
         if (data.transaction) {
@@ -877,6 +892,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { ok, data } = await safeParseJson<{
         success?: boolean;
         balance: number;
+        withdrawableBalance?: number;
         totalEarnedProfit: number;
         claimedAmount: number;
         transaction?: Transaction;
@@ -888,6 +904,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : ((prev.withdrawableBalance || 0) + (data.claimedAmount || 0)),
           totalEarnedProfit: data.totalEarnedProfit,
         }));
         if (data.investments) {
@@ -957,6 +974,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { ok, data } = await safeParseJson<{
         success?: boolean;
         balance: number;
+        withdrawableBalance?: number;
         totalEarnedProfit: number;
         totalClaimed: number;
         claimedAmount?: number;
@@ -970,6 +988,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUser((prev) => ({
           ...prev,
           balance: data.balance !== undefined ? data.balance : prev.balance + amt,
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : ((prev.withdrawableBalance || 0) + amt),
           totalEarnedProfit: data.totalEarnedProfit !== undefined ? data.totalEarnedProfit : prev.totalEarnedProfit + amt,
         }));
         if (data.investments) {
@@ -1010,11 +1029,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         method: 'POST',
         headers: getAuthHeaders(),
       });
-      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; claimedAmount: number; transaction?: Transaction; error?: string }>(res);
+      const { ok, data } = await safeParseJson<{ success?: boolean; balance: number; withdrawableBalance?: number; claimedAmount: number; transaction?: Transaction; error?: string }>(res);
       if (ok && data?.success) {
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : ((prev.withdrawableBalance || 0) + (data.claimedAmount || 0)),
           unclaimedReferralEarnings: 0,
         }));
         if (data.transaction) {
@@ -1069,6 +1089,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { ok, data } = await safeParseJson<{
         success?: boolean;
         balance: number;
+        withdrawableBalance?: number;
         dailyStreak: number;
         reward: number;
         streakBroken?: boolean;
@@ -1081,6 +1102,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUser((prev) => ({
           ...prev,
           balance: data.balance,
+          withdrawableBalance: data.withdrawableBalance !== undefined ? data.withdrawableBalance : ((prev.withdrawableBalance || 0) + (data.reward || 0)),
           dailyStreak: data.dailyStreak,
           lastCheckInDate: new Date().toISOString().split('T')[0],
         }));
@@ -1350,14 +1372,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return activeInvestments.reduce((sum, inv) => sum + (Number(inv.investedAmount) || 0), 0);
   }, [activeInvestments]);
 
-  const unspentDeposit = useMemo(() => {
-    const rawUnspent = Math.max(0, totalDeposited - totalInvested);
-    return Math.min(Math.max(0, user.balance), rawUnspent);
-  }, [totalDeposited, totalInvested, user.balance]);
-
+  // Withdrawable Balance: strictly returns, yields, bonuses, and commissions.
+  // Direct deposits must be invested into packages to generate withdrawable returns.
   const withdrawableBalance = useMemo(() => {
-    return Math.max(0, user.balance - unspentDeposit);
-  }, [user.balance, unspentDeposit]);
+    return Math.min(user.balance, Math.max(0, typeof user.withdrawableBalance === 'number' ? user.withdrawableBalance : 0));
+  }, [user.balance, user.withdrawableBalance]);
+
+  const unspentDeposit = useMemo(() => {
+    return Math.max(0, user.balance - withdrawableBalance);
+  }, [user.balance, withdrawableBalance]);
 
   return (
     <AppContext.Provider

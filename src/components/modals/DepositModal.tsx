@@ -355,13 +355,18 @@ export const DepositModal: React.FC = () => {
                 {/* Channel Notice */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex items-start gap-2.5">
                   <Info className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Estimated arrival time:{' '}
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                      {currentChannel.processingTime}
-                    </span>
-                    . 100% automated settlement with zero platform processing fees.
-                  </p>
+                  <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed space-y-1">
+                    <p>
+                      Estimated arrival time:{' '}
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {currentChannel.processingTime}
+                      </span>
+                      . 100% verified settlement with 0% processing fees.
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      💡 <span className="font-semibold text-slate-700 dark:text-slate-300">Wallet Note:</span> Deposited funds are credited to your Total Balance for activating investment packages. All package daily earnings, streak bonuses, and referral commissions are credited to your Withdrawable Balance.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Next Button */}

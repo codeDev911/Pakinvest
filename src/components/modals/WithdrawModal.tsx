@@ -123,9 +123,9 @@ export const WithdrawModal: React.FC = () => {
 
   const handlePercentageSelect = (percent: number) => {
     const calculated = Math.floor((withdrawableBalance * percent) / 100);
-    const validAmount = Math.min(maxWithdrawal, Math.max(minWithdrawal, calculated));
+    const validAmount = Math.min(maxWithdrawal, Math.max(0, calculated));
     setAmount(validAmount);
-    setCustomAmountInput(validAmount.toString());
+    setCustomAmountInput(validAmount ? validAmount.toString() : '');
   };
 
   const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,15 +149,11 @@ export const WithdrawModal: React.FC = () => {
       return;
     }
     if (amount > withdrawableBalance) {
-      if (unspentDeposit > 0) {
-        showToast(
-          'Deposited Funds Non-Withdrawable',
-          `You have Rs. ${unspentDeposit.toLocaleString()} in deposited funds which must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}.`,
-          'warning'
-        );
-      } else {
-        showToast('Insufficient Withdrawable Balance', `Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}`, 'error');
-      }
+      showToast(
+        'Insufficient Withdrawable Balance',
+        `Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}. Deposited capital must be invested into packages to earn profits.`,
+        'error'
+      );
       return;
     }
     setStep(2);
@@ -255,11 +251,11 @@ export const WithdrawModal: React.FC = () => {
             {step === 1 ? (
               <form onSubmit={handleProceedToPin} className="space-y-4">
                 {/* Balance Banner & Daily Quota */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md border border-slate-700/60 space-y-2.5">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md border border-slate-700/60 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] text-slate-400 block font-medium">Available Withdrawable Balance</span>
-                      <span className="text-xl font-black text-emerald-400 font-display">
+                      <span className="text-[11px] text-slate-400 block font-medium">Withdrawable Earnings / Profits</span>
+                      <span className="text-2xl font-black text-emerald-400 font-display">
                         {formatPKR(withdrawableBalance)}
                       </span>
                     </div>
@@ -270,6 +266,29 @@ export const WithdrawModal: React.FC = () => {
                       </span>
                     </div>
                   </div>
+
+                  {unspentDeposit > 0 && (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start justify-between gap-2 text-xs">
+                      <div>
+                        <span className="text-[11px] font-bold text-amber-300 block">
+                          Uninvested Deposit: {formatPKR(unspentDeposit)}
+                        </span>
+                        <span className="text-[10px] text-amber-200/80 block mt-0.5">
+                          Deposited funds are not directly withdrawable. Invest in packages to generate withdrawable daily profits!
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsWithdrawModalOpen(false);
+                          setCurrentTab('plans');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] shrink-0 transition-colors shadow-sm"
+                      >
+                        Invest Now
+                      </button>
+                    </div>
+                  )}
 
                   {/* Daily Quota Counter Bar */}
                   <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
@@ -426,7 +445,7 @@ export const WithdrawModal: React.FC = () => {
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Withdrawal Amount (Rs.)
                     </label>
-                    <span className="text-[11px] text-slate-400">
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                       Withdrawable: {formatPKR(withdrawableBalance)}
                     </span>
                   </div>
@@ -480,7 +499,7 @@ export const WithdrawModal: React.FC = () => {
                 {/* Continue button */}
                 <button
                   type="submit"
-                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > maxWithdrawal || amount > withdrawableBalance}
+                  disabled={!dailyStats.canWithdraw || dailyStats.remaining <= 0 || amount < minWithdrawal || amount > maxWithdrawal || amount > withdrawableBalance || amount > user.balance}
                   className="w-full py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition-colors shadow-lg shadow-amber-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
@@ -493,6 +512,8 @@ export const WithdrawModal: React.FC = () => {
                       ? `Maximum Rs. ${maxWithdrawal.toLocaleString()} Limit Exceeded`
                       : amount > withdrawableBalance
                       ? 'Insufficient Withdrawable Balance'
+                      : amount > user.balance
+                      ? 'Insufficient Balance'
                       : 'Verify with Security PIN'}
                   </span>
                 </button>

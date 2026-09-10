@@ -18,6 +18,7 @@ model User {
   referredBy                String?
   referralTier              Int                 @default(1)
   balance                   Float               @default(0)
+  withdrawableBalance       Float               @default(0)
   investedCapital           Float               @default(0)
   totalWithdrawn            Float               @default(0)
   totalEarnedProfit         Float               @default(0)

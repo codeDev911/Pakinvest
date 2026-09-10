@@ -944,12 +944,19 @@ router.post('/investments/activate', authenticate, async (req, res) => {
 
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
+    // Prioritize deducting from unspent/non-withdrawable deposits first
+    const currentWithdrawable = Math.max(0, liveUser.withdrawableBalance || 0);
+    const nonWithdrawableDeposit = Math.max(0, liveUser.balance - currentWithdrawable);
+    const withdrawableDeduction = Math.max(0, investAmount - nonWithdrawableDeposit);
+    const newWithdrawable = Math.max(0, currentWithdrawable - withdrawableDeduction);
+
     // Execute atomic package purchase in DB
     const [updatedUser, newInvestment, newTx] = await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
         data: {
           balance: { decrement: investAmount },
+          withdrawableBalance: newWithdrawable,
           investedCapital: { increment: investAmount },
         },
       }),
@@ -1013,6 +1020,8 @@ router.post('/investments/activate', authenticate, async (req, res) => {
         lastClaimTimestamp: Number(newInvestment.lastClaimTimestamp),
       },
       balance: updatedUser.balance,
+      withdrawableBalance: updatedUser.withdrawableBalance,
+      unspentDeposit: Math.max(0, updatedUser.balance - updatedUser.withdrawableBalance),
       transaction: newTx,
     });
   } catch (err: any) {
@@ -1144,6 +1153,7 @@ router.post('/investments/claim', authenticate, async (req, res) => {
         where: { id: user.id },
         data: {
           balance: { increment: exactDailyProfit + principalToRefund },
+          withdrawableBalance: { increment: exactDailyProfit + principalToRefund },
           totalEarnedProfit: { increment: exactDailyProfit },
           ...(isCompleted ? { investedCapital: { decrement: inv.investedAmount } } : {}),
         },
@@ -1221,6 +1231,7 @@ router.post('/investments/claim', authenticate, async (req, res) => {
       message: `Rs. ${exactDailyProfit.toLocaleString()} credited to your balance!`,
       claimedAmount: exactDailyProfit,
       balance: updatedUser.balance,
+      withdrawableBalance: updatedUser.withdrawableBalance,
       totalEarnedProfit: updatedUser.totalEarnedProfit,
       investment: {
         ...updatedInv,
@@ -1276,6 +1287,7 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
         where: { id: user.id },
         data: {
           balance: { increment: totalDailyProfits },
+          withdrawableBalance: { increment: totalDailyProfits },
           totalEarnedProfit: { increment: totalDailyProfits },
         },
       })
@@ -1657,48 +1669,25 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
   };
 }
 
-// Helper: Calculate withdrawable balance vs unspent deposited funds
-// Deposited money cannot be withdrawn directly and must be spent on investment packages.
-// This prevents referral exploitation where a user deposits to trigger sponsor commission and immediately withdraws.
-// Only package yields, streak bonuses, and referral commissions are withdrawable.
+// Helper: Calculate user available and withdrawable balance
+// Deposited capital is not directly withdrawable until invested in packages to earn yields.
+// Streak rewards, referral commissions, and package profits are directly withdrawable.
 async function calculateUserWithdrawableBalance(userId: string, currentBalance: number) {
   try {
-    const depositAgg = await prisma.transaction.aggregate({
-      where: {
-        userId,
-        type: 'deposit',
-        status: 'completed',
-      },
-      _sum: { amount: true },
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { withdrawableBalance: true, balance: true },
     });
-    const totalDeposited = Number(depositAgg._sum.amount || 0);
-
-    const investAgg = await prisma.activeInvestment.aggregate({
-      where: {
-        userId,
-      },
-      _sum: { investedAmount: true },
-    });
-    const totalInvested = Number(investAgg._sum.investedAmount || 0);
-
-    const rawUnspent = Math.max(0, totalDeposited - totalInvested);
-    // Crucial: Unspent deposit in the user's wallet can never exceed their actual current balance
-    const unspentDeposit = Math.min(Math.max(0, currentBalance), rawUnspent);
-    const withdrawableBalance = Math.max(0, currentBalance - unspentDeposit);
-
+    const withBal = user ? Math.min(user.balance, Math.max(0, user.withdrawableBalance ?? 0)) : 0;
+    const unspentDeposit = user ? Math.max(0, user.balance - withBal) : 0;
     return {
-      totalDeposited,
-      totalInvested,
       unspentDeposit,
-      withdrawableBalance,
+      withdrawableBalance: withBal,
     };
   } catch (e) {
-    console.error('[calculateUserWithdrawableBalance error]:', e);
     return {
-      totalDeposited: 0,
-      totalInvested: 0,
       unspentDeposit: 0,
-      withdrawableBalance: currentBalance,
+      withdrawableBalance: 0,
     };
   }
 }
@@ -1878,30 +1867,18 @@ router.post('/withdraw', authenticate, async (req, res) => {
       });
     }
 
-    // Anti-leak deposit protection:
-    // Deposited funds cannot be withdrawn directly and must be spent on investment packages.
-    // This stops exploiters from depositing, collecting referral commission via sponsor, and instantly withdrawing.
-    const balCalc = await calculateUserWithdrawableBalance(user.id, liveUser.balance);
-    const { unspentDeposit, withdrawableBalance } = balCalc;
+    const userWithdrawable = Math.max(0, liveUser.withdrawableBalance ?? 0);
+    if (userWithdrawable < withdrawAmount) {
+      return res.status(400).json({
+        error: `Insufficient withdrawable amount. Available to withdraw: Rs. ${userWithdrawable.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}. Note: Direct deposited funds must be invested in packages to earn withdrawable yields.`,
+        withdrawableBalance: userWithdrawable,
+        balance: liveUser.balance,
+      });
+    }
 
     if (liveUser.balance < withdrawAmount) {
       return res.status(400).json({
         error: `Insufficient balance. Available: Rs. ${liveUser.balance.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}`,
-      });
-    }
-
-    if (withdrawAmount > withdrawableBalance) {
-      if (unspentDeposit > 0) {
-        return res.status(400).json({
-          error: `Deposited funds (Rs. ${unspentDeposit.toLocaleString()}) cannot be withdrawn directly and must be spent on investment packages. Available withdrawable earnings: Rs. ${withdrawableBalance.toLocaleString()}. Requested: Rs. ${withdrawAmount.toLocaleString()}`,
-          unspentDeposit,
-          withdrawableBalance,
-        });
-      }
-      return res.status(400).json({
-        error: `Insufficient withdrawable earnings. Available: Rs. ${withdrawableBalance.toLocaleString()}, Requested: Rs. ${withdrawAmount.toLocaleString()}`,
-        unspentDeposit,
-        withdrawableBalance,
       });
     }
 
@@ -1918,6 +1895,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
         where: { id: user.id },
         data: {
           balance: { decrement: withdrawAmount },
+          withdrawableBalance: { decrement: withdrawAmount },
         },
       }),
       prisma.transaction.create({
@@ -1955,6 +1933,8 @@ router.post('/withdraw', authenticate, async (req, res) => {
       message: 'Withdrawal request submitted! Status is Pending approval.',
       transaction: tx,
       balance: updatedUser.balance,
+      withdrawableBalance: updatedUser.withdrawableBalance,
+      unspentDeposit: Math.max(0, updatedUser.balance - updatedUser.withdrawableBalance),
     });
   } catch (err: any) {
     console.error('[Withdraw Error]:', err);
@@ -2115,6 +2095,7 @@ router.post('/referrals/claim', authenticate, async (req, res) => {
         where: { id: user.id },
         data: {
           balance: { increment: claimAmount },
+          withdrawableBalance: { increment: claimAmount },
           unclaimedReferralEarnings: 0,
         },
       }),
@@ -2260,6 +2241,7 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
           dailyStreak: nextStreak,
           lastCheckInDate: todayStr,
           balance: { increment: reward },
+          withdrawableBalance: { increment: reward },
           totalEarnedProfit: { increment: reward },
         },
       }),
@@ -3495,7 +3477,10 @@ router.post('/admin/decline-withdrawal', async (req, res) => {
       operations.push(
         prisma.user.update({
           where: { id: tx.userId },
-          data: { balance: { increment: tx.amount } },
+          data: {
+            balance: { increment: tx.amount },
+            withdrawableBalance: { increment: tx.amount },
+          },
         })
       );
     }
@@ -3909,11 +3894,15 @@ router.post('/admin/users/adjust-balance', async (req, res) => {
 
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
 
+    const isCredit = type !== 'debit';
     const [updatedUser, tx] = await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
         data: {
-          balance: type === 'debit' ? { decrement: numAmount } : { increment: numAmount },
+          balance: isCredit ? { increment: numAmount } : { decrement: numAmount },
+          withdrawableBalance: isCredit
+            ? { increment: numAmount }
+            : Math.max(0, (user.withdrawableBalance || 0) - numAmount),
         },
       }),
       prisma.transaction.create({

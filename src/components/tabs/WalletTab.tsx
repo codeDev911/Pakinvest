@@ -28,6 +28,9 @@ export const WalletTab: React.FC = () => {
     setIsAddAccountModalOpen,
     deletePaymentAccount,
     hideBalance,
+    withdrawableBalance,
+    unspentDeposit,
+    setCurrentTab,
   } = useApp();
 
   const getGatewayIcon = (gw: string) => {
@@ -60,20 +63,59 @@ export const WalletTab: React.FC = () => {
       {/* Main Wallet Balances Bento Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         {/* Available Balance Box */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-900 via-emerald-800 to-slate-950 text-white border border-emerald-700/50 shadow-lg space-y-3 flex flex-col justify-between">
-          <div>
+        <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-900 via-emerald-800 to-slate-950 text-white border border-emerald-700/50 shadow-lg space-y-3.5 flex flex-col justify-between">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-emerald-200">Withdrawable Balance</span>
+              <span className="text-xs font-semibold text-emerald-200">Total Wallet Balance</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                100% Liquid
+                Wallet PKR
               </span>
             </div>
-            <h3 className="text-2xl sm:text-3xl font-black font-display text-white mt-1">
-              {hideBalance ? 'Rs. •••••••' : formatPKR(user.balance)}
-            </h3>
-            <p className="text-[11px] text-emerald-200 mt-0.5">
-              Available for instant withdrawal to JazzCash / EasyPaisa / Raast
-            </p>
+            <div>
+              <h3 className="text-2xl sm:text-3xl font-black font-display text-white">
+                {hideBalance ? 'Rs. •••••••' : formatPKR(user.balance)}
+              </h3>
+              <p className="text-[11px] text-emerald-200/80 mt-0.5">
+                Total available funds across deposits, yields, and bonuses
+              </p>
+            </div>
+
+            {/* Split pills for Withdrawable vs Unspent Deposit */}
+            <div className="p-3 rounded-2xl bg-black/25 border border-white/10 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-300 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  Withdrawable Amount:
+                </span>
+                <span className="font-extrabold text-white font-mono">
+                  {hideBalance ? '••••' : formatPKR(withdrawableBalance)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1.5 border-t border-white/10">
+                <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  Deposit (Requires Package):
+                </span>
+                <span className="font-extrabold text-amber-200 font-mono">
+                  {hideBalance ? '••••' : formatPKR(unspentDeposit)}
+                </span>
+              </div>
+            </div>
+
+            {unspentDeposit > 0 && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-amber-200 leading-tight">
+                  Invest deposit in plans to earn withdrawable daily profits!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTab('plans')}
+                  className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] shrink-0 transition-colors"
+                >
+                  Invest Now
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 pt-2">
@@ -114,6 +156,26 @@ export const WalletTab: React.FC = () => {
             <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
               <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                Withdrawable Earnings
+              </span>
+              <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                {formatPKR(withdrawableBalance)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Uninvested Deposit
+              </span>
+              <span className="font-extrabold text-amber-600 dark:text-amber-400">
+                {formatPKR(unspentDeposit)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-teal-500" />
                 Lifetime Daily Profits
               </span>
               <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
@@ -123,7 +185,7 @@ export const WalletTab: React.FC = () => {
 
             <div className="flex justify-between items-center">
               <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="w-2 h-2 rounded-full bg-purple-500" />
                 Total Withdrawn Payouts
               </span>
               <span className="font-extrabold text-slate-900 dark:text-white">

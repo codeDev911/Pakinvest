@@ -30,9 +30,9 @@ export interface UserProfile {
   referralCode: string;
   referredBy?: string;
   referralTier: number;
-  balance: number; // Available Balance in PKR (Rs.)
-  withdrawableBalance?: number; // Earnings available for withdrawal (excluding unspent deposit funds)
-  unspentDeposit?: number; // Deposited funds that must be invested in packages
+  balance: number; // Total Wallet Balance in PKR (Rs.)
+  withdrawableBalance: number; // Withdrawable Amount (Bonuses & Earnings available for cash out)
+  unspentDeposit?: number; // Direct deposited funds that must be invested in packages
   investedCapital: number; // Currently locked in active plans
   totalWithdrawn: number;
   totalEarnedProfit: number;
