@@ -20,6 +20,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { mobileNotifications } from '../../services/mobileNotifications';
+import { AppUpdateCard } from '../settings/AppUpdateCard';
+import { APP_VERSION } from '../../config/appVersion';
 
 export const SettingsTab: React.FC = () => {
   const {
@@ -561,6 +563,9 @@ export const SettingsTab: React.FC = () => {
         </div>
       </div>
 
+      {/* App Version & APK Release Updates (Only renders in native Android APK) */}
+      <AppUpdateCard />
+
       {/* Support & Platform Policies Navigation */}
       <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 space-y-3">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -631,7 +636,7 @@ export const SettingsTab: React.FC = () => {
 
       <div className="pt-2 text-center">
         <p className="text-[10px] text-slate-400">
-          Investify v3.2.0 • Secured & SSL Encrypted for Pakistan
+          Investify v{APP_VERSION} • Secured & SSL Encrypted for Pakistan
         </p>
       </div>
     </div>

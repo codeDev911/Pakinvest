@@ -201,6 +201,24 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
     }
   };
 
+  const handleRestoreDefaults = async () => {
+    if (!window.confirm('Restore standard Pakistani payment channels (JazzCash, EasyPaisa, Raast, Bank Transfer, USDT)? This will add any missing default channels without affecting custom ones.')) {
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/deposit-channels/restore-defaults'), { method: 'POST' });
+      const data = await res.json();
+      if (data?.success) {
+        await fetchChannels();
+      }
+    } catch (err) {
+      console.error('Failed to restore defaults:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const filteredChannels = channelsList.filter((c) => {
     if (statusFilter === 'active' && !c.isActive) return false;
     if (statusFilter === 'disabled' && c.isActive) return false;
@@ -415,6 +433,16 @@ export const CrmGatewaysView: React.FC<CrmGatewaysViewProps> = ({
                   <LayoutGrid className="w-4 h-4" />
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={handleRestoreDefaults}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-700"
+                title="Restore default pre-configured channels"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Restore Defaults</span>
+              </button>
 
               <button
                 type="button"

@@ -23,7 +23,7 @@ const QUICK_AMOUNTS = [1500, 3500, 5000, 10000, 25000, 50000];
 
 export const DepositModal: React.FC = () => {
   const { isDepositModalOpen, setIsDepositModalOpen, depositFunds, officialChannels } = useApp();
-  const [selectedGateway, setSelectedGateway] = useState<GatewayType>('JazzCash');
+  const [selectedChannelId, setSelectedChannelId] = useState<string>('');
   const [amount, setAmount] = useState<number>(5000);
   const [customAmountInput, setCustomAmountInput] = useState<string>('5000');
   const [senderTitle, setSenderTitle] = useState<string>('');
@@ -120,15 +120,13 @@ export const DepositModal: React.FC = () => {
     ? officialChannels.filter((c) => c.isActive !== false)
     : OFFICIAL_DEPOSIT_CHANNELS;
 
-  const availableGateways = Array.from(new Set(activeChannels.map((c) => c.gateway)));
-  const displayGateways = availableGateways.length > 0 ? availableGateways : (['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer', 'USDT_TRC20'] as GatewayType[]);
-
-  const effectiveGateway = displayGateways.includes(selectedGateway) ? selectedGateway : displayGateways[0];
-
+  // Find the selected channel or default to the first active channel
   const currentChannel =
-    activeChannels.find((c) => c.gateway === effectiveGateway) ||
+    activeChannels.find((c) => c.id === selectedChannelId) ||
     activeChannels[0] ||
     OFFICIAL_DEPOSIT_CHANNELS[0];
+
+  const effectiveGateway = currentChannel.gateway;
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -150,7 +148,7 @@ export const DepositModal: React.FC = () => {
   const handleSubmitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (amount < currentChannel.minDeposit) {
-      alert(`Minimum deposit for ${selectedGateway} is Rs. ${currentChannel.minDeposit.toLocaleString()}`);
+      alert(`Minimum deposit for ${currentChannel.bankName || currentChannel.gateway} is Rs. ${currentChannel.minDeposit.toLocaleString()}`);
       return;
     }
 
@@ -194,14 +192,18 @@ export const DepositModal: React.FC = () => {
       trxId.trim() ||
       `DEP-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // 3. Submit deposit request
+    // 3. Submit deposit request with exact receiving channel details
     const success = await depositFunds(
       amount,
-      selectedGateway,
+      currentChannel.gateway,
       effectiveTrxId,
       senderNumber || undefined,
       senderTitle || undefined,
-      finalProofUrl
+      finalProofUrl,
+      currentChannel.id,
+      currentChannel.accountTitle,
+      currentChannel.accountNumber,
+      currentChannel.bankName || undefined
     );
 
     setIsSubmitting(false);
@@ -270,34 +272,39 @@ export const DepositModal: React.FC = () => {
           <div className="p-5 overflow-y-auto space-y-5 flex-1">
             {step === 1 ? (
               <>
-                {/* Gateway Selection */}
+                {/* Channel / Gateway Selection */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                    Select Payment Gateway
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    {displayGateways.map((gw) => {
-                      const isSelected = effectiveGateway === gw;
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Select Payment Channel
+                    </label>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                      {activeChannels.length} Active Account{activeChannels.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
+                    {activeChannels.map((ch, idx) => {
+                      const isSelected = currentChannel.id ? currentChannel.id === ch.id : idx === 0;
                       return (
                         <button
-                          key={gw}
+                          key={ch.id || `${ch.gateway}-${idx}`}
                           type="button"
-                          onClick={() => setSelectedGateway(gw)}
-                          className={`flex items-center gap-2 p-3 rounded-2xl border text-left transition-all relative ${
+                          onClick={() => setSelectedChannelId(ch.id || '')}
+                          className={`flex items-center gap-2 p-2.5 sm:p-3 rounded-2xl border text-left transition-all relative ${
                             isSelected
-                              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20 text-slate-900 dark:text-white'
-                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20 text-slate-900 dark:text-white shadow-sm'
+                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
                           }`}
                         >
                           <div className="shrink-0">
-                            {getGatewayIcon(gw)}
+                            {getGatewayIcon(ch.gateway)}
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold truncate">
-                              {gw === 'Bank_Transfer' ? 'Meezan / Bank' : gw === 'USDT_TRC20' ? 'USDT (TRC20)' : gw}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold truncate text-slate-900 dark:text-white">
+                              {ch.bankName || (ch.gateway === 'Bank_Transfer' ? 'Meezan / Bank' : ch.gateway === 'USDT_TRC20' ? 'USDT' : ch.gateway)}
                             </p>
-                            <span className="text-[10px] text-slate-400 block truncate">
-                              {gw === 'Raast' ? 'Instant 0% fee' : 'Fast automated'}
+                            <span className="text-[10px] text-slate-400 block truncate font-mono">
+                              {ch.accountNumber || (ch.gateway === 'Raast' ? 'Instant 0% fee' : 'Fast automated')}
                             </span>
                           </div>
                           {isSelected && (
@@ -386,9 +393,9 @@ export const DepositModal: React.FC = () => {
                 <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <GatewayLogo gateway={selectedGateway} size="xs" />
+                      <GatewayLogo gateway={currentChannel.gateway} size="xs" />
                       <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
-                        Official {selectedGateway === 'Bank_Transfer' ? 'Meezan / Bank' : selectedGateway} Receiving Account
+                        Official {currentChannel.bankName ? currentChannel.bankName : (currentChannel.gateway === 'Bank_Transfer' ? 'Meezan / Bank' : currentChannel.gateway)} Receiving Account
                       </span>
                     </div>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold">
@@ -417,7 +424,7 @@ export const DepositModal: React.FC = () => {
                   <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl">
                     <div>
                       <p className="text-[10px] text-slate-400">
-                        {selectedGateway === 'USDT_TRC20' ? 'TRC20 Wallet Address' : 'Account / Mobile / Raast Number'}
+                        {currentChannel.gateway === 'USDT_TRC20' ? 'TRC20 Wallet Address' : 'Account / Mobile / Raast Number'}
                       </p>
                       <p className="text-xs font-mono font-bold text-slate-800 dark:text-white break-all">
                         {currentChannel.accountNumber}

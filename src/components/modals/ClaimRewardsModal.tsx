@@ -37,7 +37,8 @@ export const ClaimRewardsModal: React.FC = () => {
       ];
 
   // Find next tier reward to claim
-  const nextStreakDay = currentStreak >= 7 ? 1 : currentStreak + 1;
+  const maxConfiguredDay = streakDays.length > 0 ? Math.max(...streakDays.map((t: any) => t.day)) : 7;
+  const nextStreakDay = currentStreak >= maxConfiguredDay ? 1 : currentStreak + 1;
   const currentTier = streakDays.find((t) => t.day === (isAlreadyClaimedToday ? currentStreak : nextStreakDay))
     || streakDays[0];
   const nextRewardAmount = currentTier ? currentTier.reward : 250;

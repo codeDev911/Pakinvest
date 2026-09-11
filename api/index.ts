@@ -286,20 +286,20 @@ async function ensureInitialDatabaseData() {
       }
     }
 
-    const channelsCount = await prisma.depositChannel.count();
-    if (channelsCount === 0) {
-      for (const c of INITIAL_CHANNELS) {
-        await prisma.depositChannel.create({ data: c });
-      }
-    } else {
-      // Ensure all supported gateways exist in DB
-      const existing = await prisma.depositChannel.findMany();
-      const existingGateways = new Set(existing.map((c: any) => c.gateway));
-      for (const c of INITIAL_CHANNELS) {
-        if (!existingGateways.has(c.gateway)) {
+    // Only seed default deposit channels on the first-ever run if not already seeded
+    const channelsSeeded = await prisma.systemSetting.findUnique({
+      where: { key: 'CHANNELS_INITIAL_SEEDED' },
+    });
+    if (!channelsSeeded) {
+      const channelsCount = await prisma.depositChannel.count();
+      if (channelsCount === 0) {
+        for (const c of INITIAL_CHANNELS) {
           await prisma.depositChannel.create({ data: c });
         }
       }
+      await prisma.systemSetting.create({
+        data: { key: 'CHANNELS_INITIAL_SEEDED', value: 'true' },
+      });
     }
 
     const tiersCount = await prisma.dailyRewardTier.count();
@@ -376,15 +376,156 @@ app.use((req, res, next) => {
   next();
 });
 
-// Direct APK Download Endpoint
-app.get(['/investify.apk', '/api/download-apk'], (req, res) => {
-  const apkPath = path.join(process.cwd(), 'public', 'investify.apk');
+// ----------------------------------------------------
+// DYNAMIC APK SCANNING & VERSION DETECTION
+// ----------------------------------------------------
+export interface AvailableApkInfo {
+  fileName: string;
+  version: string;
+  sizeBytes: number;
+  sizeFormatted: string;
+  modifiedAt: Date;
+  downloadUrl: string;
+}
+
+export function parseVersionFromApkName(fileName: string): string {
+  // Matches e.g. Investify-v1.2.apk, Investify-1.2.apk, Investify-1.2.3.apk, Investify-v1.3.apk, investify.apk
+  const semverMatch = fileName.match(/(?:^|[^0-9])v?([0-9]+(?:\.[0-9]+)+)/i);
+  if (semverMatch && semverMatch[1]) {
+    return semverMatch[1];
+  }
+  const singleMatch = fileName.match(/(?:^|[^0-9])v?([0-9]+)\.apk$/i);
+  if (singleMatch && singleMatch[1]) {
+    return `${singleMatch[1]}.0`;
+  }
+  return '1.0';
+}
+
+export function compareVersions(v1: string, v2: string): number {
+  const parts1 = (v1 || '').split('.').map(p => parseInt(p, 10) || 0);
+  const parts2 = (v2 || '').split('.').map(p => parseInt(p, 10) || 0);
+  const maxLen = Math.max(parts1.length, parts2.length);
+  for (let i = 0; i < maxLen; i++) {
+    const num1 = parts1[i] || 0;
+    const num2 = parts2[i] || 0;
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  return 0;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
+}
+
+export function scanPublicApks(): AvailableApkInfo[] {
+  const publicDir = path.join(process.cwd(), 'public');
+  if (!fs.existsSync(publicDir)) return [];
+
+  try {
+    const files = fs.readdirSync(publicDir);
+    const apks: AvailableApkInfo[] = [];
+
+    for (const fileName of files) {
+      if (fileName.toLowerCase().endsWith('.apk')) {
+        const fullPath = path.join(publicDir, fileName);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.isFile()) {
+            const version = parseVersionFromApkName(fileName);
+            apks.push({
+              fileName,
+              version,
+              sizeBytes: stat.size,
+              sizeFormatted: formatBytes(stat.size),
+              modifiedAt: stat.mtime,
+              downloadUrl: `/${fileName}`,
+            });
+          }
+        } catch {
+          // skip on access error
+        }
+      }
+    }
+
+    // Sort highest version first (e.g. 1.3 > 1.2), tie-break with mtime
+    apks.sort((a, b) => {
+      const cmp = compareVersions(b.version, a.version);
+      if (cmp !== 0) return cmp;
+      return b.modifiedAt.getTime() - a.modifiedAt.getTime();
+    });
+
+    return apks;
+  } catch (err) {
+    console.error('Error scanning public APKs:', err);
+    return [];
+  }
+}
+
+// Static file hosting for /public
+app.use(express.static(path.join(process.cwd(), 'public')));
+
+// Public API endpoint to inspect APK version and available updates
+app.get(['/api/app/version', '/api/app/latest-apk', '/api/app/update-check'], (req, res) => {
+  const apks = scanPublicApks();
+  const latest = apks.length > 0 ? apks[0] : null;
+
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const baseUrl = `${protocol}://${host}`;
+
+  const latestVersion = latest ? latest.version : '1.0';
+  const downloadUrl = latest ? latest.downloadUrl : '/investify.apk';
+  const fullDownloadUrl = latest ? `${baseUrl}${latest.downloadUrl}` : `${baseUrl}/investify.apk`;
+
+  return res.json({
+    success: true,
+    latestVersion,
+    latestApkName: latest ? latest.fileName : 'investify.apk',
+    downloadUrl,
+    fullDownloadUrl,
+    sizeBytes: latest ? latest.sizeBytes : 0,
+    sizeFormatted: latest ? latest.sizeFormatted : '0 MB',
+    releasedAt: latest ? latest.modifiedAt.toISOString() : new Date().toISOString(),
+    hasApk: !!latest,
+    allApks: apks.map(a => ({
+      fileName: a.fileName,
+      version: a.version,
+      downloadUrl: a.downloadUrl,
+      fullDownloadUrl: `${baseUrl}${a.downloadUrl}`,
+      sizeFormatted: a.sizeFormatted,
+      modifiedAt: a.modifiedAt.toISOString(),
+    })),
+  });
+});
+
+// Direct APK Download Endpoints (supports any /Investify-*.apk, /download/latest-apk, /api/download-apk)
+app.get(['/api/download-apk', '/download/latest-apk', '/:apkFile([A-Za-z0-9_.-]+\\.apk)'], (req, res) => {
+  let targetFile = req.params.apkFile;
+  const apks = scanPublicApks();
+
+  if (!targetFile || targetFile === 'latest-apk' || req.path === '/api/download-apk' || req.path === '/download/latest-apk') {
+    targetFile = apks.length > 0 ? apks[0].fileName : 'investify.apk';
+  }
+
+  const apkPath = path.join(process.cwd(), 'public', targetFile);
   if (fs.existsSync(apkPath)) {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-    res.setHeader('Content-Disposition', 'attachment; filename="Investify.apk"');
+    res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`);
     return res.sendFile(apkPath);
   }
-  return res.status(404).json({ error: 'APK package is being prepared. Please try again shortly.' });
+
+  // Fallback to investify.apk if specific file was not found
+  const fallbackPath = path.join(process.cwd(), 'public', 'investify.apk');
+  if (fs.existsSync(fallbackPath)) {
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="Investify.apk"');
+    return res.sendFile(fallbackPath);
+  }
+
+  return res.status(404).json({ error: `APK file "${targetFile}" not found in /public directory.` });
 });
 
 // Middleware to ensure DB seed is ready
@@ -1466,7 +1607,18 @@ router.get('/transactions', authenticate, async (req, res) => {
 router.post('/deposit', authenticate, async (req, res) => {
   try {
     const user = (req as any).user;
-    const { amount, gateway, referenceCode, senderPhone, senderTitle, proofImage } = req.body;
+    const {
+      amount,
+      gateway,
+      referenceCode,
+      senderPhone,
+      senderTitle,
+      proofImage,
+      channelId,
+      accountTitle,
+      accountNumber,
+      bankName,
+    } = req.body;
 
     const depositAmount = Number(amount);
     if (isNaN(depositAmount) || depositAmount < 300) {
@@ -1475,6 +1627,24 @@ router.post('/deposit', authenticate, async (req, res) => {
 
     if (!proofImage || typeof proofImage !== 'string' || !proofImage.trim()) {
       return res.status(400).json({ error: 'Payment receipt screenshot proof is required.' });
+    }
+
+    // Resolve receiving channel details if channelId is provided or passed directly
+    let receivingTitle = accountTitle || null;
+    let receivingNumber = accountNumber || null;
+    let receivingBank = bankName || null;
+    let effectiveGateway = gateway || 'JazzCash';
+
+    if (channelId) {
+      const channelRecord = await prisma.depositChannel.findUnique({
+        where: { id: channelId },
+      });
+      if (channelRecord) {
+        effectiveGateway = channelRecord.gateway;
+        receivingTitle = receivingTitle || channelRecord.accountTitle;
+        receivingNumber = receivingNumber || channelRecord.accountNumber;
+        receivingBank = receivingBank || channelRecord.bankName;
+      }
     }
 
     // Reference code is optional. If provided, check for duplicate submission; otherwise auto-generate.
@@ -1511,20 +1681,23 @@ router.post('/deposit', authenticate, async (req, res) => {
         fee: 0,
         netAmount: depositAmount,
         status: 'pending',
-        gateway: gateway || 'JazzCash',
+        gateway: effectiveGateway,
+        accountTitle: receivingTitle,
+        accountNumber: receivingNumber,
+        bankName: receivingBank,
         senderPhone: senderPhone || user.phone,
         senderTitle: senderTitle || user.name,
         referenceCode: cleanRef,
         proofImage: proofImage ? String(proofImage) : null,
         timestamp: getFormattedNow(),
-        notes: `Deposit submitted via ${gateway || 'JazzCash'}. Awaiting manual verification.`,
+        notes: `Deposit submitted via ${effectiveGateway}${receivingBank ? ` (${receivingBank})` : ''} to receiving account [${receivingNumber || 'Official'}] - ${receivingTitle || 'Official Treasury'}. Awaiting manual verification.`,
       },
     });
 
     await createUserNotification(
       user.id,
       'Deposit Proof Submitted ⏳',
-      `Rs. ${depositAmount.toLocaleString()} deposit via ${gateway || 'JazzCash'} (TID: ${cleanRef}) is under manual verification.`,
+      `Rs. ${depositAmount.toLocaleString()} deposit via ${effectiveGateway} (TID: ${cleanRef}) is under manual verification.`,
       'system',
       depositAmount
     );
@@ -2192,6 +2365,13 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
     let nextStreak = 1;
     let streakBroken = false;
 
+    // Fetch all active reward tiers to determine dynamic max streak cycle
+    const allActiveTiers = await prisma.dailyRewardTier.findMany({
+      where: { isActive: true },
+      orderBy: { day: 'asc' },
+    });
+    const maxDay = allActiveTiers.length > 0 ? Math.max(...allActiveTiers.map((t: any) => t.day)) : 7;
+
     if (liveUser.lastCheckInDate) {
       const lastDateParts = liveUser.lastCheckInDate.split('-').map(Number);
       const lastDate = new Date(Date.UTC(lastDateParts[0], lastDateParts[1] - 1, lastDateParts[2]));
@@ -2202,8 +2382,8 @@ router.post('/streak/checkin', authenticate, async (req, res) => {
       const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
       if (diffDays === 1) {
-        // Consecutive day: advance streak 1 -> 7 (wraps after completing 7-day cycle)
-        nextStreak = (liveUser.dailyStreak % 7) + 1;
+        // Consecutive day: advance streak (wraps to Day 1 after completing configured streak cycle)
+        nextStreak = liveUser.dailyStreak >= maxDay ? 1 : liveUser.dailyStreak + 1;
       } else if (diffDays > 1) {
         // Missed at least 1 day: RESET to Day 1!
         nextStreak = 1;
@@ -3764,6 +3944,7 @@ router.post('/admin/deposit-channels', async (req, res) => {
     }
 
     const updateData: any = {
+      gateway: rawChannel.gateway,
       accountTitle: rawChannel.accountTitle,
       accountNumber: rawChannel.accountNumber,
       bankName: rawChannel.bankName || null,
@@ -3781,23 +3962,58 @@ router.post('/admin/deposit-channels', async (req, res) => {
       updateData.manualAdjustment = Number(rawChannel.manualAdjustment);
     }
 
-    const createData: any = {
-      gateway: rawChannel.gateway,
-      ...updateData,
-      currentBalance: Number(rawChannel.currentBalance) || 0,
-      manualAdjustment: Number(rawChannel.manualAdjustment) || 0,
-    };
-
-    const savedChannel = await prisma.depositChannel.upsert({
-      where: { gateway: rawChannel.gateway },
-      create: createData,
-      update: updateData,
-    });
+    let savedChannel;
+    if (rawChannel.id) {
+      const existing = await prisma.depositChannel.findUnique({
+        where: { id: rawChannel.id },
+      });
+      if (existing) {
+        savedChannel = await prisma.depositChannel.update({
+          where: { id: rawChannel.id },
+          data: updateData,
+        });
+      } else {
+        savedChannel = await prisma.depositChannel.create({
+          data: {
+            id: rawChannel.id,
+            ...updateData,
+            currentBalance: Number(rawChannel.currentBalance) || 0,
+            manualAdjustment: Number(rawChannel.manualAdjustment) || 0,
+          },
+        });
+      }
+    } else {
+      savedChannel = await prisma.depositChannel.create({
+        data: {
+          ...updateData,
+          currentBalance: Number(rawChannel.currentBalance) || 0,
+          manualAdjustment: Number(rawChannel.manualAdjustment) || 0,
+        },
+      });
+    }
 
     const allChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
     res.json({ success: true, message: 'Channel saved successfully', channel: savedChannel, channels: allChannels });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to save channel' });
+  }
+});
+
+// Restore default channels if admin explicitly requests it
+router.post('/admin/deposit-channels/restore-defaults', async (req, res) => {
+  try {
+    for (const c of INITIAL_CHANNELS) {
+      const exists = await prisma.depositChannel.findFirst({
+        where: { gateway: c.gateway, accountNumber: c.accountNumber },
+      });
+      if (!exists) {
+        await prisma.depositChannel.create({ data: c });
+      }
+    }
+    const allChannels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
+    res.json({ success: true, message: 'Default deposit channels restored', channels: allChannels });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to restore defaults' });
   }
 });
 
@@ -3870,10 +4086,16 @@ router.delete('/admin/deposit-channels/:id', async (req, res) => {
     const { id } = req.params;
     await prisma.depositChannel.deleteMany({
       where: {
-        OR: [{ id }, { gateway: id }],
+        id: id,
       },
     });
-    const channels = await prisma.depositChannel.findMany();
+    // Ensure seeding flag is marked so deleted channels stay deleted forever
+    await prisma.systemSetting.upsert({
+      where: { key: 'CHANNELS_INITIAL_SEEDED' },
+      update: { value: 'true' },
+      create: { key: 'CHANNELS_INITIAL_SEEDED', value: 'true' },
+    });
+    const channels = await prisma.depositChannel.findMany({ orderBy: { createdAt: 'asc' } });
     res.json({ success: true, message: 'Channel removed successfully', channels });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to delete channel' });
@@ -3962,6 +4184,109 @@ router.post('/admin/users/reset-pin', async (req, res) => {
   }
 });
 
+router.post('/admin/users/adjust-streak', async (req, res) => {
+  try {
+    const { userId, action, streakDays, creditBonus, bonusAmount, reason } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let newStreak = user.dailyStreak || 0;
+    if (action === 'set') {
+      newStreak = Math.max(0, Number(streakDays) || 0);
+    } else if (action === 'add') {
+      newStreak = (user.dailyStreak || 0) + Math.max(1, Number(streakDays) || 1);
+    } else if (action === 'subtract') {
+      newStreak = Math.max(0, (user.dailyStreak || 0) - Math.max(1, Number(streakDays) || 1));
+    } else if (action === 'reset') {
+      newStreak = 0;
+    }
+
+    let awardedBonus = 0;
+
+    if (creditBonus) {
+      if (bonusAmount !== undefined && Number(bonusAmount) > 0) {
+        awardedBonus = Number(bonusAmount);
+      } else {
+        // Look up reward tier for this streak day
+        const tier = await prisma.dailyRewardTier.findUnique({ where: { day: newStreak } });
+        awardedBonus = tier && tier.reward ? tier.reward : 250;
+      }
+
+      if (awardedBonus > 0) {
+        const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
+        const [updatedUser, createdTx] = await prisma.$transaction([
+          prisma.user.update({
+            where: { id: user.id },
+            data: {
+              dailyStreak: newStreak,
+              balance: { increment: awardedBonus },
+              withdrawableBalance: { increment: awardedBonus },
+              totalEarnedProfit: { increment: awardedBonus },
+            },
+          }),
+          prisma.transaction.create({
+            data: {
+              id: txId,
+              userId: user.id,
+              userName: user.name,
+              userPhone: user.phone,
+              type: 'streak_reward',
+              amount: awardedBonus,
+              fee: 0,
+              netAmount: awardedBonus,
+              status: 'completed',
+              gateway: 'Loyalty_Bonus',
+              referenceCode: `STREAK-D${newStreak}`,
+              timestamp: getFormattedNow(),
+              notes: `Admin Streak Adjustment (Day ${newStreak}): ${reason || 'Manual Streak Bonus Award'}`,
+            },
+          }),
+        ]);
+
+        await createUserNotification(
+          user.id,
+          `Streak Updated: Day ${newStreak} Bonus Credited! 🎁`,
+          `Your daily loyalty streak was adjusted to Day ${newStreak} and a cash bonus of Rs. ${awardedBonus.toLocaleString()} has been credited to your withdrawable balance.`,
+          'promo',
+          awardedBonus
+        );
+
+        const { password: _, ...safeUser } = updatedUser;
+        return res.json({
+          success: true,
+          message: `Streak updated to Day ${newStreak} and credited bonus of Rs. ${awardedBonus.toLocaleString()}`,
+          user: safeUser,
+          transaction: createdTx,
+          awardedBonus,
+        });
+      }
+    }
+
+    // Just update streak without bonus
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { dailyStreak: newStreak },
+    });
+
+    await createUserNotification(
+      user.id,
+      `Daily Streak Updated ⚡`,
+      `Your check-in streak has been updated to Day ${newStreak} by administration.${reason ? ` Reason: ${reason}` : ''}`,
+      'system'
+    );
+
+    const { password: _, ...safeUser } = updatedUser;
+    res.json({
+      success: true,
+      message: `Streak updated to Day ${newStreak}`,
+      user: safeUser,
+      awardedBonus: 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to adjust streak' });
+  }
+});
+
 router.post('/admin/active-investments/cancel', async (req, res) => {
   try {
     const { investmentId, reason, refundPrincipal } = req.body;
@@ -4043,10 +4368,12 @@ router.post('/admin/rewards/tiers', async (req, res) => {
     await ensureInitialDatabaseData();
     const { tiers } = req.body;
     if (Array.isArray(tiers)) {
+      const validDays: number[] = [];
       for (const t of tiers) {
         const day = Number(t.day);
         const reward = Number(t.reward);
-        if (day >= 1 && day <= 7 && !isNaN(reward) && reward >= 0) {
+        if (day >= 1 && !isNaN(reward) && reward >= 0) {
+          validDays.push(day);
           await prisma.dailyRewardTier.upsert({
             where: { day },
             create: {
@@ -4067,27 +4394,38 @@ router.post('/admin/rewards/tiers', async (req, res) => {
           });
         }
       }
+
+      // If array is supplied, delete any tiers that the admin removed
+      if (validDays.length > 0) {
+        await prisma.dailyRewardTier.deleteMany({
+          where: {
+            day: { notIn: validDays },
+          },
+        });
+      }
     } else if (req.body.day && req.body.reward !== undefined) {
       const day = Number(req.body.day);
       const reward = Number(req.body.reward);
-      await prisma.dailyRewardTier.upsert({
-        where: { day },
-        create: {
-          day,
-          reward,
-          title: req.body.title || `Day ${day} Reward`,
-          badge: req.body.badge || `Day ${day}`,
-          description: req.body.description || `Daily check-in reward for day ${day}`,
-          isActive: req.body.isActive !== false,
-        },
-        update: {
-          reward,
-          title: req.body.title,
-          badge: req.body.badge,
-          description: req.body.description,
-          isActive: req.body.isActive,
-        },
-      });
+      if (day >= 1 && !isNaN(reward) && reward >= 0) {
+        await prisma.dailyRewardTier.upsert({
+          where: { day },
+          create: {
+            day,
+            reward,
+            title: req.body.title || `Day ${day} Reward`,
+            badge: req.body.badge || `Day ${day}`,
+            description: req.body.description || `Daily check-in reward for day ${day}`,
+            isActive: req.body.isActive !== false,
+          },
+          update: {
+            reward,
+            title: req.body.title,
+            badge: req.body.badge,
+            description: req.body.description,
+            isActive: req.body.isActive,
+          },
+        });
+      }
     }
 
     const updated = await prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } });
@@ -4095,6 +4433,71 @@ router.post('/admin/rewards/tiers', async (req, res) => {
   } catch (err: any) {
     console.error('[Update Tiers Error]:', err);
     res.status(500).json({ error: err?.message || 'Failed to update reward tiers' });
+  }
+});
+
+// Add a single new streak day with bonus
+router.post('/admin/rewards/tiers/add', async (req, res) => {
+  try {
+    await ensureInitialDatabaseData();
+    let { day, reward, title, badge, description } = req.body;
+
+    if (!day) {
+      const existing = await prisma.dailyRewardTier.findMany({ select: { day: true } });
+      const maxDay = existing.length > 0 ? Math.max(...existing.map((t: any) => t.day)) : 0;
+      day = maxDay + 1;
+    } else {
+      day = Number(day);
+    }
+
+    const numReward = Number(reward);
+    if (isNaN(day) || day < 1 || isNaN(numReward) || numReward < 0) {
+      return res.status(400).json({ error: 'Valid day (>= 1) and positive reward amount are required' });
+    }
+
+    const newTier = await prisma.dailyRewardTier.upsert({
+      where: { day },
+      create: {
+        day,
+        reward: numReward,
+        title: title || `Day ${day} Milestone Bonus`,
+        badge: badge || `Day ${day}`,
+        description: description || `Daily check-in loyalty payout for day ${day}`,
+        isActive: true,
+      },
+      update: {
+        reward: numReward,
+        title: title || undefined,
+        badge: badge || undefined,
+        description: description || undefined,
+        isActive: true,
+      },
+    });
+
+    const updated = await prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } });
+    res.json({ success: true, message: `Day ${day} streak added successfully`, tier: newTier, tiers: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to add reward tier' });
+  }
+});
+
+// Delete a streak day
+router.delete('/admin/rewards/tiers/:day', async (req, res) => {
+  try {
+    await ensureInitialDatabaseData();
+    const day = Number(req.params.day);
+    if (isNaN(day) || day < 1) {
+      return res.status(400).json({ error: 'Invalid day number' });
+    }
+
+    await prisma.dailyRewardTier.deleteMany({
+      where: { day },
+    });
+
+    const updated = await prisma.dailyRewardTier.findMany({ orderBy: { day: 'asc' } });
+    res.json({ success: true, message: `Streak day ${day} removed successfully`, tiers: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete reward tier' });
   }
 });
 

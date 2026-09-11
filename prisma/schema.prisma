@@ -164,7 +164,7 @@ model InvestmentPlan {
 
 model DepositChannel {
   id               String   @id @default(uuid())
-  gateway          String   @unique
+  gateway          String
   accountTitle     String
   accountNumber    String
   bankName         String?
@@ -178,6 +178,8 @@ model DepositChannel {
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([gateway])
 }
 
 model DailyRewardTier {

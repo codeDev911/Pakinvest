@@ -89,7 +89,18 @@ interface AppContextType {
   connectPostgresUrl: (url: string) => Promise<{ success: boolean; error?: string; message?: string }>;
 
   // Financial & Operational Actions
-  depositFunds: (amount: number, gateway: GatewayType, refNumber: string, senderPhone?: string, senderTitle?: string, proofImage?: string) => Promise<boolean>;
+  depositFunds: (
+    amount: number,
+    gateway: GatewayType,
+    refNumber: string,
+    senderPhone?: string,
+    senderTitle?: string,
+    proofImage?: string,
+    channelId?: string,
+    accountTitle?: string,
+    accountNumber?: string,
+    bankName?: string
+  ) => Promise<boolean>;
   withdrawFunds: (amount: number, gateway: GatewayType, accountTitle: string, accountNumber: string, bankName?: string, pin?: string) => Promise<boolean>;
   investInPlan: (plan: InvestmentPlan, customAmount?: number) => Promise<boolean>;
   claimProfit: (investmentId: string) => Promise<void>;
@@ -317,7 +328,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         const { ok: chanOk, data: chanData } = await safeParseJson(channelsRes);
-        if (chanOk && chanData?.success && chanData?.channels) {
+        if (chanOk && chanData?.success && Array.isArray(chanData?.channels)) {
           setOfficialChannels(chanData.channels);
         }
 
@@ -724,7 +735,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     refNumber: string,
     senderPhone?: string,
     senderTitle?: string,
-    proofImage?: string
+    proofImage?: string,
+    channelId?: string,
+    accountTitle?: string,
+    accountNumber?: string,
+    bankName?: string
   ): Promise<boolean> => {
     if (!isAuthenticated) {
       setIsAuthModalOpen(true);
@@ -743,6 +758,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           senderPhone,
           senderTitle,
           proofImage,
+          channelId,
+          accountTitle,
+          accountNumber,
+          bankName,
         }),
       });
 

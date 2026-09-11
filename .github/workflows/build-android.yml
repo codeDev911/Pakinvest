@@ -7,6 +7,11 @@ on:
         description: 'Backend API URL (e.g. https://your-backend.run.app or https://api.yourdomain.com)'
         required: true
         type: string
+      app_version:
+        description: 'App Version (e.g. 1.2, 1.2.3, 1.3 - matched against public Investify-vX.X.apk)'
+        required: false
+        default: '1.2'
+        type: string
 
 jobs:
   build-apk:
@@ -60,13 +65,22 @@ jobs:
           # Strip duplicate /api if entered
           API_URL=$(echo "$API_URL" | sed 's:/api$::')
 
+          APP_VER="${{ inputs.app_version }}"
+          if [ -z "$APP_VER" ]; then
+            APP_VER="1.2"
+          fi
+          APP_VER=$(echo "$APP_VER" | sed 's/^[vV]//' | xargs)
+
           echo "=================================================="
           echo "Baking Backend API URL into APK: $API_URL"
+          echo "Baking App Version into APK:     $APP_VER"
           echo "=================================================="
           echo "VITE_API_BASE_URL=$API_URL" > .env.production
           echo "VITE_API_URL=$API_URL" >> .env.production
+          echo "VITE_APP_VERSION=$APP_VER" >> .env.production
           echo "VITE_API_BASE_URL=$API_URL" >> .env
           echo "VITE_API_URL=$API_URL" >> .env
+          echo "VITE_APP_VERSION=$APP_VER" >> .env
 
       - name: Build Web Client Assets
         run: npm run build
@@ -80,16 +94,19 @@ jobs:
       - name: Build Android Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug -PversionName="${{ inputs.app_version || '1.2' }}" --no-daemon --stacktrace
 
       - name: Verify APK Generation
         run: |
           ls -la android/app/build/outputs/apk/debug/
-          cp android/app/build/outputs/apk/debug/app-debug.apk ./investify-release.apk
+          APP_VER="${{ inputs.app_version || '1.2' }}"
+          APP_VER=$(echo "$APP_VER" | sed 's/^[vV]//' | xargs)
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./Investify-v${APP_VER}.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./investify.apk
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Investify-Android-APK
+          name: Investify-v${{ inputs.app_version || '1.2' }}-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30

@@ -1,9 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download } from 'lucide-react';
-import { isNativePlatform, ANDROID_APK_DOWNLOAD_URL } from '../config/api';
+import { isNativePlatform } from '../config/api';
+import { checkForAppUpdate, triggerApkDownload } from '../services/appUpdateService';
 
 export const DownloadAppBanner: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
+  const [latestApkName, setLatestApkName] = useState<string>('Investify.apk');
+  const [downloadUrl, setDownloadUrl] = useState<string>('/api/download-apk');
+  const [latestVersion, setLatestVersion] = useState<string>('');
+
+  useEffect(() => {
+    checkForAppUpdate().then((res) => {
+      if (res && res.latestApkName) {
+        setLatestApkName(res.latestApkName);
+        setDownloadUrl(res.downloadUrl);
+        if (res.latestVersion) {
+          setLatestVersion(`v${res.latestVersion}`);
+        }
+      }
+    });
+  }, []);
 
   // Strictly hide the download banner when running inside the Android APK
   if (isNativePlatform) {
@@ -12,17 +28,7 @@ export const DownloadAppBanner: React.FC = () => {
 
   const handleDownload = () => {
     setDownloading(true);
-
-    // If external URL (e.g. GitHub Releases, Firebase Storage, Drive, CDN), open directly
-    if (ANDROID_APK_DOWNLOAD_URL.startsWith('http')) {
-      window.open(ANDROID_APK_DOWNLOAD_URL, '_blank');
-      setTimeout(() => setDownloading(false), 1500);
-      return;
-    }
-
-    // Direct browser navigation to the APK endpoint forces standard browser binary download
-    window.location.href = ANDROID_APK_DOWNLOAD_URL;
-
+    triggerApkDownload(downloadUrl);
     setTimeout(() => {
       setDownloading(false);
     }, 2500);
@@ -42,9 +48,19 @@ export const DownloadAppBanner: React.FC = () => {
             className="w-6 h-6 object-contain"
           />
         </div>
-        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-          Investify App
-        </h4>
+        <div className="min-w-0">
+          <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+            <span>Investify App</span>
+            {latestVersion && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 font-bold">
+                {latestVersion}
+              </span>
+            )}
+          </h4>
+          <span className="text-[10px] text-slate-400 block truncate font-mono">
+            {latestApkName}
+          </span>
+        </div>
       </div>
 
       {/* Download Button */}

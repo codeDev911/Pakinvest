@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Bell,
   Send,
+  Flame,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -46,7 +47,7 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'ledger' | 'adjust-balance' | 'reset-pin' | 'send-notification'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'ledger' | 'adjust-balance' | 'streak' | 'reset-pin' | 'send-notification'>('overview');
   
   // Notification state
   const [notifTitle, setNotifTitle] = useState('');
@@ -60,6 +61,16 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const [adjustAmount, setAdjustAmount] = useState<string>('');
   const [adjustNote, setAdjustNote] = useState<string>('');
   const [isAdjusting, setIsAdjusting] = useState(false);
+
+  // Streak adjustment state
+  const [userStreak, setUserStreak] = useState<number>(user?.dailyStreak || 0);
+  const [streakAction, setStreakAction] = useState<'add' | 'subtract' | 'set' | 'reset'>('add');
+  const [streakDaysInput, setStreakDaysInput] = useState<string>('1');
+  const [creditStreakBonus, setCreditStreakBonus] = useState<boolean>(true);
+  const [customBonusAmount, setCustomBonusAmount] = useState<string>('');
+  const [streakReason, setStreakReason] = useState<string>('Loyalty Milestone Incentive');
+  const [isAdjustingStreak, setIsAdjustingStreak] = useState(false);
+  const [streakFeedback, setStreakFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // PIN reset state
   const [newPin, setNewPin] = useState<string>('');
@@ -121,6 +132,57 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
     if (success) {
       setNewPin('');
       setActiveTab('overview');
+    }
+  };
+
+  const handleStreakSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+
+    setIsAdjustingStreak(true);
+    setStreakFeedback(null);
+
+    try {
+      const res = await fetch(getApiUrl('/api/admin/users/adjust-streak'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          action: streakAction,
+          streakDays: Number(streakDaysInput) || 1,
+          creditBonus: creditStreakBonus,
+          bonusAmount: customBonusAmount ? Number(customBonusAmount) : undefined,
+          reason: streakReason,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        const newStreakVal = data.user?.dailyStreak ?? userStreak;
+        setUserStreak(newStreakVal);
+        if (user) {
+          user.dailyStreak = newStreakVal;
+          if (data.user?.balance !== undefined) {
+            user.balance = data.user.balance;
+          }
+        }
+        setStreakFeedback({
+          type: 'success',
+          message: data.message || `Streak successfully updated to Day ${newStreakVal}!`,
+        });
+      } else {
+        setStreakFeedback({
+          type: 'error',
+          message: data.error || 'Failed to adjust streak days',
+        });
+      }
+    } catch (err: any) {
+      setStreakFeedback({
+        type: 'error',
+        message: err?.message || 'Network error updating streak',
+      });
+    } finally {
+      setIsAdjustingStreak(false);
     }
   };
 
@@ -222,6 +284,21 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
           >
             <Wallet className="w-3.5 h-3.5" />
             <span>Adjust Balance</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('streak');
+              setStreakFeedback(null);
+            }}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === 'streak'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-orange-400" />
+            <span>Adjust Streak Days</span>
           </button>
           <button
             type="button"
@@ -554,6 +631,211 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
                 {isAdjusting
                   ? 'Applying Adjustment...'
                   : `Confirm ${adjustType === 'credit' ? 'Credit (+)' : 'Debit (-)'} Rs. ${Number(adjustAmount || 0).toLocaleString()}`}
+              </button>
+            </form>
+          )}
+
+          {activeTab === 'streak' && (
+            <form onSubmit={handleStreakSubmit} className="space-y-4">
+              {/* Summary Banner */}
+              <div
+                className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${
+                  isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div>
+                  <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Active Check-in Streak
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-2xl font-black text-orange-400 flex items-center gap-1">
+                      <Flame className="w-5 h-5 text-orange-500 fill-orange-500" />
+                      Day {userStreak}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      {userStreak > 0 ? `${userStreak} Consecutive Days` : 'Inactive Streak'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className={`text-[10px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Last Check-In
+                  </span>
+                  <p className="text-xs font-semibold text-slate-300 mt-0.5">
+                    {user?.lastCheckInDate || 'Never Checked In'}
+                  </p>
+                </div>
+              </div>
+
+              {streakFeedback && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                    streakFeedback.type === 'success'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                  }`}
+                >
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{streakFeedback.message}</span>
+                </div>
+              )}
+
+              {/* Action Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Streak Action</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'add', label: '+ Add Streak Days', icon: PlusCircle, color: 'border-orange-500 bg-orange-950/40 text-orange-300' },
+                    { id: 'subtract', label: '- Subtract Days', icon: MinusCircle, color: 'border-amber-500 bg-amber-950/40 text-amber-300' },
+                    { id: 'set', label: '= Set Specific Day', icon: Sparkles, color: 'border-blue-500 bg-blue-950/40 text-blue-300' },
+                    { id: 'reset', label: '↺ Reset to Day 0', icon: RefreshCw, color: 'border-rose-500 bg-rose-950/40 text-rose-300' },
+                  ].map((act) => {
+                    const Icon = act.icon;
+                    const isSelected = streakAction === act.id;
+                    return (
+                      <button
+                        key={act.id}
+                        type="button"
+                        onClick={() => {
+                          setStreakAction(act.id as any);
+                          setStreakFeedback(null);
+                        }}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                          isSelected
+                            ? act.color
+                            : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        <span>{act.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Days Input (hidden for reset) */}
+              {streakAction !== 'reset' && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-300">
+                      {streakAction === 'add'
+                        ? 'Number of Days to Add'
+                        : streakAction === 'subtract'
+                        ? 'Number of Days to Remove'
+                        : 'Set Target Streak Day'}
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Resulting Streak: <strong className="text-orange-400">Day {
+                        streakAction === 'add'
+                          ? userStreak + (Number(streakDaysInput) || 1)
+                          : streakAction === 'subtract'
+                          ? Math.max(0, userStreak - (Number(streakDaysInput) || 1))
+                          : Math.max(0, Number(streakDaysInput) || 0)
+                      }</strong>
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={streakDaysInput}
+                    onChange={(e) => setStreakDaysInput(e.target.value)}
+                    placeholder="Enter days count (e.g. 1, 3, 7)"
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    required
+                  />
+
+                  {/* Quick Presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] text-slate-400">Quick Picks:</span>
+                    {['1', '2', '3', '5', '7'].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setStreakDaysInput(d)}
+                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold"
+                      >
+                        {streakAction === 'add' ? `+${d} Day${Number(d) > 1 ? 's' : ''}` : `Day ${d}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bonus Awarding Options */}
+              <div
+                className={`p-4 rounded-2xl border space-y-3 ${
+                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-200">Award Cash Bonus with Streak</h4>
+                      <p className="text-[10px] text-slate-400">Credit loyalty bonus to wallet balance and log ledger entry</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={creditStreakBonus}
+                      onChange={(e) => setCreditStreakBonus(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                {creditStreakBonus && (
+                  <div className="space-y-2 pt-2 border-t border-slate-800/80 animate-in fade-in duration-150">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300">
+                        Custom Bonus Amount (PKR) <span className="text-[10px] font-normal text-slate-400">(Optional — defaults to configured streak tier amount)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50"
+                        value={customBonusAmount}
+                        onChange={(e) => setCustomBonusAmount(e.target.value)}
+                        placeholder="e.g. 250, 500, 1000 (Defaults to configured tier bonus)"
+                        className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Adjustment Reason */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Admin Audit Reason / Note</label>
+                <input
+                  type="text"
+                  value={streakReason}
+                  onChange={(e) => setStreakReason(e.target.value)}
+                  placeholder="e.g. Milestone incentive, compensation, VIP upgrade"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isAdjustingStreak}
+                className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all shadow-md shadow-orange-950/40 flex items-center justify-center gap-2"
+              >
+                <Flame className="w-4 h-4 fill-white" />
+                {isAdjustingStreak
+                  ? 'Updating Streak & Bonus...'
+                  : streakAction === 'add'
+                  ? `Confirm Add ${streakDaysInput || 1} Streak Day${Number(streakDaysInput) > 1 ? 's' : ''}${creditStreakBonus ? ' with Bonus' : ''}`
+                  : streakAction === 'subtract'
+                  ? `Confirm Remove ${streakDaysInput || 1} Streak Day${Number(streakDaysInput) > 1 ? 's' : ''}`
+                  : streakAction === 'set'
+                  ? `Confirm Set Streak to Day ${streakDaysInput || 1}${creditStreakBonus ? ' with Bonus' : ''}`
+                  : 'Confirm Reset Streak to Day 0'}
               </button>
             </form>
           )}
