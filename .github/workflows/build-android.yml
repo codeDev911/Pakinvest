@@ -83,10 +83,16 @@ jobs:
           echo "VITE_APP_VERSION=$APP_VER" >> .env
 
       - name: Build Web Client Assets
-        run: npm run build
+        run: |
+          npm run build
+          # Exclude server bundle and any existing APK binaries from web assets so they are NOT packaged inside the Android APK
+          rm -f dist/*.apk dist/server.cjs*
 
       - name: Sync Capacitor Android Project
-        run: npx cap sync android
+        run: |
+          npx cap sync android
+          # Ensure no APK binaries or server bundles are inside android assets
+          rm -f android/app/src/main/assets/public/*.apk android/app/src/main/assets/public/server.cjs*
 
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x android/gradlew
