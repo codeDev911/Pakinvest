@@ -11,9 +11,11 @@ import {
   Lock,
   CheckCircle2,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getApiUrl } from '../../config/api';
+import { safeFetchJson } from '../utils/safeFetch';
 
 interface CrmSecurityModalProps {
   isOpen: boolean;
@@ -41,16 +43,33 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
   const [rotating, setRotating] = useState(false);
   const [error, setError] = useState('');
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('pakinvest_admin_token');
+      const gateKey = sessionStorage.getItem('pakinvest_crm_gate_key');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (gateKey) headers['x-crm-key'] = gateKey;
+    }
+    return headers;
+  };
+
   const fetchSecurityInfo = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(getApiUrl('/api/admin/security/info'));
-      const data = await res.json();
-      if (data?.success && data?.config) {
-        setConfig(data.config);
+      const res = await safeFetchJson(getApiUrl('/api/admin/security/info'), {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
+
+      if (res.ok && res.data?.success && res.data?.config) {
+        setConfig(res.data.config);
       } else {
-        setError(data?.error || 'Failed to load security settings.');
+        setError(res.error || res.data?.error || 'Failed to load team security settings.');
       }
     } catch (err: any) {
       setError(err?.message || 'Error connecting to security service.');
@@ -84,21 +103,28 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(getApiUrl('/api/admin/security/verify-totp-test'), {
+      const res = await safeFetchJson(getApiUrl('/api/admin/security/verify-totp-test'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ code: testCode.trim() }),
       });
-      const data = await res.json();
-      if (data?.valid) {
-        setTestResult({
-          success: true,
-          message: 'Success! Your Google Authenticator code is verified and in sync.',
-        });
+
+      if (res.ok && res.data?.success) {
+        if (res.data.valid) {
+          setTestResult({
+            success: true,
+            message: 'Success! Your Google Authenticator code is verified and in sync.',
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: 'Code mismatch. Please verify that your device clock is accurate and try again.',
+          });
+        }
       } else {
         setTestResult({
           success: false,
-          message: 'Code mismatch. Please verify that your device clock is accurate and try again.',
+          message: res.error || res.data?.error || 'Verification test failed.',
         });
       }
     } catch (err: any) {
@@ -123,22 +149,22 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
 
     setRotating(true);
     try {
-      const res = await fetch(getApiUrl('/api/admin/security/rotate'), {
+      const res = await safeFetchJson(getApiUrl('/api/admin/security/rotate'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           rotateKey: type === 'key' || type === 'both',
           rotateTotp: type === 'totp' || type === 'both',
         }),
       });
-      const data = await res.json();
-      if (data?.success && data?.config) {
-        setConfig(data.config);
+
+      if (res.ok && res.data?.success && res.data?.config) {
+        setConfig(res.data.config);
         setTestResult(null);
         setTestCode('');
         alert('Credentials successfully updated and saved.');
       } else {
-        alert(data?.error || 'Failed to rotate credentials.');
+        alert(res.error || res.data?.error || 'Failed to rotate credentials.');
       }
     } catch (err: any) {
       alert(err?.message || 'Error updating credentials.');
@@ -186,16 +212,29 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{error}</span>
+          <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold text-rose-200">Security Access Issue</div>
+                <div className="text-[11px] leading-relaxed text-rose-300/90">{error}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSecurityInfo}
+              className="px-2.5 py-1 rounded-lg bg-rose-900/80 hover:bg-rose-800 text-white text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
           </div>
         )}
 
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
             <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
-            <span className="text-xs">Loading encrypted security parameters...</span>
+            <span className="text-xs font-medium">Decrypting and loading 2FA security parameters...</span>
           </div>
         ) : config ? (
           <div className="space-y-6">
@@ -372,6 +411,24 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
                 </button>
               </div>
             </div>
+          </div>
+        ) : !loading && error ? (
+          <div className="py-8 px-4 rounded-xl bg-slate-950/60 border border-slate-800 text-center space-y-3">
+            <div className="w-12 h-12 rounded-xl bg-slate-800/80 flex items-center justify-center mx-auto text-slate-400">
+              <Lock className="w-6 h-6 text-amber-400" />
+            </div>
+            <div className="text-sm font-semibold text-white">Security Parameters Currently Inaccessible</div>
+            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+              The CRM security gateway could not retrieve 2FA parameters. Please verify your administrative session or click Retry to reconnect.
+            </p>
+            <button
+              type="button"
+              onClick={fetchSecurityInfo}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-2 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Retry Connection</span>
+            </button>
           </div>
         ) : null}
 

@@ -2741,8 +2741,8 @@ router.post('/admin/auth/verify-gate-key', async (req, res) => {
     }
 
     const config = await getOrInitCrmSecurityConfig(prisma);
-    const valid = candidate === config.secretAccessKey;
-    res.json({ success: true, valid });
+    const valid = candidate === config.secretAccessKey || candidate === process.env.CRM_SECRET_KEY;
+    res.json({ success: true, valid, verified: valid });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Verification error' });
   }

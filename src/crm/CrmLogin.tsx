@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Lock, UserCheck, KeyRound, Smartphone, AlertCircle, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getApiUrl } from '../config/api';
+import { safeFetchJson } from './utils/safeFetch';
 
 interface CrmLoginProps {
   onLoginSuccess: (adminName: string, adminToken?: string) => void;
@@ -44,10 +45,11 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
     setIsLoading(true);
 
     try {
-      const res = await fetch(getApiUrl('/api/admin/auth/login'), {
+      const res = await safeFetchJson(getApiUrl('/api/admin/auth/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: JSON.stringify({
           operatorName: operatorName.trim(),
@@ -55,17 +57,15 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         }),
       });
 
-      const data = await res.json();
-
-      if (data?.success && data?.token) {
-        localStorage.setItem('pakinvest_admin_token', data.token);
-        localStorage.setItem('pakinvest_crm_operator', data.operatorName || operatorName);
+      if (res.ok && res.data?.success && res.data?.token) {
+        localStorage.setItem('pakinvest_admin_token', res.data.token);
+        localStorage.setItem('pakinvest_crm_operator', res.data.operatorName || operatorName);
         if (passkey) {
           sessionStorage.setItem('pakinvest_crm_gate_key', passkey.trim());
         }
-        onLoginSuccess(data.operatorName || operatorName, data.token);
+        onLoginSuccess(res.data.operatorName || operatorName, res.data.token);
       } else {
-        setError(data?.error || 'Authentication failed. Please verify your team credentials or Google Authenticator.');
+        setError(res.error || res.data?.error || 'Authentication failed. Please verify your team credentials or Google Authenticator.');
       }
     } catch (err: any) {
       setError(err?.message || 'Server connection error during authorization. Please retry.');

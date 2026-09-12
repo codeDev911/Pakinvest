@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, ArrowLeft, KeyRound, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getApiUrl } from '../config/api';
+import { safeFetchJson } from './utils/safeFetch';
 
 interface CrmStealthGateProps {
   onUnlock: (gateKey: string) => void;
@@ -33,18 +34,20 @@ export const CrmStealthGate: React.FC<CrmStealthGateProps> = ({ onUnlock, onBack
         }
       }
 
-      const res = await fetch(getApiUrl('/api/admin/auth/verify-gate-key'), {
+      const res = await safeFetchJson(getApiUrl('/api/admin/auth/verify-gate-key'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: JSON.stringify({ key }),
       });
 
-      const data = await res.json();
-      if (data?.success && data?.valid) {
+      if (res.ok && res.data?.success && (res.data?.verified || res.data?.valid)) {
         sessionStorage.setItem('pakinvest_crm_gate_key', key);
         onUnlock(key);
       } else {
-        setError('Invalid security passkey or access link. Direct access rejected.');
+        setError(res.error || res.data?.error || 'Invalid security passkey or access link. Direct access rejected.');
       }
     } catch (err: any) {
       setError(err?.message || 'Verification connection failed. Please try again.');
