@@ -23,6 +23,7 @@ import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
 import { CrmFaqView } from './views/CrmFaqView';
 import { CrmSecurityModal } from './components/CrmSecurityModal';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
@@ -585,10 +586,12 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
         </main>
       </div>
 
-      <CrmSecurityModal
-        isOpen={isSecurityModalOpen}
-        onClose={() => setIsSecurityModalOpen(false)}
-      />
+      <ErrorBoundary fallbackTitle="Security Modal Error" onReset={() => setIsSecurityModalOpen(false)}>
+        <CrmSecurityModal
+          isOpen={isSecurityModalOpen}
+          onClose={() => setIsSecurityModalOpen(false)}
+        />
+      </ErrorBoundary>
 
       <ToastContainer />
     </div>
@@ -597,9 +600,11 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
 
 export const CrmApp: React.FC<CrmAppProps> = (props) => {
   return (
-    <CrmThemeProvider>
-      <CrmAppContent {...props} />
-    </CrmThemeProvider>
+    <ErrorBoundary fallbackTitle="CRM Operations Console Error">
+      <CrmThemeProvider>
+        <CrmAppContent {...props} />
+      </CrmThemeProvider>
+    </ErrorBoundary>
   );
 };
 

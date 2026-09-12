@@ -9,6 +9,7 @@ import { ClientApp } from './client/ClientApp';
 import { CrmApp } from './crm/CrmApp';
 import { CrmLogin } from './crm/CrmLogin';
 import { CrmStealthGate } from './crm/CrmStealthGate';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './crm/adminAuthSync';
 
 function checkIsCrmRoute(): boolean {
@@ -113,29 +114,31 @@ export default function App() {
   };
 
   return (
-    <AppProvider>
-      {/* Route Protection: /crm-control isolation & stealth security */}
-      {isCrm ? (
-        hasAdminAuth ? (
-          <CrmApp
-            onSwitchToClient={handleNavigateToClient}
-            onLogout={handleAdminLogout}
-          />
-        ) : gateAccess.hasAccess ? (
-          <CrmLogin
-            onLoginSuccess={handleAdminLoginSuccess}
-            onBackToClient={handleNavigateToClient}
-            initialGateKey={gateAccess.gateKey}
-          />
+    <ErrorBoundary fallbackTitle="Investify Application Error">
+      <AppProvider>
+        {/* Route Protection: /crm-control isolation & stealth security */}
+        {isCrm ? (
+          hasAdminAuth ? (
+            <CrmApp
+              onSwitchToClient={handleNavigateToClient}
+              onLogout={handleAdminLogout}
+            />
+          ) : gateAccess.hasAccess ? (
+            <CrmLogin
+              onLoginSuccess={handleAdminLoginSuccess}
+              onBackToClient={handleNavigateToClient}
+              initialGateKey={gateAccess.gateKey}
+            />
+          ) : (
+            <CrmStealthGate
+              onUnlock={handleGateUnlocked}
+              onBackToClient={handleNavigateToClient}
+            />
+          )
         ) : (
-          <CrmStealthGate
-            onUnlock={handleGateUnlocked}
-            onBackToClient={handleNavigateToClient}
-          />
-        )
-      ) : (
-        <ClientApp />
-      )}
-    </AppProvider>
+          <ClientApp />
+        )}
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

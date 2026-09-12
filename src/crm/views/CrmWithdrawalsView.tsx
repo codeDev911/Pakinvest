@@ -274,7 +274,7 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
 
   // Gateways
   const standardGateways = ['JazzCash', 'EasyPaisa', 'Raast', 'SadaPay', 'NayaPay', 'Bank_Transfer', 'USDT_TRC20', 'Direct'];
-  const dynamicGateways = Array.from(new Set(withdrawalsList.map((w) => w.gateway).filter((g): g is string => Boolean(g))));
+  const dynamicGateways = Array.from(new Set(withdrawalsList.map((w) => w.gateway).filter((g): g is NonNullable<typeof g> => Boolean(g))));
   const allGateways = Array.from(new Set([...standardGateways, ...dynamicGateways]));
 
   const filterGroups: FilterGroup[] = [

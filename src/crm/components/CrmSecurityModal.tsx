@@ -7,13 +7,11 @@ import {
   Check,
   RefreshCw,
   X,
-  ExternalLink,
   Lock,
   CheckCircle2,
   AlertCircle,
   RotateCcw,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import { getApiUrl } from '../../config/api';
 import { safeFetchJson } from '../utils/safeFetch';
 
@@ -30,7 +28,18 @@ interface SecurityConfig {
   totpAccount: string;
   otpauthUrl: string;
   qrCodeDataUrl: string;
-  lastRotatedAt: string;
+  lastRotatedAt?: string | null;
+}
+
+function formatDateSafe(isoDate?: string | null): string {
+  if (!isoDate) return 'System Default';
+  try {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return 'System Default';
+    return d.toLocaleString();
+  } catch {
+    return 'System Default';
+  }
 }
 
 export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onClose }) => {
@@ -41,6 +50,8 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [rotationStatus, setRotationStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [confirmRotateType, setConfirmRotateType] = useState<'key' | 'totp' | null>(null);
   const [error, setError] = useState('');
 
   const getAuthHeaders = (): Record<string, string> => {
@@ -83,22 +94,45 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
       fetchSecurityInfo();
       setTestResult(null);
       setTestCode('');
+      setRotationStatus(null);
+      setConfirmRotateType(null);
     }
   }, [isOpen]);
 
   const copyToClipboard = async (text: string, field: string) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 2500);
     } catch {
-      // Fallback
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopiedField(field);
+        setTimeout(() => setCopiedField(null), 2500);
+      } catch {
+        // clipboard failure ignored gracefully
+      }
     }
   };
 
   const handleTestTotp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testCode.trim() || testCode.length !== 6) return;
+    const code = testCode.trim();
+    if (!code || code.length !== 6) return;
 
     setTesting(true);
     setTestResult(null);
@@ -106,7 +140,7 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
       const res = await safeFetchJson(getApiUrl('/api/admin/security/verify-totp-test'), {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ code: testCode.trim() }),
+        body: JSON.stringify({ code }),
       });
 
       if (res.ok && res.data?.success) {
@@ -137,24 +171,18 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
     }
   };
 
-  const handleRotateCredentials = async (type: 'key' | 'totp' | 'both') => {
-    const msg =
-      type === 'both'
-        ? 'Regenerate BOTH the master passkey and the Google Authenticator 2FA secret? Existing links and 2FA will require updating.'
-        : type === 'key'
-        ? 'Regenerate the master secret passkey? The secret access link will change.'
-        : 'Regenerate the Google Authenticator 2FA secret? All team members must re-scan the new QR code.';
-
-    if (!window.confirm(msg)) return;
-
+  const executeRotateCredentials = async (type: 'key' | 'totp') => {
+    setConfirmRotateType(null);
     setRotating(true);
+    setRotationStatus(null);
+
     try {
       const res = await safeFetchJson(getApiUrl('/api/admin/security/rotate'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          rotateKey: type === 'key' || type === 'both',
-          rotateTotp: type === 'totp' || type === 'both',
+          rotateKey: type === 'key',
+          rotateTotp: type === 'totp',
         }),
       });
 
@@ -162,12 +190,21 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
         setConfig(res.data.config);
         setTestResult(null);
         setTestCode('');
-        alert('Credentials successfully updated and saved.');
+        setRotationStatus({
+          success: true,
+          message: `Successfully rotated ${type === 'key' ? 'Master Access URL Key' : '2FA Authenticator Secret'}.`,
+        });
       } else {
-        alert(res.error || res.data?.error || 'Failed to rotate credentials.');
+        setRotationStatus({
+          success: false,
+          message: res.error || res.data?.error || 'Failed to rotate credentials.',
+        });
       }
     } catch (err: any) {
-      alert(err?.message || 'Error updating credentials.');
+      setRotationStatus({
+        success: false,
+        message: err?.message || 'Error updating credentials.',
+      });
     } finally {
       setRotating(false);
     }
@@ -175,18 +212,21 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
 
   if (!isOpen) return null;
 
-  const fullDirectUrl = config
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}${config.directAccessPath}`
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const fullDirectUrl = config?.directAccessPath
+    ? `${origin}${config.directAccessPath}`
+    : config?.secretAccessKey
+    ? `${origin}/crm-control?key=${config.secretAccessKey}`
     : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 text-slate-100 my-8 space-y-6"
-      >
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 text-slate-100 my-8 space-y-6 transition-all duration-200">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
@@ -211,6 +251,25 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
+        {/* Rotation Feedback Alert */}
+        {rotationStatus && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2.5 ${
+              rotationStatus.success
+                ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
+                : 'bg-rose-950/60 border border-rose-800 text-rose-300'
+            }`}
+          >
+            {rotationStatus.success ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            )}
+            <span className="font-medium">{rotationStatus.message}</span>
+          </div>
+        )}
+
+        {/* General Error Banner */}
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-start justify-between gap-3">
             <div className="flex items-start gap-2.5">
@@ -231,6 +290,7 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
           </div>
         )}
 
+        {/* Loading Spinner */}
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
             <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
@@ -248,7 +308,7 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
                 <span className="text-[11px] text-emerald-400 font-semibold">Bypasses 404 Gate</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Visiting <code className="text-slate-300 font-mono">/crm-control</code> directly without this key displays an HTTP 404 page. Bookmark this long URL to access the CRM console:
+                Visiting <code className="text-slate-300 font-mono">/crm-control</code> directly without this key displays an HTTP 404 page. Bookmark this URL to access the CRM console:
               </p>
 
               <div className="flex items-center gap-2">
@@ -272,16 +332,18 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
               <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] text-slate-400 font-medium">Standalone Master Passkey: </span>
-                  <code className="text-xs font-mono text-slate-300 ml-1">{config.secretAccessKey}</code>
+                  <code className="text-xs font-mono text-slate-300 ml-1">{config.secretAccessKey || 'Unavailable'}</code>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(config.secretAccessKey, 'key')}
-                  className="text-xs text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
-                >
-                  {copiedField === 'key' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedField === 'key' ? 'Copied' : 'Copy'}</span>
-                </button>
+                {config.secretAccessKey && (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(config.secretAccessKey, 'key')}
+                    className="text-xs text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                  >
+                    {copiedField === 'key' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedField === 'key' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -292,7 +354,7 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
                   <Smartphone className="w-4 h-4 text-emerald-400" />
                   <span>Google Authenticator (2FA / RFC 6238 TOTP)</span>
                 </div>
-                <span className="text-[11px] text-slate-400">Scan on Phone</span>
+                <span className="text-[11px] text-slate-400">Scan on Mobile</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
@@ -305,8 +367,8 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
                       className="w-44 h-44 object-contain"
                     />
                   ) : (
-                    <div className="w-44 h-44 flex items-center justify-center text-slate-400 text-xs">
-                      QR unavailable
+                    <div className="w-44 h-44 flex items-center justify-center text-slate-500 text-xs">
+                      QR Code Unavailable
                     </div>
                   )}
                   <span className="text-[10px] text-slate-600 font-semibold mt-1">Scan with Authenticator</span>
@@ -317,23 +379,25 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
                   <ol className="list-decimal list-inside space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
                     <li>Open <strong>Google Authenticator</strong> or <strong>Authy</strong> on your mobile phone.</li>
                     <li>Tap <strong>+ (Add account)</strong> and select <strong>Scan a QR code</strong>.</li>
-                    <li>Scan the QR code on the left, or enter the manual key below:</li>
+                    <li>Scan the QR code on the left, or enter the manual setup key below:</li>
                   </ol>
 
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
                     <div>
                       <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Manual Setup Key</div>
                       <div className="font-mono text-xs text-amber-400 font-bold select-all tracking-wider">
-                        {config.totpSecret}
+                        {config.totpSecret || 'Unavailable'}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(config.totpSecret, 'totp')}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1"
-                    >
-                      {copiedField === 'totp' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
+                    {config.totpSecret && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(config.totpSecret, 'totp')}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1"
+                      >
+                        {copiedField === 'totp' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
                   </div>
 
                   {/* Test 6-Digit Code */}
@@ -381,35 +445,62 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
             </div>
 
             {/* Section 3: Rotation & Maintenance */}
-            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-bold text-slate-300">Credentials Maintenance</div>
-                <div className="text-[11px] text-slate-500">
-                  Last updated:{' '}
-                  {config.lastRotatedAt
-                    ? new Date(config.lastRotatedAt).toLocaleString()
-                    : 'System Default'}
+            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold text-slate-300">Credentials Maintenance</div>
+                  <div className="text-[11px] text-slate-500">
+                    Last updated: {formatDateSafe(config.lastRotatedAt)}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={rotating}
+                    onClick={() => setConfirmRotateType('key')}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    Rotate URL Key
+                  </button>
+                  <button
+                    type="button"
+                    disabled={rotating}
+                    onClick={() => setConfirmRotateType('totp')}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    Rotate 2FA Secret
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={rotating}
-                  onClick={() => handleRotateCredentials('key')}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
-                >
-                  Rotate URL Key
-                </button>
-                <button
-                  type="button"
-                  disabled={rotating}
-                  onClick={() => handleRotateCredentials('totp')}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
-                >
-                  Rotate 2FA Secret
-                </button>
-              </div>
+              {/* Inline In-Modal Safe Confirmation UI (replaces window.confirm) */}
+              {confirmRotateType && (
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-200 text-xs space-y-2">
+                  <p className="font-medium leading-relaxed">
+                    {confirmRotateType === 'key'
+                      ? 'Regenerate the secret URL passkey? The direct link will change immediately.'
+                      : 'Regenerate the 2FA Authenticator secret? All team members will need to re-scan the QR code.'}
+                  </p>
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRotateType(null)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={rotating}
+                      onClick={() => executeRotateCredentials(confirmRotateType)}
+                      className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                    >
+                      {rotating ? 'Regenerating...' : 'Yes, Regenerate Now'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : !loading && error ? (
@@ -442,7 +533,7 @@ export const CrmSecurityModal: React.FC<CrmSecurityModalProps> = ({ isOpen, onCl
             Done
           </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };
