@@ -253,7 +253,6 @@ export const CrmWithdrawalsView: React.FC<CrmWithdrawalsViewProps> = ({
   // Simplified fee calculation: only returns exact Rs. amount
   const calculateTestFee = (amt: number) => {
     if (!feeConfig.enabled) return { fee: 0, net: amt, feeDisplay: 'Rs. 0' };
-    if (amt < 500) return { fee: 0, net: amt, feeDisplay: 'Rs. 0' };
     for (const t of feeConfig.tiers) {
       let match = false;
       if (t.condition === 'lt' && amt < t.threshold) match = true;

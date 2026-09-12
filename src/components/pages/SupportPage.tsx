@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Headphones,
-  MessageSquare,
-  Send,
   Mail,
   Clock,
   Search,
@@ -12,7 +10,6 @@ import {
   ShieldCheck,
   FileText,
   Sparkles,
-  ExternalLink,
   PhoneCall,
   RefreshCw,
 } from 'lucide-react';
@@ -85,7 +82,7 @@ const FALLBACK_FAQS: FaqItem[] = [
     id: 'faq-8',
     category: 'Support & Help',
     question: 'How do I contact customer support if I have an issue?',
-    answer: 'Our VIP Helpdesk operates 24/7. You can contact our dedicated support agents directly through WhatsApp, join our official Telegram community, or email our support desk at support@investify.pk.',
+    answer: 'Our VIP Helpdesk operates 24/7. You can contact our dedicated support agents or email our support desk at support@investify.pk.',
     order: 8,
     isActive: true,
   },
@@ -188,64 +185,9 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
               How can our team help you today?
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-              Connect directly with our VIP account executives on WhatsApp, join our official announcement community on Telegram, or browse our platform FAQs below.
+              Browse our platform FAQs below or reach out to our VIP support desk for assistance with your account.
             </p>
           </div>
-        </div>
-
-        {/* Direct Channels Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* WhatsApp Support */}
-          <a
-            href="https://wa.me/923000000000?text=Hello%20Investify%20Support,%20I%20need%20assistance%20with%20my%20account"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all group flex flex-col justify-between space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <MessageSquare className="w-5 h-5" />
-              </div>
-              <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 transition-colors" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                WhatsApp VIP Desk
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Instant 1-on-1 chat for deposits, withdrawals & accounts
-              </p>
-            </div>
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              Start Chat &rarr;
-            </span>
-          </a>
-
-          {/* Telegram Channel */}
-          <a
-            href="https://t.me/investify_official"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all group flex flex-col justify-between space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-950/80 text-sky-600 dark:text-sky-400 flex items-center justify-center">
-                <Send className="w-5 h-5" />
-              </div>
-              <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-sky-500 transition-colors" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Telegram Channel
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Daily news, reward promos, and payment proofs
-              </p>
-            </div>
-            <span className="text-xs font-bold text-sky-600 dark:text-sky-400 flex items-center gap-1">
-              Join Community &rarr;
-            </span>
-          </a>
         </div>
 
         {/* FAQs Knowledge Base Header & Controls */}
@@ -363,7 +305,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack }) => {
             Didn&apos;t find your answer?
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Our finance and verification officers are ready to assist you on WhatsApp 24/7.
+            Our finance and verification officers are ready to assist you 24/7.
           </p>
         </div>
       </main>

@@ -1,60 +1,81 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Lock, UserCheck, KeyRound, Sparkles, AlertCircle, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Lock, UserCheck, KeyRound, Smartphone, AlertCircle, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
+import { getApiUrl } from '../config/api';
 
 interface CrmLoginProps {
   onLoginSuccess: (adminName: string, adminToken?: string) => void;
   onBackToClient?: () => void;
+  initialGateKey?: string;
 }
 
-export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClient }) => {
-  const [accessCode, setAccessCode] = useState('');
-  const [adminName, setAdminName] = useState('Operations Manager');
+export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClient, initialGateKey }) => {
+  const [authMode, setAuthMode] = useState<'passkey' | 'totp'>('passkey');
+  const [operatorName, setOperatorName] = useState('Operations Manager');
+  const [passkey, setPasskey] = useState(() => {
+    return initialGateKey || (typeof window !== 'undefined' ? sessionStorage.getItem('pakinvest_crm_gate_key') || '' : '');
+  });
+  const [totpCode, setTotpCode] = useState('');
+  const [showPasskey, setShowPasskey] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const generateAdminToken = (name: string) => {
-    const timestamp = Date.now();
-    const randomHex = Math.random().toString(36).substring(2, 10);
-    return `adm_sec_${timestamp}_${randomHex}_${btoa(encodeURIComponent(name)).replace(/=/g, '')}`;
-  };
+  useEffect(() => {
+    if (initialGateKey) {
+      setPasskey(initialGateKey);
+    }
+  }, [initialGateKey]);
 
-  const handleAuthorize = (operator: string) => {
-    const token = generateAdminToken(operator);
-    localStorage.setItem('pakinvest_admin_token', token);
-    localStorage.setItem('pakinvest_crm_operator', operator);
-    onLoginSuccess(operator, token);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Accept Master Access codes: admin123, 7860, or admin786
-    const validCodes = ['admin123', '7860', 'admin786', 'pakinvest'];
-    if (validCodes.includes(accessCode.trim().toLowerCase()) || accessCode.trim() === '1234') {
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-        handleAuthorize(adminName || 'Admin Operator');
-      }, 500);
-    } else {
-      setError('Invalid Access Key. (Default Master PIN: 7860 or admin123)');
+    const credential = authMode === 'passkey' ? passkey.trim() : totpCode.trim();
+    if (!credential) {
+      setError(authMode === 'passkey' ? 'Please provide the Master Secret Passkey.' : 'Please enter the 6-digit Google Authenticator code.');
+      return;
+    }
+
+    if (authMode === 'totp' && !/^\d{6}$/.test(credential)) {
+      setError('Google Authenticator code must be exactly 6 digits.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(getApiUrl('/api/admin/auth/login'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          operatorName: operatorName.trim(),
+          passkeyOrTotp: credential,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data?.success && data?.token) {
+        localStorage.setItem('pakinvest_admin_token', data.token);
+        localStorage.setItem('pakinvest_crm_operator', data.operatorName || operatorName);
+        if (passkey) {
+          sessionStorage.setItem('pakinvest_crm_gate_key', passkey.trim());
+        }
+        onLoginSuccess(data.operatorName || operatorName, data.token);
+      } else {
+        setError(data?.error || 'Authentication failed. Please verify your team credentials or Google Authenticator.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Server connection error during authorization. Please retry.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleQuickDemo = (role: string, pin: string) => {
-    setAdminName(role);
-    setAccessCode(pin);
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      handleAuthorize(role);
-    }, 400);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 selection:bg-emerald-500/30">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -75,11 +96,15 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
           <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-lg shadow-emerald-600/30 border border-emerald-500/30 flex items-center justify-center mx-auto bg-emerald-600">
             <img src="/logo.png" alt="Investify" className="w-full h-full object-cover" />
           </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 text-[11px] font-semibold">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Encrypted Operations Terminal</span>
+          </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
             Investify Operations CRM
           </h1>
           <p className="text-xs text-slate-400">
-            Protected Administrator Route • Approvals & Financial Control
+            Restricted Management Portal • Identity & Cryptographic Verification
           </p>
         </div>
 
@@ -90,68 +115,122 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
           </div>
         )}
 
+        {/* Authentication Mode Switch */}
+        <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('passkey');
+              setError('');
+            }}
+            className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              authMode === 'passkey'
+                ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Master Passkey</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('totp');
+              setError('');
+            }}
+            className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              authMode === 'totp'
+                ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Google Authenticator</span>
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300">Operator Name / ID</label>
+            <label className="text-xs font-bold text-slate-300">Operator Identifier / Role</label>
             <div className="relative">
               <UserCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                value={adminName}
-                onChange={(e) => setAdminName(e.target.value)}
-                placeholder="e.g. Operations Officer #04"
+                value={operatorName}
+                onChange={(e) => setOperatorName(e.target.value)}
+                placeholder="e.g. Finance Operations Lead"
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 required
               />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300">Master Authorization PIN / Password</label>
-            <div className="relative">
-              <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="password"
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
-                placeholder="Enter PIN (e.g. 7860)"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
-                required
-              />
+          {authMode === 'passkey' ? (
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-300">Long Team Passkey / Secret Link</label>
+                <span className="text-[10px] text-slate-400">Copy-paste token</span>
+              </div>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type={showPasskey ? 'text' : 'password'}
+                  value={passkey}
+                  onChange={(e) => setPasskey(e.target.value)}
+                  placeholder="Paste crm_sec_... or full secret link"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasskey(!showPasskey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                >
+                  {showPasskey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                A high-entropy secret token provided to management team members.
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-300">Google Authenticator (2FA)</label>
+                <span className="text-[10px] text-emerald-400">RFC 6238 TOTP</span>
+              </div>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-lg tracking-widest font-mono text-center placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  autoFocus
+                  required
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 text-center">
+                Enter the dynamic 6-digit code currently shown in your Google Authenticator app.
+              </p>
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {isLoading ? 'Authorizing Access...' : 'Authenticate & Open CRM'}
+            {isLoading ? 'Verifying Security Credentials...' : 'Authenticate & Launch CRM'}
           </button>
         </form>
 
-        <div className="pt-2 border-t border-slate-800/80">
-          <p className="text-[11px] text-slate-400 text-center mb-3">
-            Quick Team One-Click Access:
+        <div className="pt-2 border-t border-slate-800/80 text-center">
+          <p className="text-[10px] text-slate-500">
+            Internal Operations System • All authorization attempts are logged and protected.
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('Finance & Payout Lead', '7860')}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Finance Lead</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('General Manager', 'admin123')}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>General Manager</span>
-            </button>
-          </div>
         </div>
       </motion.div>
     </div>

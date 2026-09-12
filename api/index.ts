@@ -6,6 +6,19 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
+import {
+  getOrInitCrmSecurityConfig,
+  saveCrmSecurityConfig,
+  generateTotp,
+  verifyTotp,
+  generateBase32Secret,
+  generateCryptographicAccessKey,
+  buildOtpAuthUrl,
+  generateQrCodeDataUrl,
+  signAdminJwt,
+  verifyAdminJwt,
+  CrmSecurityConfig,
+} from './crmSecurity';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
@@ -1805,12 +1818,7 @@ function calculateWithdrawalFee(amount: number): { fee: number; netAmount: numbe
     return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Rs. 0' };
   }
 
-  // 1. Explicit user requirement rule: If withdrawal amount < 500, 0% processing fee
-  if (amount < 500) {
-    return { fee: 0, netAmount: amount, feePercent: 0, ruleMatched: 'Rs. 0' };
-  }
-
-  // 2. Evaluate configured tiers
+  // 1. Evaluate configured tiers
   for (const tier of withdrawalFeeConfig.tiers) {
     let matches = false;
     if (tier.condition === 'lt' && amount < tier.threshold) matches = true;
@@ -2668,6 +2676,236 @@ Please provide a polite, professional, Urdu-friendly English response (or Urdu R
       reply: 'Assalam-o-Alaikum! Our automated daily dividend packages are actively paying yields. Deposit via JazzCash or EasyPaisa to start earning daily returns directly to your wallet.',
     });
   }
+});
+
+// ----------------------------------------------------
+// CRM SECURITY & ADMIN AUTHENTICATION
+// ----------------------------------------------------
+
+// Admin Authentication Middleware: verifies Bearer JWT or Master Key header
+const authenticateAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const customKey = req.headers['x-crm-key'] as string;
+    const queryKey = req.query.key as string;
+    const config = await getOrInitCrmSecurityConfig(prisma);
+
+    // 1. Direct custom master key header match
+    if (customKey && customKey.trim() === config.secretAccessKey) {
+      (req as any).adminOperator = 'Master Key Admin';
+      return next();
+    }
+    // 2. Query key match
+    if (queryKey && queryKey.trim() === config.secretAccessKey) {
+      (req as any).adminOperator = 'Master Key Admin';
+      return next();
+    }
+    // 3. Bearer JWT token verification
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const check = verifyAdminJwt(token);
+      if (check.valid) {
+        (req as any).adminOperator = check.operatorName || 'Admin Operator';
+        return next();
+      }
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Admin authentication token or secret key required.',
+    });
+  } catch (err: any) {
+    return res.status(401).json({
+      success: false,
+      error: 'Admin authentication failed.',
+    });
+  }
+};
+
+// 1. Verify Secret Gate Key (used when loading /crm-control?key=... or pasting in stealth gate)
+router.post('/admin/auth/verify-gate-key', async (req, res) => {
+  try {
+    let candidate = (req.body?.key || '').trim();
+    if (!candidate) {
+      return res.json({ success: true, valid: false });
+    }
+
+    // Support full URLs pasted by user (extract query key or secret)
+    if (candidate.includes('?')) {
+      try {
+        const urlObj = new URL(candidate, 'http://localhost');
+        candidate = urlObj.searchParams.get('key') || urlObj.searchParams.get('secret') || candidate;
+      } catch {
+        // Continue with raw candidate
+      }
+    }
+
+    const config = await getOrInitCrmSecurityConfig(prisma);
+    const valid = candidate === config.secretAccessKey;
+    res.json({ success: true, valid });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Verification error' });
+  }
+});
+
+// 2. Admin Login: Verifies Operator Name + (Master Passkey OR 6-digit Google Authenticator TOTP)
+router.post('/admin/auth/login', async (req, res) => {
+  try {
+    const operatorName = (req.body?.operatorName || '').trim() || 'Operations Lead';
+    let passkeyOrTotp = (req.body?.passkeyOrTotp || '').trim();
+
+    if (!passkeyOrTotp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Master Passkey or Google Authenticator code is required.',
+      });
+    }
+
+    // Support full URL pasted as passkey
+    if (passkeyOrTotp.includes('?')) {
+      try {
+        const urlObj = new URL(passkeyOrTotp, 'http://localhost');
+        passkeyOrTotp = urlObj.searchParams.get('key') || urlObj.searchParams.get('secret') || passkeyOrTotp;
+      } catch {
+        // Continue
+      }
+    }
+
+    const config = await getOrInitCrmSecurityConfig(prisma);
+    let isAuthorized = false;
+    let authMethod = '';
+
+    // Check A: Master Passkey
+    if (passkeyOrTotp === config.secretAccessKey) {
+      isAuthorized = true;
+      authMethod = 'master_passkey';
+    }
+
+    // Check B: 6-Digit Google Authenticator TOTP
+    if (!isAuthorized && passkeyOrTotp.length === 6 && /^\d{6}$/.test(passkeyOrTotp)) {
+      if (verifyTotp(passkeyOrTotp, config.totpSecret)) {
+        isAuthorized = true;
+        authMethod = 'google_authenticator_totp';
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid Authorization Key or Google Authenticator code. Please check your team credentials.',
+      });
+    }
+
+    const token = signAdminJwt(operatorName);
+    res.json({
+      success: true,
+      token,
+      operatorName,
+      authMethod,
+      message: `Welcome ${operatorName}, CRM authenticated securely.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Login failed' });
+  }
+});
+
+// 3. Verify active admin session
+router.get('/admin/auth/session', authenticateAdmin, async (req, res) => {
+  res.json({
+    success: true,
+    valid: true,
+    operatorName: (req as any).adminOperator,
+  });
+});
+
+// 4. Retrieve CRM Security Info & Google Authenticator QR Code (Protected)
+router.get('/admin/security/info', authenticateAdmin, async (req, res) => {
+  try {
+    const config = await getOrInitCrmSecurityConfig(prisma);
+    const otpauthUrl = buildOtpAuthUrl(config);
+    const qrCodeDataUrl = await generateQrCodeDataUrl(otpauthUrl);
+
+    res.json({
+      success: true,
+      config: {
+        secretAccessKey: config.secretAccessKey,
+        directAccessPath: `/crm-control?key=${config.secretAccessKey}`,
+        totpSecret: config.totpSecret,
+        totpIssuer: config.totpIssuer,
+        totpAccount: config.totpAccount,
+        otpauthUrl,
+        qrCodeDataUrl,
+        lastRotatedAt: config.lastRotatedAt,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch security info' });
+  }
+});
+
+// 5. Rotate / Update Security Passkey or TOTP Secret (Protected)
+router.post('/admin/security/rotate', authenticateAdmin, async (req, res) => {
+  try {
+    const { rotateKey, rotateTotp, customKey } = req.body || {};
+    const config = await getOrInitCrmSecurityConfig(prisma);
+
+    if (customKey && typeof customKey === 'string' && customKey.trim().length >= 16) {
+      config.secretAccessKey = customKey.trim();
+    } else if (rotateKey) {
+      config.secretAccessKey = generateCryptographicAccessKey();
+    }
+
+    if (rotateTotp) {
+      config.totpSecret = generateBase32Secret(32);
+    }
+
+    config.lastRotatedAt = new Date().toISOString();
+    await saveCrmSecurityConfig(prisma, config);
+
+    const otpauthUrl = buildOtpAuthUrl(config);
+    const qrCodeDataUrl = await generateQrCodeDataUrl(otpauthUrl);
+
+    res.json({
+      success: true,
+      message: 'Security credentials updated successfully.',
+      config: {
+        secretAccessKey: config.secretAccessKey,
+        directAccessPath: `/crm-control?key=${config.secretAccessKey}`,
+        totpSecret: config.totpSecret,
+        totpIssuer: config.totpIssuer,
+        totpAccount: config.totpAccount,
+        otpauthUrl,
+        qrCodeDataUrl,
+        lastRotatedAt: config.lastRotatedAt,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to rotate credentials' });
+  }
+});
+
+// 6. Test Google Authenticator Code live in CRM (Protected)
+router.post('/admin/security/verify-totp-test', authenticateAdmin, async (req, res) => {
+  try {
+    const code = (req.body?.code || '').trim();
+    const config = await getOrInitCrmSecurityConfig(prisma);
+    const valid = verifyTotp(code, config.totpSecret);
+    res.json({ success: true, valid });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Test failed' });
+  }
+});
+
+// Protect all remaining /admin/* routes
+router.use('/admin', (req, res, next) => {
+  const url = req.originalUrl || req.url;
+  if (
+    url.includes('/admin/auth/verify-gate-key') ||
+    url.includes('/admin/auth/login')
+  ) {
+    return next();
+  }
+  return authenticateAdmin(req, res, next);
 });
 
 // ----------------------------------------------------

@@ -22,10 +22,12 @@ import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
 import { CrmFaqView } from './views/CrmFaqView';
+import { CrmSecurityModal } from './components/CrmSecurityModal';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
 import { getApiUrl } from '../config/api';
+import './adminAuthSync';
 
 interface CrmAppProps {
   onSwitchToClient: () => void;
@@ -44,6 +46,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
   const [currentTab, setCurrentTab] = useState<CrmNavTab>('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   // Live CRM State
   const [stats, setStats] = useState<CrmStats>({
@@ -502,6 +505,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           adminName={adminName}
           onLogout={handleLogout}
           onSwitchToClient={onSwitchToClient}
+          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
         />
       </div>
 
@@ -516,6 +520,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           onNavigate={(t) => setCurrentTab(t)}
           onSwitchToClient={onSwitchToClient}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
         />
 
         {/* Mobile Sidebar Dropdown */}
@@ -579,6 +584,11 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           {renderActiveView()}
         </main>
       </div>
+
+      <CrmSecurityModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+      />
 
       <ToastContainer />
     </div>

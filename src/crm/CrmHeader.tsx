@@ -8,6 +8,7 @@ import {
   Menu,
   Sun,
   Moon,
+  Shield,
 } from 'lucide-react';
 import { useCrmTheme } from './context/CrmThemeContext';
 
@@ -20,6 +21,7 @@ interface CrmHeaderProps {
   onNavigate: (tab: CrmNavTab) => void;
   onSwitchToClient: () => void;
   onToggleMobileMenu?: () => void;
+  onOpenSecurityModal?: () => void;
 }
 
 export const CrmHeader: React.FC<CrmHeaderProps> = ({
@@ -31,6 +33,7 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
   onNavigate,
   onSwitchToClient,
   onToggleMobileMenu,
+  onOpenSecurityModal,
 }) => {
   const { theme, toggleTheme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -155,6 +158,22 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
         >
           <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
         </button>
+
+        {/* Team Security & 2FA Setup */}
+        {onOpenSecurityModal && (
+          <button
+            type="button"
+            onClick={onOpenSecurityModal}
+            className={`p-2 rounded-xl border transition-colors ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-emerald-400'
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-emerald-600'
+            }`}
+            title="Team Access Link & Google Authenticator 2FA"
+          >
+            <Shield className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Quick App Link (Mobile/tablet) */}
         <button

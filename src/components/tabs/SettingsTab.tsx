@@ -589,7 +589,7 @@ export const SettingsTab: React.FC = () => {
                   VIP Support & FAQ Knowledge Base
                 </span>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  24/7 WhatsApp desk, Telegram community & FAQs
+                  24/7 VIP Helpdesk, FAQs & Guides
                 </span>
               </div>
             </div>

@@ -87,13 +87,10 @@ export const WithdrawModal: React.FC = () => {
   const maxWithdrawal = feeConfig?.maxWithdrawal ?? 500000;
   const maxDaily = feeConfig?.maxDailyRequests ?? dailyStats.maxDaily ?? 3;
 
-  // Dynamic fee calculation:
-  // Explicit rule: If amount < 500 or feeConfig disabled => 0% processing fee
+  // Dynamic fee calculation based on active tier rules
   let platformFee = 0;
 
   if (feeConfig && feeConfig.enabled === false) {
-    platformFee = 0;
-  } else if (amount < 500) {
     platformFee = 0;
   } else if (feeConfig?.tiers && Array.isArray(feeConfig.tiers)) {
     let matchedTier = null;
