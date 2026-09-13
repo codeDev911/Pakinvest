@@ -19,12 +19,11 @@ import {
   Coins,
   Shield,
   Layers,
-  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AuthScreen: React.FC = () => {
-  const { login, demoLogin, register } = useApp();
+  const { login, register } = useApp();
 
   // Helper to extract referral code from URL or storage
   const getInitialReferralCode = (): string => {
@@ -90,21 +89,6 @@ export const AuthScreen: React.FC = () => {
       }
     } catch (err: any) {
       setErrorMsg(stringifyError(err?.message || err, 'Network connection failed. Please try again.'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleQuickDemoLogin = async () => {
-    setErrorMsg('');
-    setIsLoading(true);
-    try {
-      const res = await demoLogin();
-      if (!res.success) {
-        setErrorMsg(stringifyError(res.error, 'Quick demo login failed.'));
-      }
-    } catch (err: any) {
-      setErrorMsg(stringifyError(err?.message || err, 'Network error during quick login.'));
     } finally {
       setIsLoading(false);
     }
@@ -315,17 +299,6 @@ export const AuthScreen: React.FC = () => {
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
-                </button>
-
-                {/* 1-Click Demo Investor Access */}
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={handleQuickDemoLogin}
-                  className="w-full mt-2 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/90 border border-slate-700 text-emerald-400 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                  <span>1-Click Test Investor Login (03045645642)</span>
                 </button>
               </div>
 

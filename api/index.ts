@@ -752,13 +752,15 @@ router.post('/auth/register', async (req, res) => {
 router.post('/auth/login', async (req, res) => {
   try {
     const rawIdentifier = req.body.identifier || req.body.phone || req.body.email || req.body.username;
-    const password = req.body.password;
+    const rawPassword = req.body.password;
 
-    if (!rawIdentifier || !password) {
-      return res.status(400).json({ error: 'Mobile number or username and password are required.' });
+    if (!rawIdentifier || !rawPassword) {
+      return res.status(400).json({ success: false, error: 'Mobile number or username and password are required.' });
     }
 
     const trimmed = String(rawIdentifier).trim();
+    const passwordStr = String(rawPassword);
+
     let cleanPhone = trimmed.replace(/[^0-9]/g, '');
     if (cleanPhone.startsWith('92') && cleanPhone.length === 12) {
       cleanPhone = '0' + cleanPhone.slice(2);
@@ -771,43 +773,93 @@ router.post('/auth/login', async (req, res) => {
     // Try finding by clean phone first
     let user = null;
     if (cleanPhone && cleanPhone.length >= 10) {
-      user = await prisma.user.findUnique({
-        where: { phone: cleanPhone },
-      });
+      try {
+        user = await prisma.user.findUnique({
+          where: { phone: cleanPhone },
+        });
+      } catch (phoneErr) {
+        console.warn('[Login Phone Lookup Warning]:', phoneErr);
+      }
     }
 
     // If not found by exact clean phone, search by phone variations, email or name
     if (!user) {
-      user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { phone: trimmed },
-            ...(cleanPhone ? [{ phone: cleanPhone }] : []),
-            { email: { equals: trimmed, mode: 'insensitive' } },
-            { name: { equals: trimmed, mode: 'insensitive' } },
-          ],
-        },
-      });
+      try {
+        const orConditions: any[] = [{ phone: trimmed }];
+        if (cleanPhone && cleanPhone !== trimmed) {
+          orConditions.push({ phone: cleanPhone });
+        }
+        if (trimmed.includes('@')) {
+          orConditions.push({ email: { equals: trimmed, mode: 'insensitive' } });
+        }
+        orConditions.push({ name: { equals: trimmed, mode: 'insensitive' } });
+
+        user = await prisma.user.findFirst({
+          where: {
+            OR: orConditions,
+          },
+        });
+      } catch (findErr) {
+        // If mode: 'insensitive' is not supported in the active database engine, fallback to standard equals
+        console.warn('[Insensitive Lookup Fallback]:', findErr);
+        user = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { phone: trimmed },
+              ...(cleanPhone ? [{ phone: cleanPhone }] : []),
+              { email: trimmed },
+              { name: trimmed },
+            ],
+          },
+        }).catch(() => null);
+      }
     }
 
     if (!user) {
-      return res.status(401).json({ error: 'No registered account found. Please check your mobile number or sign up.' });
+      return res.status(401).json({ success: false, error: 'No registered account found. Please check your mobile number or sign up.' });
     }
 
-    const isMatch = bcrypt.compareSync(password, user.password);
+    let isMatch = false;
+    try {
+      if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$'))) {
+        isMatch = bcrypt.compareSync(passwordStr, user.password);
+      } else if (user.password) {
+        isMatch = user.password === passwordStr;
+        if (isMatch) {
+          // Transparently upgrade legacy plain password to bcrypt hash
+          const upgradedHash = bcrypt.hashSync(passwordStr, 10);
+          await prisma.user.update({ where: { id: user.id }, data: { password: upgradedHash } }).catch(() => {});
+        }
+      }
+    } catch (pwErr) {
+      console.warn('[Bcrypt comparison error]:', pwErr);
+      isMatch = false;
+    }
+
     if (!isMatch) {
-      return res.status(401).json({ error: 'Incorrect password. Please verify your credentials and try again.' });
+      return res.status(401).json({ success: false, error: 'Incorrect password. Please verify your credentials and try again.' });
     }
 
-    const unreadNotifs = await prisma.notification.count({
-      where: { userId: user.id, read: false },
-    });
+    let unreadNotifs = 0;
+    try {
+      unreadNotifs = await prisma.notification.count({
+        where: { userId: user.id, read: false },
+      });
+    } catch {
+      unreadNotifs = 0;
+    }
 
-    const token = jwt.sign({ userId: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id, phone: user.phone || '' }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = user;
-    const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
 
-    res.json({
+    let balCalc = { withdrawableBalance: user.withdrawableBalance || 0, unspentDeposit: Math.max(0, (user.balance || 0) - (user.withdrawableBalance || 0)) };
+    try {
+      balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
+    } catch (balErr) {
+      console.warn('[Balance calc fallback]:', balErr);
+    }
+
+    return res.json({
       success: true,
       message: 'Signed in successfully!',
       token,
@@ -820,42 +872,7 @@ router.post('/auth/login', async (req, res) => {
     });
   } catch (err: any) {
     console.error('[Login Error]:', err);
-    res.status(500).json({ error: err?.message || 'Login failed. Please try again.' });
-  }
-});
-
-// Demo Investor Instant Login (useful for immediate review & testing without manual entry)
-router.post('/auth/demo-login', async (req, res) => {
-  try {
-    const user = await prisma.user.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'No user account found in database.' });
-    }
-
-    const unreadNotifs = await prisma.notification.count({
-      where: { userId: user.id, read: false },
-    });
-
-    const token = jwt.sign({ userId: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
-    const { password: _, ...safeUser } = user;
-    const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
-
-    res.json({
-      success: true,
-      message: 'Demo investor session initialized!',
-      token,
-      user: {
-        ...safeUser,
-        withdrawableBalance: balCalc.withdrawableBalance,
-        unspentDeposit: balCalc.unspentDeposit,
-        notificationsCount: unreadNotifs,
-      },
-    });
-  } catch (err: any) {
-    console.error('[Demo Login Error]:', err);
-    res.status(500).json({ success: false, error: 'Demo login error' });
+    return res.status(500).json({ success: false, error: err?.message || 'Login failed. Please try again.' });
   }
 });
 
@@ -882,20 +899,33 @@ router.post('/auth/change-password', authenticate, async (req, res) => {
     const user = (req as any).user;
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current password and new password are required.' });
+    const currentPasswordStr = String(currentPassword || '');
+    const newPasswordStr = String(newPassword || '');
+
+    if (!currentPasswordStr || !newPasswordStr) {
+      return res.status(400).json({ success: false, error: 'Current password and new password are required.' });
     }
 
-    const isMatch = bcrypt.compareSync(currentPassword, user.password);
+    let isMatch = false;
+    try {
+      if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$'))) {
+        isMatch = bcrypt.compareSync(currentPasswordStr, user.password);
+      } else if (user.password) {
+        isMatch = user.password === currentPasswordStr;
+      }
+    } catch {
+      isMatch = false;
+    }
+
     if (!isMatch) {
-      return res.status(400).json({ error: 'Current password does not match.' });
+      return res.status(400).json({ success: false, error: 'Current password does not match.' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+    if (newPasswordStr.length < 6) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 6 characters long.' });
     }
 
-    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    const hashedPassword = bcrypt.hashSync(newPasswordStr, 10);
     await prisma.user.update({
       where: { id: user.id },
       data: { password: hashedPassword },
@@ -5337,13 +5367,13 @@ app.all('/api/*', (req, res) => {
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[Server Uncaught Error]:', err);
-  if (req.path.startsWith('/api/')) {
-    return res.status(err.status || 500).json({
-      success: false,
-      error: err?.message || 'Internal server error occurred. Please try again.',
-    });
+  if (res.headersSent) {
+    return next(err);
   }
-  next(err);
+  return res.status(err.status || err.statusCode || 500).json({
+    success: false,
+    error: err?.message || 'Server encountered an unexpected error. Please try again.',
+  });
 });
 
 export default app;

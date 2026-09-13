@@ -77,7 +77,6 @@ interface AppContextType {
 
   // Auth & Database Actions
   login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  demoLogin: () => Promise<{ success: boolean; error?: string }>;
   register: (payload: {
     name: string;
     phone: string;
@@ -287,8 +286,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } else {
           errorMsg = `Server returned an HTML page (HTTP ${res.status}) instead of JSON. Ensure your Backend API URL is active and accessible.`;
         }
+      } else if (text && text.length > 0 && text.length < 200 && !text.includes('<')) {
+        errorMsg = text.trim();
       } else if (!res.ok) {
-        errorMsg = `Server responded with ${res.status}: ${res.statusText || 'Unable to process request'}`;
+        if (res.status === 500) {
+          errorMsg = 'Server encountered a temporary issue. Please wait a moment and try again.';
+        } else if (res.status === 401) {
+          errorMsg = 'Incorrect mobile number or password. Please verify your credentials and try again.';
+        } else if (res.status === 400) {
+          errorMsg = 'Please provide valid credentials to log in.';
+        } else {
+          errorMsg = `Server responded with ${res.status}: ${res.statusText || 'Unable to process request'}`;
+        }
       } else {
         errorMsg = 'Received invalid response format from server. Please verify your backend API.';
       }
@@ -617,11 +626,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         error: 'This APK was built without a configured backend API URL. Please build the APK via GitHub Actions and enter your live backend server URL when prompted.',
       };
     }
+    const cleanId = String(identifier || '').trim();
+    const cleanPw = String(password || '');
+
+    if (!cleanId || !cleanPw) {
+      return {
+        success: false,
+        error: 'Please enter your mobile number or username and password.',
+      };
+    }
+
     try {
       const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, phone: identifier, password }),
+        body: JSON.stringify({ identifier: cleanId, phone: cleanId, password: cleanPw }),
       });
       const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
       if (ok && data?.success && data?.token && data?.user) {
@@ -641,30 +660,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         message = 'Unable to connect to the server. Please check your internet connection and try again.';
       }
       return { success: false, error: message };
-    }
-  };
-
-  // Auth: Instant Demo Login
-  const demoLogin = async () => {
-    try {
-      const res = await fetch(getApiUrl('/api/auth/demo-login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
-      if (ok && data?.success && data?.token && data?.user) {
-        localStorage.setItem('pakinvest_jwt_token', data.token);
-        setToken(data.token);
-        setUser(data.user);
-        setIsAuthenticated(true);
-        setIsAuthModalOpen(false);
-        await refreshAllData();
-        showToast('Demo Access Granted', `Welcome ${data.user.name}!`, 'success');
-        return { success: true };
-      }
-      return { success: false, error: data?.error || 'Demo login failed.' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Network error' };
     }
   };
 
@@ -1482,7 +1477,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPlansTabSection,
         pendingAdminCount,
         login,
-        demoLogin,
         register,
         logout,
         connectPostgresUrl,
