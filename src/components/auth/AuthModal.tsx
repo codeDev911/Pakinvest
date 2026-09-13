@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { stringifyError } from '../../utils/error';
 import {
   ShieldCheck,
   Smartphone,
@@ -77,12 +76,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await login(identifier.trim(), password);
       if (!res.success) {
-        setErrorMsg(stringifyError(res.error, 'Login failed. Please verify your credentials.'));
+        setErrorMsg(res.error || 'Login failed. Please verify your credentials.');
       } else {
         if (onClose) onClose();
       }
     } catch (err: any) {
-      setErrorMsg(stringifyError(err?.message || err, 'Server connection error.'));
+      setErrorMsg(err.message || 'Server connection error.');
     } finally {
       setIsLoading(false);
     }
@@ -115,12 +114,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
 
       if (!res.success) {
-        setErrorMsg(stringifyError(res.error, 'Registration failed.'));
+        setErrorMsg(res.error || 'Registration failed.');
       } else {
         if (onClose) onClose();
       }
     } catch (err: any) {
-      setErrorMsg(stringifyError(err?.message || err, 'Server connection error.'));
+      setErrorMsg(err.message || 'Server connection error.');
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { stringifyError } from '../utils/error';
 import {
   ShieldCheck,
   Smartphone,
@@ -85,10 +84,10 @@ export const AuthScreen: React.FC = () => {
     try {
       const res = await login(identifier.trim(), password);
       if (!res.success) {
-        setErrorMsg(stringifyError(res.error, 'Login failed. Please verify your credentials.'));
+        setErrorMsg(res.error || 'Login failed. Please verify your credentials.');
       }
     } catch (err: any) {
-      setErrorMsg(stringifyError(err?.message || err, 'Network connection failed. Please try again.'));
+      setErrorMsg(err.message || 'Network connection failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -140,10 +139,10 @@ export const AuthScreen: React.FC = () => {
       });
 
       if (!res.success) {
-        setErrorMsg(stringifyError(res.error, 'Registration failed.'));
+        setErrorMsg(res.error || 'Registration failed.');
       }
     } catch (err: any) {
-      setErrorMsg(stringifyError(err?.message || err, 'Network connection failed. Please try again.'));
+      setErrorMsg(err.message || 'Network connection failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

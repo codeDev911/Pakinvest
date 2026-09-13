@@ -18,8 +18,6 @@ import {
   Gift,
   Bell,
   HelpCircle,
-  Shield,
-  KeyRound,
 } from 'lucide-react';
 import { useCrmTheme } from './context/CrmThemeContext';
 
@@ -31,7 +29,6 @@ interface CrmSidebarProps {
   adminName: string;
   onLogout: () => void;
   onSwitchToClient: () => void;
-  onOpenSecurityModal?: () => void;
 }
 
 export const CrmSidebar: React.FC<CrmSidebarProps> = ({
@@ -42,7 +39,6 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
   adminName,
   onLogout,
   onSwitchToClient,
-  onOpenSecurityModal,
 }) => {
   const { theme, toggleTheme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -206,24 +202,6 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
 
       {/* Admin User Footer */}
       <div className={`p-4 border-t space-y-3 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-        {onOpenSecurityModal && (
-          <button
-            type="button"
-            onClick={onOpenSecurityModal}
-            className={`w-full py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-colors ${
-              isDark
-                ? 'bg-slate-800/80 hover:bg-slate-800 border-slate-700 text-slate-200'
-                : 'bg-slate-100 hover:bg-slate-200/80 border-slate-200 text-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-emerald-500" />
-              <span>Team 2FA & Passkey</span>
-            </div>
-            <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-          </button>
-        )}
-
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center font-bold text-emerald-400 text-xs">

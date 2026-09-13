@@ -6,19 +6,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
-import {
-  getOrInitCrmSecurityConfig,
-  saveCrmSecurityConfig,
-  generateTotp,
-  verifyTotp,
-  generateBase32Secret,
-  generateCryptographicAccessKey,
-  buildOtpAuthUrl,
-  generateQrCodeDataUrl,
-  signAdminJwt,
-  verifyAdminJwt,
-  CrmSecurityConfig,
-} from '../server/crmSecurity';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
@@ -541,17 +528,10 @@ app.get(['/api/download-apk', '/download/latest-apk', '/:apkFile([A-Za-z0-9_.-]+
   return res.status(404).json({ error: `APK file "${targetFile}" not found in /public directory.` });
 });
 
-// Middleware to ensure DB seed is ready without hanging requests
+// Middleware to ensure DB seed is ready
 app.use(async (req, res, next) => {
   if (!dbInitDone) {
-    try {
-      await Promise.race([
-        ensureInitialDatabaseData(),
-        new Promise((resolve) => setTimeout(resolve, 1500)),
-      ]);
-    } catch (seedErr) {
-      console.warn('[DB Init Middleware Warning]:', seedErr);
-    }
+    await ensureInitialDatabaseData();
   }
   next();
 });
@@ -565,24 +545,7 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
 
   const token = authHeader.split(' ')[1];
   try {
-    let decoded: { userId: string } | null = null;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    } catch {
-      // Fallback check against default secret in case session token was signed prior to environment variable swap
-      if (JWT_SECRET !== 'pakinvest_jwt_secret_key_2025_prod') {
-        try {
-          decoded = jwt.verify(token, 'pakinvest_jwt_secret_key_2025_prod') as { userId: string };
-        } catch {
-          // Both failed
-        }
-      }
-    }
-
-    if (!decoded || !decoded.userId) {
-      return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
-    }
-
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
     });
@@ -593,8 +556,7 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
 
     (req as any).user = user;
     next();
-  } catch (err: any) {
-    console.error('[Client Authenticate Catch]:', err?.message || err);
+  } catch {
     return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
   }
 };
@@ -759,15 +721,13 @@ router.post('/auth/register', async (req, res) => {
 router.post('/auth/login', async (req, res) => {
   try {
     const rawIdentifier = req.body.identifier || req.body.phone || req.body.email || req.body.username;
-    const rawPassword = req.body.password;
+    const password = req.body.password;
 
-    if (!rawIdentifier || !rawPassword) {
-      return res.status(400).json({ success: false, error: 'Mobile number or username and password are required.' });
+    if (!rawIdentifier || !password) {
+      return res.status(400).json({ error: 'Mobile number or username and password are required.' });
     }
 
     const trimmed = String(rawIdentifier).trim();
-    const passwordStr = String(rawPassword);
-
     let cleanPhone = trimmed.replace(/[^0-9]/g, '');
     if (cleanPhone.startsWith('92') && cleanPhone.length === 12) {
       cleanPhone = '0' + cleanPhone.slice(2);
@@ -780,93 +740,43 @@ router.post('/auth/login', async (req, res) => {
     // Try finding by clean phone first
     let user = null;
     if (cleanPhone && cleanPhone.length >= 10) {
-      try {
-        user = await prisma.user.findUnique({
-          where: { phone: cleanPhone },
-        });
-      } catch (phoneErr) {
-        console.warn('[Login Phone Lookup Warning]:', phoneErr);
-      }
+      user = await prisma.user.findUnique({
+        where: { phone: cleanPhone },
+      });
     }
 
     // If not found by exact clean phone, search by phone variations, email or name
     if (!user) {
-      try {
-        const orConditions: any[] = [{ phone: trimmed }];
-        if (cleanPhone && cleanPhone !== trimmed) {
-          orConditions.push({ phone: cleanPhone });
-        }
-        if (trimmed.includes('@')) {
-          orConditions.push({ email: { equals: trimmed, mode: 'insensitive' } });
-        }
-        orConditions.push({ name: { equals: trimmed, mode: 'insensitive' } });
-
-        user = await prisma.user.findFirst({
-          where: {
-            OR: orConditions,
-          },
-        });
-      } catch (findErr) {
-        // If mode: 'insensitive' is not supported in the active database engine, fallback to standard equals
-        console.warn('[Insensitive Lookup Fallback]:', findErr);
-        user = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { phone: trimmed },
-              ...(cleanPhone ? [{ phone: cleanPhone }] : []),
-              { email: trimmed },
-              { name: trimmed },
-            ],
-          },
-        }).catch(() => null);
-      }
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { phone: trimmed },
+            ...(cleanPhone ? [{ phone: cleanPhone }] : []),
+            { email: { equals: trimmed, mode: 'insensitive' } },
+            { name: { equals: trimmed, mode: 'insensitive' } },
+          ],
+        },
+      });
     }
 
     if (!user) {
-      return res.status(401).json({ success: false, error: 'No registered account found. Please check your mobile number or sign up.' });
+      return res.status(401).json({ error: 'No registered account found. Please check your mobile number or sign up.' });
     }
 
-    let isMatch = false;
-    try {
-      if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$'))) {
-        isMatch = bcrypt.compareSync(passwordStr, user.password);
-      } else if (user.password) {
-        isMatch = user.password === passwordStr;
-        if (isMatch) {
-          // Transparently upgrade legacy plain password to bcrypt hash
-          const upgradedHash = bcrypt.hashSync(passwordStr, 10);
-          await prisma.user.update({ where: { id: user.id }, data: { password: upgradedHash } }).catch(() => {});
-        }
-      }
-    } catch (pwErr) {
-      console.warn('[Bcrypt comparison error]:', pwErr);
-      isMatch = false;
-    }
-
+    const isMatch = bcrypt.compareSync(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ success: false, error: 'Incorrect password. Please verify your credentials and try again.' });
+      return res.status(401).json({ error: 'Incorrect password. Please verify your credentials and try again.' });
     }
 
-    let unreadNotifs = 0;
-    try {
-      unreadNotifs = await prisma.notification.count({
-        where: { userId: user.id, read: false },
-      });
-    } catch {
-      unreadNotifs = 0;
-    }
+    const unreadNotifs = await prisma.notification.count({
+      where: { userId: user.id, read: false },
+    });
 
-    const token = jwt.sign({ userId: user.id, phone: user.phone || '' }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
     const { password: _, ...safeUser } = user;
+    const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
 
-    let balCalc = { withdrawableBalance: user.withdrawableBalance || 0, unspentDeposit: Math.max(0, (user.balance || 0) - (user.withdrawableBalance || 0)) };
-    try {
-      balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
-    } catch (balErr) {
-      console.warn('[Balance calc fallback]:', balErr);
-    }
-
-    return res.json({
+    res.json({
       success: true,
       message: 'Signed in successfully!',
       token,
@@ -879,44 +789,26 @@ router.post('/auth/login', async (req, res) => {
     });
   } catch (err: any) {
     console.error('[Login Error]:', err);
-    return res.status(500).json({ success: false, error: err?.message || 'Login failed. Please try again.' });
+    res.status(500).json({ error: err?.message || 'Login failed. Please try again.' });
   }
 });
 
 router.get('/auth/me', authenticate, async (req, res) => {
-  try {
-    const user = (req as any).user;
-    let unreadNotifs = 0;
-    try {
-      unreadNotifs = await prisma.notification.count({
-        where: { userId: user.id, read: false },
-      });
-    } catch {
-      unreadNotifs = 0;
-    }
-    const { password: _, ...safeUser } = user;
-    let balCalc = {
-      withdrawableBalance: user.withdrawableBalance || 0,
-      unspentDeposit: Math.max(0, (user.balance || 0) - (user.withdrawableBalance || 0)),
-    };
-    try {
-      balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
-    } catch (balErr) {
-      console.warn('[auth/me balance calculation fallback]:', balErr);
-    }
-    return res.json({
-      success: true,
-      user: {
-        ...safeUser,
-        withdrawableBalance: balCalc.withdrawableBalance,
-        unspentDeposit: balCalc.unspentDeposit,
-        notificationsCount: unreadNotifs,
-      },
-    });
-  } catch (err: any) {
-    console.error('[/auth/me error]:', err);
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch user session' });
-  }
+  const user = (req as any).user;
+  const unreadNotifs = await prisma.notification.count({
+    where: { userId: user.id, read: false },
+  });
+  const { password: _, ...safeUser } = user;
+  const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
+  res.json({
+    success: true,
+    user: {
+      ...safeUser,
+      withdrawableBalance: balCalc.withdrawableBalance,
+      unspentDeposit: balCalc.unspentDeposit,
+      notificationsCount: unreadNotifs,
+    },
+  });
 });
 
 router.post('/auth/change-password', authenticate, async (req, res) => {
@@ -924,33 +816,20 @@ router.post('/auth/change-password', authenticate, async (req, res) => {
     const user = (req as any).user;
     const { currentPassword, newPassword } = req.body;
 
-    const currentPasswordStr = String(currentPassword || '');
-    const newPasswordStr = String(newPassword || '');
-
-    if (!currentPasswordStr || !newPasswordStr) {
-      return res.status(400).json({ success: false, error: 'Current password and new password are required.' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
     }
 
-    let isMatch = false;
-    try {
-      if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$'))) {
-        isMatch = bcrypt.compareSync(currentPasswordStr, user.password);
-      } else if (user.password) {
-        isMatch = user.password === currentPasswordStr;
-      }
-    } catch {
-      isMatch = false;
-    }
-
+    const isMatch = bcrypt.compareSync(currentPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({ success: false, error: 'Current password does not match.' });
+      return res.status(400).json({ error: 'Current password does not match.' });
     }
 
-    if (newPasswordStr.length < 6) {
-      return res.status(400).json({ success: false, error: 'New password must be at least 6 characters long.' });
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
     }
 
-    const hashedPassword = bcrypt.hashSync(newPasswordStr, 10);
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
     await prisma.user.update({
       where: { id: user.id },
       data: { password: hashedPassword },
@@ -2784,241 +2663,6 @@ Please provide a polite, professional, Urdu-friendly English response (or Urdu R
       reply: 'Assalam-o-Alaikum! Our automated daily dividend packages are actively paying yields. Deposit via JazzCash or EasyPaisa to start earning daily returns directly to your wallet.',
     });
   }
-});
-
-// ----------------------------------------------------
-// CRM SECURITY & ADMIN AUTHENTICATION
-// ----------------------------------------------------
-
-// Admin Authentication Middleware: verifies Bearer JWT or Master Key header
-const authenticateAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const customKey = req.headers['x-crm-key'] as string;
-    const queryKey = req.query.key as string;
-    const config = await getOrInitCrmSecurityConfig(prisma);
-
-    // 1. Direct custom master key header match
-    if (customKey && customKey.trim() === config.secretAccessKey) {
-      (req as any).adminOperator = 'Master Key Admin';
-      return next();
-    }
-    // 2. Query key match
-    if (queryKey && queryKey.trim() === config.secretAccessKey) {
-      (req as any).adminOperator = 'Master Key Admin';
-      return next();
-    }
-    // 3. Bearer JWT token verification
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      const check = verifyAdminJwt(token);
-      if (check.valid) {
-        (req as any).adminOperator = check.operatorName || 'Admin Operator';
-        return next();
-      }
-      // Also accept live admin session tokens initialized in client storage
-      if (token && (token.startsWith('adm_sec_') || token.startsWith('admin_token_') || token.startsWith('crm_'))) {
-        (req as any).adminOperator = (req.headers['x-admin-operator'] as string) || 'Admin Operator';
-        return next();
-      }
-    }
-
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized: Admin authentication token or secret key required.',
-    });
-  } catch (err: any) {
-    return res.status(401).json({
-      success: false,
-      error: 'Admin authentication failed.',
-    });
-  }
-};
-
-// 1. Verify Secret Gate Key (used when loading /crm-control?key=... or pasting in stealth gate)
-router.post('/admin/auth/verify-gate-key', async (req, res) => {
-  try {
-    let candidate = (req.body?.key || '').trim();
-    if (!candidate) {
-      return res.json({ success: true, valid: false });
-    }
-
-    // Support full URLs pasted by user (extract query key or secret)
-    if (candidate.includes('?')) {
-      try {
-        const urlObj = new URL(candidate, 'http://localhost');
-        candidate = urlObj.searchParams.get('key') || urlObj.searchParams.get('secret') || candidate;
-      } catch {
-        // Continue with raw candidate
-      }
-    }
-
-    const config = await getOrInitCrmSecurityConfig(prisma);
-    const valid = candidate === config.secretAccessKey || candidate === process.env.CRM_SECRET_KEY;
-    res.json({ success: true, valid, verified: valid });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Verification error' });
-  }
-});
-
-// 2. Admin Login: Verifies Operator Name + (Master Passkey OR 6-digit Google Authenticator TOTP)
-router.post('/admin/auth/login', async (req, res) => {
-  try {
-    const operatorName = (req.body?.operatorName || '').trim() || 'Operations Lead';
-    let passkeyOrTotp = (req.body?.passkeyOrTotp || '').trim();
-
-    if (!passkeyOrTotp) {
-      return res.status(400).json({
-        success: false,
-        error: 'Master Passkey or Google Authenticator code is required.',
-      });
-    }
-
-    // Support full URL pasted as passkey
-    if (passkeyOrTotp.includes('?')) {
-      try {
-        const urlObj = new URL(passkeyOrTotp, 'http://localhost');
-        passkeyOrTotp = urlObj.searchParams.get('key') || urlObj.searchParams.get('secret') || passkeyOrTotp;
-      } catch {
-        // Continue
-      }
-    }
-
-    const config = await getOrInitCrmSecurityConfig(prisma);
-    let isAuthorized = false;
-    let authMethod = '';
-
-    // Check A: Master Passkey
-    if (passkeyOrTotp === config.secretAccessKey) {
-      isAuthorized = true;
-      authMethod = 'master_passkey';
-    }
-
-    // Check B: 6-Digit Google Authenticator TOTP
-    if (!isAuthorized && passkeyOrTotp.length === 6 && /^\d{6}$/.test(passkeyOrTotp)) {
-      if (verifyTotp(passkeyOrTotp, config.totpSecret)) {
-        isAuthorized = true;
-        authMethod = 'google_authenticator_totp';
-      }
-    }
-
-    if (!isAuthorized) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid Authorization Key or Google Authenticator code. Please check your team credentials.',
-      });
-    }
-
-    const token = signAdminJwt(operatorName);
-    res.json({
-      success: true,
-      token,
-      operatorName,
-      authMethod,
-      message: `Welcome ${operatorName}, CRM authenticated securely.`,
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Login failed' });
-  }
-});
-
-// 3. Verify active admin session
-router.get('/admin/auth/session', authenticateAdmin, async (req, res) => {
-  res.json({
-    success: true,
-    valid: true,
-    operatorName: (req as any).adminOperator,
-  });
-});
-
-// 4. Retrieve CRM Security Info & Google Authenticator QR Code (Protected)
-router.get('/admin/security/info', authenticateAdmin, async (req, res) => {
-  try {
-    const config = await getOrInitCrmSecurityConfig(prisma);
-    const otpauthUrl = buildOtpAuthUrl(config);
-    const qrCodeDataUrl = await generateQrCodeDataUrl(otpauthUrl);
-
-    res.json({
-      success: true,
-      config: {
-        secretAccessKey: config.secretAccessKey,
-        directAccessPath: `/crm-control?key=${config.secretAccessKey}`,
-        totpSecret: config.totpSecret,
-        totpIssuer: config.totpIssuer,
-        totpAccount: config.totpAccount,
-        otpauthUrl,
-        qrCodeDataUrl,
-        lastRotatedAt: config.lastRotatedAt,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch security info' });
-  }
-});
-
-// 5. Rotate / Update Security Passkey or TOTP Secret (Protected)
-router.post('/admin/security/rotate', authenticateAdmin, async (req, res) => {
-  try {
-    const { rotateKey, rotateTotp, customKey } = req.body || {};
-    const config = await getOrInitCrmSecurityConfig(prisma);
-
-    if (customKey && typeof customKey === 'string' && customKey.trim().length >= 16) {
-      config.secretAccessKey = customKey.trim();
-    } else if (rotateKey) {
-      config.secretAccessKey = generateCryptographicAccessKey();
-    }
-
-    if (rotateTotp) {
-      config.totpSecret = generateBase32Secret(32);
-    }
-
-    config.lastRotatedAt = new Date().toISOString();
-    await saveCrmSecurityConfig(prisma, config);
-
-    const otpauthUrl = buildOtpAuthUrl(config);
-    const qrCodeDataUrl = await generateQrCodeDataUrl(otpauthUrl);
-
-    res.json({
-      success: true,
-      message: 'Security credentials updated successfully.',
-      config: {
-        secretAccessKey: config.secretAccessKey,
-        directAccessPath: `/crm-control?key=${config.secretAccessKey}`,
-        totpSecret: config.totpSecret,
-        totpIssuer: config.totpIssuer,
-        totpAccount: config.totpAccount,
-        otpauthUrl,
-        qrCodeDataUrl,
-        lastRotatedAt: config.lastRotatedAt,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Failed to rotate credentials' });
-  }
-});
-
-// 6. Test Google Authenticator Code live in CRM (Protected)
-router.post('/admin/security/verify-totp-test', authenticateAdmin, async (req, res) => {
-  try {
-    const code = (req.body?.code || '').trim();
-    const config = await getOrInitCrmSecurityConfig(prisma);
-    const valid = verifyTotp(code, config.totpSecret);
-    res.json({ success: true, valid });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Test failed' });
-  }
-});
-
-// Protect all remaining /admin/* routes
-router.use('/admin', (req, res, next) => {
-  const url = req.originalUrl || req.url;
-  if (
-    url.includes('/admin/auth/verify-gate-key') ||
-    url.includes('/admin/auth/login')
-  ) {
-    return next();
-  }
-  return authenticateAdmin(req, res, next);
 });
 
 // ----------------------------------------------------
@@ -5392,13 +5036,13 @@ app.all('/api/*', (req, res) => {
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[Server Uncaught Error]:', err);
-  if (res.headersSent) {
-    return next(err);
+  if (req.path.startsWith('/api/')) {
+    return res.status(err.status || 500).json({
+      success: false,
+      error: err?.message || 'Internal server error occurred. Please try again.',
+    });
   }
-  return res.status(err.status || err.statusCode || 500).json({
-    success: false,
-    error: err?.message || 'Server encountered an unexpected error. Please try again.',
-  });
+  next(err);
 });
 
 export default app;

@@ -1,13 +1,12 @@
 import { Capacitor } from '@capacitor/core';
-import { getAppBaseUrl } from './appUrl';
 
 /**
  * API Configuration Module
  * Automatically uses the Backend API URL baked into the application build
  * via VITE_API_BASE_URL or VITE_API_URL.
  * 
- * In standard web hosting, this defaults to same-origin relative URLs (/api/...).
- * In native Android APK builds, it automatically routes to the live backend server.
+ * In standard web hosting, this can be empty to use same-origin relative URLs (/api/...).
+ * In native Android builds, VITE_API_BASE_URL is provided during manual workflow dispatch.
  */
 
 function normalizeUrl(rawUrl: string): string {
@@ -24,22 +23,15 @@ function normalizeUrl(rawUrl: string): string {
   return url;
 }
 
-const defaultRemoteBackend = getAppBaseUrl();
-
 const rawEnvApiUrl =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
   '';
 
-export const isNativePlatform =
-  Capacitor.isNativePlatform() ||
-  (typeof window !== 'undefined' &&
-    (window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'file:' ||
-      (window.location.hostname === 'localhost' && typeof (window as any).Capacitor !== 'undefined')));
+export const isNativePlatform = Capacitor.isNativePlatform();
 
 // Normalized API base URL (e.g. "https://api.yourdomain.com")
-export const API_BASE_URL = normalizeUrl(rawEnvApiUrl || (isNativePlatform ? defaultRemoteBackend : ''));
+export const API_BASE_URL = normalizeUrl(rawEnvApiUrl);
 
 // Direct APK download URL (can be customized via VITE_ANDROID_APK_URL or defaults to /investify.apk)
 const envApkUrl =
@@ -52,22 +44,21 @@ export const ANDROID_APK_DOWNLOAD_URL = envApkUrl || '/investify.apk';
  * Returns the configured API Base URL
  */
 export function getEffectiveApiBaseUrl(): string {
-  return API_BASE_URL || normalizeUrl(defaultRemoteBackend);
+  return API_BASE_URL;
 }
 
 /**
  * Returns the full API URL for a given endpoint path.
  * 
  * @param path Endpoint path, e.g. '/api/auth/login'
- * @returns Fully qualified URL (if base URL configured or on native mobile) or relative path
+ * @returns Fully qualified URL (if base URL configured) or relative path
  */
 export function getApiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   
-  // In native Capacitor mobile apps (Android/iOS), route to the live backend server
-  if (isNativePlatform) {
-    const base = API_BASE_URL || normalizeUrl(defaultRemoteBackend);
-    return `${base}${normalizedPath}`;
+  // In native Capacitor mobile apps (Android/iOS), route to the configured external API URL
+  if (isNativePlatform && API_BASE_URL) {
+    return `${API_BASE_URL}${normalizedPath}`;
   }
 
   // In web browsers (desktop, mobile web, preview iframe, Cloud Run container),

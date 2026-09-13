@@ -22,13 +22,10 @@ import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
 import { CrmFaqView } from './views/CrmFaqView';
-import { CrmSecurityModal } from './components/CrmSecurityModal';
-import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
 import { getApiUrl } from '../config/api';
-import './adminAuthSync';
 
 interface CrmAppProps {
   onSwitchToClient: () => void;
@@ -47,7 +44,6 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
   const [currentTab, setCurrentTab] = useState<CrmNavTab>('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   // Live CRM State
   const [stats, setStats] = useState<CrmStats>({
@@ -506,7 +502,6 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           adminName={adminName}
           onLogout={handleLogout}
           onSwitchToClient={onSwitchToClient}
-          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
         />
       </div>
 
@@ -521,7 +516,6 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
           onNavigate={(t) => setCurrentTab(t)}
           onSwitchToClient={onSwitchToClient}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
         />
 
         {/* Mobile Sidebar Dropdown */}
@@ -586,13 +580,6 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
         </main>
       </div>
 
-      <ErrorBoundary fallbackTitle="Security Modal Error" onReset={() => setIsSecurityModalOpen(false)}>
-        <CrmSecurityModal
-          isOpen={isSecurityModalOpen}
-          onClose={() => setIsSecurityModalOpen(false)}
-        />
-      </ErrorBoundary>
-
       <ToastContainer />
     </div>
   );
@@ -600,11 +587,9 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
 
 export const CrmApp: React.FC<CrmAppProps> = (props) => {
   return (
-    <ErrorBoundary fallbackTitle="CRM Operations Console Error">
-      <CrmThemeProvider>
-        <CrmAppContent {...props} />
-      </CrmThemeProvider>
-    </ErrorBoundary>
+    <CrmThemeProvider>
+      <CrmAppContent {...props} />
+    </CrmThemeProvider>
   );
 };
 
