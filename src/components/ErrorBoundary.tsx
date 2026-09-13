@@ -48,7 +48,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               {this.props.fallbackTitle || 'Component Encountered An Error'}
             </h3>
             <p className="text-xs text-rose-300/90 font-mono break-words bg-rose-950/40 p-2 rounded-lg border border-rose-900/50">
-              {this.state.error?.message || 'An unexpected client-side error occurred.'}
+              {typeof this.state.error?.message === 'string'
+                ? this.state.error.message
+                : typeof this.state.error === 'string'
+                ? this.state.error
+                : typeof (this.state.error as any)?.message === 'object'
+                ? JSON.stringify((this.state.error as any).message)
+                : 'An unexpected client-side error occurred.'}
             </p>
           </div>
           <div className="flex items-center gap-3 pt-2">

@@ -77,6 +77,7 @@ interface AppContextType {
 
   // Auth & Database Actions
   login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  demoLogin: () => Promise<{ success: boolean; error?: string }>;
   register: (payload: {
     name: string;
     phone: string;
@@ -357,82 +358,75 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (userOk && userData?.success && userData?.user) {
           setUser(userData.user);
           setIsAuthenticated(true);
-        } else {
-          // Token expired or invalid
+
+          // Concurrently fetch user-specific data (investments, transactions, payment accounts, referrals)
+          try {
+            const [invRes, txRes, accRes, refRes] = await Promise.all([
+              fetch(getApiUrl('/api/investments'), { headers: { Authorization: `Bearer ${activeToken}` } }),
+              fetch(getApiUrl('/api/transactions'), { headers: { Authorization: `Bearer ${activeToken}` } }),
+              fetch(getApiUrl('/api/payment-accounts'), { headers: { Authorization: `Bearer ${activeToken}` } }),
+              fetch(getApiUrl('/api/referrals'), { headers: { Authorization: `Bearer ${activeToken}` } }),
+            ]);
+
+            const [invParsed, txParsed, accParsed, refParsed] = await Promise.all([
+              safeParseJson(invRes),
+              safeParseJson(txRes),
+              safeParseJson(accRes),
+              safeParseJson(refRes),
+            ]);
+
+            if (invParsed.ok && invParsed.data?.success && (invParsed.data?.activeInvestments || invParsed.data?.investments)) {
+              setActiveInvestments(invParsed.data.activeInvestments || invParsed.data.investments);
+            }
+
+            if (txParsed.ok && txParsed.data?.success && Array.isArray(txParsed.data?.transactions)) {
+              setTransactions((prev) => {
+                const serverTxMap = new Map(txParsed.data.transactions.map((t: Transaction) => [t.id, t]));
+                const localPending = prev.filter((t) => !serverTxMap.has(t.id));
+                return [...localPending, ...txParsed.data.transactions];
+              });
+            }
+
+            if (accParsed.ok && accParsed.data?.success && accParsed.data?.accounts) {
+              setSavedPaymentAccounts(accParsed.data.accounts);
+            }
+
+            if (refParsed.ok && refParsed.data?.success) {
+              const refData = refParsed.data;
+              const combinedMembers = Array.isArray(refData.members) && refData.members.length > 0
+                ? refData.members
+                : [
+                    ...(refData.tier1Members || []),
+                    ...(refData.tier2Members || []),
+                    ...(refData.tier3Members || []),
+                  ];
+
+              setReferralNetwork({
+                referralCode: refData.referralCode || userData.user.referralCode,
+                referralTier: refData.referralTier || 1,
+                referralEarnings: refData.referralEarnings || 0,
+                unclaimedReferralEarnings: refData.unclaimedReferralEarnings || 0,
+                totalTeamMembers: refData.totalTeamMembers || combinedMembers.length,
+                totalTeamVolume: refData.totalTeamVolume || 0,
+                tier1Count: refData.tier1Count || (refData.tier1Members?.length || 0),
+                tier2Count: refData.tier2Count || (refData.tier2Members?.length || 0),
+                tier3Count: refData.tier3Count || (refData.tier3Members?.length || 0),
+                members: combinedMembers,
+              });
+            }
+          } catch (parallelErr) {
+            console.warn('Sub-resource fetch error:', parallelErr);
+          }
+        } else if (userRes.status === 401) {
+          // Token strictly invalid or expired by server rejection
           localStorage.removeItem('pakinvest_jwt_token');
           setToken(null);
           setIsAuthenticated(false);
           setUser(GUEST_USER);
         }
-      } catch {}
-
-      // 4. Fetch user's active investments
-      try {
-        const invRes = await fetch(getApiUrl('/api/investments'), {
-          headers: { Authorization: `Bearer ${activeToken}` },
-        });
-        const { ok: invOk, data: invData } = await safeParseJson(invRes);
-        if (invOk && invData?.success && (invData?.activeInvestments || invData?.investments)) {
-          setActiveInvestments(invData.activeInvestments || invData.investments);
-        }
-      } catch {}
-
-      // 5. Fetch user's transactions
-      try {
-        const txRes = await fetch(getApiUrl('/api/transactions'), {
-          headers: { Authorization: `Bearer ${activeToken}` },
-        });
-        const { ok: txOk, data: txData } = await safeParseJson(txRes);
-        if (txOk && txData?.success && Array.isArray(txData?.transactions)) {
-          setTransactions((prev) => {
-            const serverTxMap = new Map(txData.transactions.map((t: Transaction) => [t.id, t]));
-            // Keep local transactions that aren't indexed on server yet
-            const localPending = prev.filter((t) => !serverTxMap.has(t.id));
-            return [...localPending, ...txData.transactions];
-          });
-        }
-      } catch {}
-
-      // 6. Fetch user's payment accounts
-      try {
-        const accRes = await fetch(getApiUrl('/api/payment-accounts'), {
-          headers: { Authorization: `Bearer ${activeToken}` },
-        });
-        const { ok: accOk, data: accData } = await safeParseJson(accRes);
-        if (accOk && accData?.success && accData?.accounts) {
-          setSavedPaymentAccounts(accData.accounts);
-        }
-      } catch {}
-
-      // 7. Fetch user's referral network & team members
-      try {
-        const refRes = await fetch(getApiUrl('/api/referrals'), {
-          headers: { Authorization: `Bearer ${activeToken}` },
-        });
-        const { ok: refOk, data: refData } = await safeParseJson(refRes);
-        if (refOk && refData?.success) {
-          const combinedMembers = Array.isArray(refData.members) && refData.members.length > 0
-            ? refData.members
-            : [
-                ...(refData.tier1Members || []),
-                ...(refData.tier2Members || []),
-                ...(refData.tier3Members || []),
-              ];
-
-          setReferralNetwork({
-            referralCode: refData.referralCode || user.referralCode,
-            referralTier: refData.referralTier || 1,
-            referralEarnings: refData.referralEarnings || 0,
-            unclaimedReferralEarnings: refData.unclaimedReferralEarnings || 0,
-            totalTeamMembers: refData.totalTeamMembers || combinedMembers.length,
-            totalTeamVolume: refData.totalTeamVolume || 0,
-            tier1Count: refData.tier1Count || (refData.tier1Members?.length || 0),
-            tier2Count: refData.tier2Count || (refData.tier2Members?.length || 0),
-            tier3Count: refData.tier3Count || (refData.tier3Members?.length || 0),
-            members: combinedMembers,
-          });
-        }
-      } catch {}
+      } catch (err) {
+        console.warn('Auth check network warning (preserving session):', err);
+      }
     } catch (err) {
       console.error('API refresh error:', err);
     } finally {
@@ -647,6 +641,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         message = 'Unable to connect to the server. Please check your internet connection and try again.';
       }
       return { success: false, error: message };
+    }
+  };
+
+  // Auth: Instant Demo Login
+  const demoLogin = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/auth/demo-login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const { ok, data } = await safeParseJson<{ success?: boolean; token?: string; user?: UserProfile; error?: string }>(res);
+      if (ok && data?.success && data?.token && data?.user) {
+        localStorage.setItem('pakinvest_jwt_token', data.token);
+        setToken(data.token);
+        setUser(data.user);
+        setIsAuthenticated(true);
+        setIsAuthModalOpen(false);
+        await refreshAllData();
+        showToast('Demo Access Granted', `Welcome ${data.user.name}!`, 'success');
+        return { success: true };
+      }
+      return { success: false, error: data?.error || 'Demo login failed.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
     }
   };
 
@@ -1464,6 +1482,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPlansTabSection,
         pendingAdminCount,
         login,
+        demoLogin,
         register,
         logout,
         connectPostgresUrl,

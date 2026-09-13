@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Lock, UserCheck, KeyRound, Smartphone, AlertCircle, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getApiUrl } from '../config/api';
-import { safeFetchJson } from './utils/safeFetch';
+import { safeFetchJson, stringifyError } from './utils/safeFetch';
 
 interface CrmLoginProps {
   onLoginSuccess: (adminName: string, adminToken?: string) => void;
@@ -65,10 +65,11 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         }
         onLoginSuccess(res.data.operatorName || operatorName, res.data.token);
       } else {
-        setError(res.error || res.data?.error || 'Authentication failed. Please verify your team credentials or Google Authenticator.');
+        const rawErr = res.error || res.data?.error || res.data?.message;
+        setError(stringifyError(rawErr, 'Authentication failed. Please verify your team credentials or Google Authenticator.'));
       }
     } catch (err: any) {
-      setError(err?.message || 'Server connection error during authorization. Please retry.');
+      setError(stringifyError(err, 'Server connection error during authorization. Please retry.'));
     } finally {
       setIsLoading(false);
     }
@@ -111,7 +112,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{error}</span>
+            <span>{stringifyError(error)}</span>
           </div>
         )}
 

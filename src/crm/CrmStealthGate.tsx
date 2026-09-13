@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, ArrowLeft, KeyRound, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getApiUrl } from '../config/api';
-import { safeFetchJson } from './utils/safeFetch';
+import { safeFetchJson, stringifyError } from './utils/safeFetch';
 
 interface CrmStealthGateProps {
   onUnlock: (gateKey: string) => void;
@@ -47,10 +47,11 @@ export const CrmStealthGate: React.FC<CrmStealthGateProps> = ({ onUnlock, onBack
         sessionStorage.setItem('pakinvest_crm_gate_key', key);
         onUnlock(key);
       } else {
-        setError(res.error || res.data?.error || 'Invalid security passkey or access link. Direct access rejected.');
+        const rawErr = res.error || res.data?.error || res.data?.message;
+        setError(stringifyError(rawErr, 'Invalid security passkey or access link. Direct access rejected.'));
       }
     } catch (err: any) {
-      setError(err?.message || 'Verification connection failed. Please try again.');
+      setError(stringifyError(err, 'Verification connection failed. Please try again.'));
     } finally {
       setIsVerifying(false);
     }
@@ -131,7 +132,7 @@ export const CrmStealthGate: React.FC<CrmStealthGateProps> = ({ onUnlock, onBack
               {error && (
                 <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                  <span>{error}</span>
+                  <span>{stringifyError(error)}</span>
                 </div>
               )}
 
