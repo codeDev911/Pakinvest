@@ -18,7 +18,7 @@ import {
   signAdminJwt,
   verifyAdminJwt,
   CrmSecurityConfig,
-} from './crmSecurity';
+} from '../server/crmSecurity';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
@@ -541,10 +541,17 @@ app.get(['/api/download-apk', '/download/latest-apk', '/:apkFile([A-Za-z0-9_.-]+
   return res.status(404).json({ error: `APK file "${targetFile}" not found in /public directory.` });
 });
 
-// Middleware to ensure DB seed is ready
+// Middleware to ensure DB seed is ready without hanging requests
 app.use(async (req, res, next) => {
   if (!dbInitDone) {
-    await ensureInitialDatabaseData();
+    try {
+      await Promise.race([
+        ensureInitialDatabaseData(),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+    } catch (seedErr) {
+      console.warn('[DB Init Middleware Warning]:', seedErr);
+    }
   }
   next();
 });
@@ -877,21 +884,39 @@ router.post('/auth/login', async (req, res) => {
 });
 
 router.get('/auth/me', authenticate, async (req, res) => {
-  const user = (req as any).user;
-  const unreadNotifs = await prisma.notification.count({
-    where: { userId: user.id, read: false },
-  });
-  const { password: _, ...safeUser } = user;
-  const balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
-  res.json({
-    success: true,
-    user: {
-      ...safeUser,
-      withdrawableBalance: balCalc.withdrawableBalance,
-      unspentDeposit: balCalc.unspentDeposit,
-      notificationsCount: unreadNotifs,
-    },
-  });
+  try {
+    const user = (req as any).user;
+    let unreadNotifs = 0;
+    try {
+      unreadNotifs = await prisma.notification.count({
+        where: { userId: user.id, read: false },
+      });
+    } catch {
+      unreadNotifs = 0;
+    }
+    const { password: _, ...safeUser } = user;
+    let balCalc = {
+      withdrawableBalance: user.withdrawableBalance || 0,
+      unspentDeposit: Math.max(0, (user.balance || 0) - (user.withdrawableBalance || 0)),
+    };
+    try {
+      balCalc = await calculateUserWithdrawableBalance(user.id, user.balance);
+    } catch (balErr) {
+      console.warn('[auth/me balance calculation fallback]:', balErr);
+    }
+    return res.json({
+      success: true,
+      user: {
+        ...safeUser,
+        withdrawableBalance: balCalc.withdrawableBalance,
+        unspentDeposit: balCalc.unspentDeposit,
+        notificationsCount: unreadNotifs,
+      },
+    });
+  } catch (err: any) {
+    console.error('[/auth/me error]:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch user session' });
+  }
 });
 
 router.post('/auth/change-password', authenticate, async (req, res) => {
