@@ -56,7 +56,9 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
   const checkTotpStatus = async () => {
     setIsCheckingStatus(true);
     try {
-      const res = await fetch(getApiUrl('/api/admin/totp/status'));
+      const res = await fetch(getApiUrl(`/api/admin/totp/status?t=${Date.now()}`), {
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (data?.success) {
         setTotpStatus({

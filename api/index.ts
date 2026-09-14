@@ -646,9 +646,6 @@ function crmVerifyTotpCode(secretBase32: string, token: string): boolean {
 }
 
 async function getStoredCrmTotpConfig(): Promise<CrmTotpConfig | null> {
-  if (cachedCrmTotpConfig && cachedCrmTotpConfig.enabled) {
-    return cachedCrmTotpConfig;
-  }
   try {
     const setting = await prisma.systemSetting.findUnique({
       where: { key: 'crm_totp_config' },
@@ -659,6 +656,8 @@ async function getStoredCrmTotpConfig(): Promise<CrmTotpConfig | null> {
         cachedCrmTotpConfig = parsed;
         return parsed;
       }
+    } else {
+      cachedCrmTotpConfig = null;
     }
   } catch (err) {
     console.error('[getStoredCrmTotpConfig Error]:', err);
@@ -669,6 +668,7 @@ async function getStoredCrmTotpConfig(): Promise<CrmTotpConfig | null> {
 const crmTotpRouter = express.Router();
 
 crmTotpRouter.get('/status', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   try {
     const config = await getStoredCrmTotpConfig();
     const hasConfig = Boolean(config && config.enabled && config.secret);
@@ -692,6 +692,64 @@ crmTotpRouter.get('/status', async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to check TOTP status' });
+  }
+});
+
+/**
+ * POST /api/admin/totp/regenerate
+ * Real-time key regeneration: Generates a brand new RFC 6238 key, saves it
+ * immediately to PostgreSQL database, invalidates old keys, and returns new credentials.
+ */
+crmTotpRouter.post('/regenerate', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    const { operatorName = 'Operations Manager' } = req.body || {};
+    const randomBytes = crypto.randomBytes(20);
+    const secret = crmBase32Encode(randomBytes);
+    const cleanSecret = secret.trim().toUpperCase();
+    const issuer = 'PakInvest CRM';
+    const account = (operatorName || '').trim() || 'Admin Operator';
+    const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${cleanSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+    const formattedSecret = cleanSecret.match(/.{1,4}/g)?.join(' ') || cleanSecret;
+    const maskedSecret = `${cleanSecret.slice(0, 4)} •••• •••• ${cleanSecret.slice(-4)}`;
+
+    const config: CrmTotpConfig = {
+      enabled: true,
+      secret: cleanSecret,
+      configuredAt: new Date().toISOString(),
+      configuredBy: account,
+      issuer,
+    };
+
+    // Save directly to PostgreSQL database in real-time
+    await prisma.systemSetting.upsert({
+      where: { key: 'crm_totp_config' },
+      update: { value: JSON.stringify(config) },
+      create: { key: 'crm_totp_config', value: JSON.stringify(config) },
+    });
+
+    cachedCrmTotpConfig = config;
+
+    console.log(`[CRM TOTP] Real-time key regenerated & saved in database. Secret: ${cleanSecret}`);
+
+    res.json({
+      success: true,
+      message: 'New Authenticator Key generated and saved to database in real-time!',
+      isConfigured: true,
+      enabled: true,
+      secret: cleanSecret,
+      formattedSecret,
+      maskedSecret,
+      manualSetupKey: cleanSecret,
+      otpauthUrl,
+      issuer,
+      account,
+      configuredAt: config.configuredAt,
+      configuredBy: config.configuredBy,
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Regenerate Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to regenerate TOTP key' });
   }
 });
 

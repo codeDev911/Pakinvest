@@ -69,7 +69,9 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch(getApiUrl('/api/admin/totp/status'));
+      const res = await fetch(getApiUrl(`/api/admin/totp/status?t=${Date.now()}`), {
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (data?.success) {
         setTotpData(data);
@@ -87,7 +89,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     fetchTotpStatus();
   }, []);
 
-  // Generate a brand new authenticator key (RFC 6238 Base32)
+  // Real-time Generate / Regenerate and save immediately into DB
   const handleGenerateNewKey = async () => {
     setIsGenerating(true);
     setErrorMsg('');
@@ -95,7 +97,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     setTestResult(null);
 
     try {
-      const res = await fetch(getApiUrl('/api/admin/totp/generate'), {
+      const res = await fetch(getApiUrl('/api/admin/totp/regenerate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ operatorName: adminName || 'CRM Admin' }),
@@ -103,20 +105,34 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
       const data = await res.json();
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to generate key from backend');
+        throw new Error(data?.error || 'Failed to regenerate key from backend');
       }
+
+      // Real-time update in state from DB
+      setTotpData({
+        isConfigured: true,
+        enabled: true,
+        configuredAt: data.configuredAt,
+        configuredBy: data.configuredBy,
+        secret: data.secret,
+        formattedSecret: data.formattedSecret,
+        maskedSecret: data.maskedSecret,
+        otpauthUrl: data.otpauthUrl,
+      });
 
       setNewSecret(data.secret);
       setNewFormattedSecret(data.formattedSecret || data.secret);
       setNewOtpauthUrl(data.otpauthUrl);
+      setShowActiveSecret(true);
       setVerifyTestCode('');
-      setSuccessMsg('New Authenticator Key generated! Scan the QR code or copy key to your authenticator app, then click "Save Key to Database".');
+      
+      setSuccessMsg('Real-Time Authenticator Key Generated & Saved! The PostgreSQL database has been immediately updated with this new key. Old key has been invalidated. Please add this new key or scan the new QR code in your authenticator app now.');
       
       if (showToast) {
-        showToast('Key Generated', 'Scan QR or copy key, then click Save Key to Database.', 'info');
+        showToast('Real-Time Key Saved', 'New key saved in database. Old key invalidated.', 'success');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Error generating authenticator key');
+      setErrorMsg(err?.message || 'Error regenerating authenticator key');
     } finally {
       setIsGenerating(false);
     }
