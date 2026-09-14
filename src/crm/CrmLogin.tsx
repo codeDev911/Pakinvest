@@ -11,8 +11,12 @@ import {
   ClipboardPaste,
   ShieldAlert,
   HelpCircle,
+  QrCode,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { QRCodeSVG } from 'qrcode.react';
 import { getApiUrl } from '../config/api';
 
 interface CrmLoginProps {
@@ -25,6 +29,9 @@ interface TotpStatus {
   enabled: boolean;
   configuredAt?: string | null;
   configuredBy?: string | null;
+  secret?: string | null;
+  formattedSecret?: string | null;
+  otpauthUrl?: string | null;
 }
 
 export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClient }) => {
@@ -38,6 +45,10 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Setup Key helper toggle
+  const [showSetupHelper, setShowSetupHelper] = useState(false);
+  const [copiedHelperKey, setCopiedHelperKey] = useState(false);
 
   const totpInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,6 +64,9 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
           enabled: Boolean(data.enabled),
           configuredAt: data.configuredAt,
           configuredBy: data.configuredBy,
+          secret: data.secret,
+          formattedSecret: data.formattedSecret,
+          otpauthUrl: data.otpauthUrl,
         });
       }
     } catch (err) {
@@ -239,6 +253,85 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
             <p className="text-[11px] text-slate-400 text-center pt-0.5">
               Copy the active code from Google Authenticator, Microsoft Authenticator, or Authy.
             </p>
+
+            {/* First Time / Setup Key Quick Helper */}
+            <div className="pt-1.5 text-center">
+              <button
+                type="button"
+                id="btn-toggle-setup-helper"
+                onClick={() => setShowSetupHelper(!showSetupHelper)}
+                className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 underline transition-colors inline-flex items-center gap-1.5"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>
+                  {showSetupHelper ? 'Hide Authenticator Setup Key' : 'First time? Click to view Key & QR Code'}
+                </span>
+              </button>
+            </div>
+
+            {showSetupHelper && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left"
+              >
+                <div className="flex items-center justify-between text-xs text-white font-bold">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <Smartphone className="w-4 h-4" />
+                    <span>Database Authenticator Key</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">RFC 6238 TOTP</span>
+                </div>
+
+                {totpStatus?.otpauthUrl && (
+                  <div className="flex flex-col items-center justify-center p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
+                    <div className="p-2 bg-white rounded-xl shadow-md">
+                      <QRCodeSVG value={totpStatus.otpauthUrl} size={130} level="M" />
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">Scan in Google Authenticator or Authy</span>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 block font-medium">Or paste setup key into app:</span>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <code className="text-xs font-mono text-emerald-400 flex-1 break-all select-all font-bold tracking-wider">
+                      {totpStatus?.formattedSecret || totpStatus?.secret || 'NKLV QAGY SRX2 PURP 5TRC T65Q VBI3 RSCU'}
+                    </code>
+                    <button
+                      type="button"
+                      id="btn-copy-helper-key"
+                      onClick={() => {
+                        const key = totpStatus?.secret || 'NKLVQAGYSRX2PURP5TRCT65QVBI3RSCU';
+                        navigator.clipboard.writeText(key);
+                        setCopiedHelperKey(true);
+                        setTimeout(() => setCopiedHelperKey(false), 2000);
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0"
+                      title="Copy Key"
+                    >
+                      {copiedHelperKey ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  {copiedHelperKey && (
+                    <span className="text-[10px] text-emerald-400 block text-right font-semibold">
+                      Key copied to clipboard!
+                    </span>
+                  )}
+                </div>
+
+                <ol className="text-[11px] text-slate-400 list-decimal list-inside space-y-0.5 pt-1 border-t border-slate-800/80">
+                  <li>Open Google Authenticator on your phone</li>
+                  <li>Tap &quot;+&quot; &gt; &quot;Enter a setup key&quot; (or scan QR above)</li>
+                  <li>Account: <strong>PakInvest CRM</strong> | Key: <strong>Paste key above</strong></li>
+                  <li>Paste the 6-digit code above and click Authenticate!</li>
+                </ol>
+              </motion.div>
+            )}
           </div>
 
           {/* Operator Name & Master PIN (Compact Credentials) */}
