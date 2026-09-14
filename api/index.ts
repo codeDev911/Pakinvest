@@ -6,7 +6,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
-import { createCrmTotpRouter } from './crmTotp';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
@@ -564,8 +563,298 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
 
 const router = express.Router();
 
+// ----------------------------------------------------
+// CRM TOTP AUTHENTICATION (RFC 6238 - Isolated Strictly to CRM)
+// ----------------------------------------------------
+interface CrmTotpConfig {
+  enabled: boolean;
+  secret: string;
+  configuredAt: string;
+  configuredBy: string;
+  issuer: string;
+}
+
+let cachedCrmTotpConfig: CrmTotpConfig | null = null;
+const CRM_BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function crmBase32Encode(buffer: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let output = '';
+  for (let i = 0; i < buffer.length; i++) {
+    value = (value << 8) | buffer[i];
+    bits += 8;
+    while (bits >= 5) {
+      output += CRM_BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    output += CRM_BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
+function crmBase32Decode(str: string): Buffer {
+  const cleanStr = str.toUpperCase().replace(/=+$/, '').replace(/[\s-]/g, '');
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (let i = 0; i < cleanStr.length; i++) {
+    const val = CRM_BASE32_ALPHABET.indexOf(cleanStr[i]);
+    if (val === -1) continue;
+    value = (value << 5) | val;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function crmGenerateTotpCode(secretBase32: string, timeStepOffset = 0): string {
+  const key = crmBase32Decode(secretBase32);
+  const epoch = Math.floor(Date.now() / 1000);
+  const counter = Math.floor(epoch / 30) + timeStepOffset;
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+
+  const hmac = crypto.createHmac('sha1', key).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code =
+    (((hmac[offset] & 0x7f) << 24) |
+      ((hmac[offset + 1] & 0xff) << 16) |
+      ((hmac[offset + 2] & 0xff) << 8) |
+      (hmac[offset + 3] & 0xff)) %
+    1000000;
+  return code.toString().padStart(6, '0');
+}
+
+function crmVerifyTotpCode(secretBase32: string, token: string): boolean {
+  if (!secretBase32 || !token) return false;
+  const cleanToken = token.trim().replace(/\s+/g, '');
+  if (cleanToken.length !== 6 || !/^\d{6}$/.test(cleanToken)) return false;
+
+  for (let offset = -1; offset <= 1; offset++) {
+    const expected = crmGenerateTotpCode(secretBase32, offset);
+    if (expected === cleanToken) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function getStoredCrmTotpConfig(): Promise<CrmTotpConfig | null> {
+  if (cachedCrmTotpConfig && cachedCrmTotpConfig.enabled) {
+    return cachedCrmTotpConfig;
+  }
+  try {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'crm_totp_config' },
+    });
+    if (setting && setting.value) {
+      const parsed = JSON.parse(setting.value);
+      if (parsed && typeof parsed.secret === 'string') {
+        cachedCrmTotpConfig = parsed;
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.error('[getStoredCrmTotpConfig Error]:', err);
+  }
+  return cachedCrmTotpConfig;
+}
+
+const crmTotpRouter = express.Router();
+
+crmTotpRouter.get('/status', async (req, res) => {
+  try {
+    const config = await getStoredCrmTotpConfig();
+    res.json({
+      success: true,
+      isConfigured: Boolean(config && config.enabled && config.secret),
+      enabled: Boolean(config && config.enabled),
+      configuredAt: config?.configuredAt || null,
+      configuredBy: config?.configuredBy || null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to check TOTP status' });
+  }
+});
+
+crmTotpRouter.post('/generate', async (req, res) => {
+  try {
+    const { operatorName = 'Operations Officer' } = req.body || {};
+    const randomBytes = crypto.randomBytes(20);
+    const secret = crmBase32Encode(randomBytes);
+    const issuer = 'PakInvest CRM';
+    const account = operatorName.trim() || 'Admin Operator';
+    const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+    const formattedSecret = secret.match(/.{1,4}/g)?.join(' ') || secret;
+
+    res.json({
+      success: true,
+      secret,
+      formattedSecret,
+      manualSetupKey: secret,
+      otpauthUrl,
+      issuer,
+      account,
+      expiresInSeconds: 600,
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Generate Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to generate TOTP secret' });
+  }
+});
+
+crmTotpRouter.post('/verify-setup', async (req, res) => {
+  try {
+    const { secret, code, operatorName = 'Operations Officer', accessCode = '' } = req.body || {};
+
+    if (!secret || typeof secret !== 'string') {
+      return res.status(400).json({ success: false, error: 'Secret key is missing from verification request' });
+    }
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ success: false, error: 'Please enter the 6-digit code from your authenticator app' });
+    }
+
+    const cleanPin = (accessCode || '').trim().toLowerCase();
+    const VALID_PINS = ['admin123', '7860', 'admin786', 'pakinvest', '1234'];
+    if (cleanPin && !VALID_PINS.includes(cleanPin)) {
+      return res.status(401).json({ success: false, error: 'Invalid Master Authorization PIN.' });
+    }
+
+    const isValid = crmVerifyTotpCode(secret, code);
+    if (!isValid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid 6-digit Authenticator Code. Ensure your phone clock is accurate and try again.',
+      });
+    }
+
+    const config: CrmTotpConfig = {
+      enabled: true,
+      secret: secret.trim().toUpperCase(),
+      configuredAt: new Date().toISOString(),
+      configuredBy: operatorName.trim() || 'Admin Operator',
+      issuer: 'PakInvest CRM',
+    };
+
+    cachedCrmTotpConfig = config;
+    try {
+      await prisma.systemSetting.upsert({
+        where: { key: 'crm_totp_config' },
+        update: { value: JSON.stringify(config) },
+        create: { key: 'crm_totp_config', value: JSON.stringify(config) },
+      });
+    } catch (dbErr) {
+      console.error('[saveCrmTotpConfig Error]:', dbErr);
+    }
+
+    const timestamp = Date.now();
+    const randomHex = crypto.randomBytes(8).toString('hex');
+    const encodedName = Buffer.from(config.configuredBy).toString('base64').replace(/=/g, '');
+    const adminToken = `adm_totp_${timestamp}_${randomHex}_${encodedName}`;
+
+    res.json({
+      success: true,
+      verified: true,
+      operator: config.configuredBy,
+      adminToken,
+      message: 'TOTP Authentication verified and activated successfully. CRM access granted.',
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Verify Setup Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to verify TOTP setup' });
+  }
+});
+
+crmTotpRouter.post('/login', async (req, res) => {
+  try {
+    const { operatorName = 'Operations Officer', accessCode = '', totpCode = '' } = req.body || {};
+    const cleanPin = (accessCode || '').trim().toLowerCase();
+    const VALID_PINS = ['admin123', '7860', 'admin786', 'pakinvest', '1234'];
+    if (!VALID_PINS.includes(cleanPin)) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid Master Authorization PIN. (Default: 7860 or admin123)',
+      });
+    }
+
+    const config = await getStoredCrmTotpConfig();
+
+    if (config && config.enabled && config.secret) {
+      if (!totpCode || totpCode.trim().length === 0) {
+        return res.status(403).json({
+          success: false,
+          requiresTotp: true,
+          error: 'TOTP Authenticator Code required. Enter the 6-digit code from your authenticator app.',
+        });
+      }
+
+      const isTotpValid = crmVerifyTotpCode(config.secret, totpCode);
+      if (!isTotpValid) {
+        return res.status(401).json({
+          success: false,
+          requiresTotp: true,
+          error: 'Invalid 6-digit Authenticator code. Please check your authenticator app and try again.',
+        });
+      }
+    }
+
+    const operator = operatorName.trim() || config?.configuredBy || 'Admin Operator';
+    const timestamp = Date.now();
+    const randomHex = crypto.randomBytes(8).toString('hex');
+    const encodedName = Buffer.from(operator).toString('base64').replace(/=/g, '');
+    const adminToken = `adm_totp_${timestamp}_${randomHex}_${encodedName}`;
+
+    res.json({
+      success: true,
+      operator,
+      adminToken,
+      totpEnabled: Boolean(config?.enabled),
+      message: 'CRM Authorization verified successfully.',
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Login Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'CRM Authentication failed' });
+  }
+});
+
+crmTotpRouter.post('/reset', async (req, res) => {
+  try {
+    const { masterPin = '' } = req.body || {};
+    const cleanPin = masterPin.trim().toLowerCase();
+    const VALID_PINS = ['admin123', '7860', 'admin786', 'pakinvest', '1234'];
+    if (!VALID_PINS.includes(cleanPin)) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid Master Authorization PIN. Master authorization is required to reset TOTP.',
+      });
+    }
+
+    cachedCrmTotpConfig = null;
+    try {
+      await prisma.systemSetting.delete({
+        where: { key: 'crm_totp_config' },
+      });
+    } catch {}
+
+    res.json({
+      success: true,
+      message: 'CRM TOTP configuration has been reset. You may now generate a new secret and QR code.',
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Reset Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to reset CRM TOTP' });
+  }
+});
+
 // Mount CRM TOTP Authentication Router (Isolated to CRM admin operations only)
-router.use('/admin/totp', createCrmTotpRouter(prisma));
+router.use('/admin/totp', crmTotpRouter);
 
 // ----------------------------------------------------
 // SYSTEM & DATABASE STATUS
