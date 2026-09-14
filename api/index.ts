@@ -672,6 +672,28 @@ crmTotpRouter.get('/status', async (req, res) => {
   try {
     const config = await getStoredCrmTotpConfig();
     const hasConfig = Boolean(config && config.enabled && config.secret);
+
+    res.json({
+      success: true,
+      isConfigured: hasConfig,
+      enabled: Boolean(config && config.enabled),
+      configuredAt: config?.configuredAt || null,
+      configuredBy: config?.configuredBy || null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to check TOTP status' });
+  }
+});
+
+/**
+ * GET /api/admin/totp/details
+ * Authenticated CRM endpoint to fetch active TOTP secret & QR code parameters for CRM Settings.
+ */
+crmTotpRouter.get('/details', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    const config = await getStoredCrmTotpConfig();
+    const hasConfig = Boolean(config && config.enabled && config.secret);
     const secret = hasConfig && config ? config.secret : '';
     const formattedSecret = secret ? (secret.match(/.{1,4}/g)?.join(' ') || secret) : null;
     const maskedSecret = secret ? `${secret.slice(0, 4)} •••• •••• ${secret.slice(-4)}` : null;
@@ -691,7 +713,7 @@ crmTotpRouter.get('/status', async (req, res) => {
       otpauthUrl,
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Failed to check TOTP status' });
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch TOTP details' });
   }
 });
 

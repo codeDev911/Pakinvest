@@ -10,13 +10,8 @@ import {
   RefreshCw,
   ClipboardPaste,
   ShieldAlert,
-  HelpCircle,
-  QrCode,
-  Copy,
-  Check,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { QRCodeSVG } from 'qrcode.react';
 import { getApiUrl } from '../config/api';
 
 interface CrmLoginProps {
@@ -29,14 +24,11 @@ interface TotpStatus {
   enabled: boolean;
   configuredAt?: string | null;
   configuredBy?: string | null;
-  secret?: string | null;
-  formattedSecret?: string | null;
-  otpauthUrl?: string | null;
 }
 
 export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClient }) => {
   // Login credentials
-  const [accessCode, setAccessCode] = useState('7860');
+  const [accessCode, setAccessCode] = useState('');
   const [adminName, setAdminName] = useState('Operations Manager');
   const [totpCode, setTotpCode] = useState('');
 
@@ -46,15 +38,9 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Setup Key helper toggle
-  const [showSetupHelper, setShowSetupHelper] = useState(false);
-  const [copiedHelperKey, setCopiedHelperKey] = useState(false);
-  const [isRegeneratingOnLogin, setIsRegeneratingOnLogin] = useState(false);
-  const [regenerateSuccess, setRegenerateSuccess] = useState('');
-
   const totpInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch backend TOTP configuration status on mount
+  // Fetch backend TOTP configuration status on mount (public status only: no secrets leaked)
   const checkTotpStatus = async () => {
     setIsCheckingStatus(true);
     try {
@@ -68,63 +54,12 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
           enabled: Boolean(data.enabled),
           configuredAt: data.configuredAt,
           configuredBy: data.configuredBy,
-          secret: data.secret,
-          formattedSecret: data.formattedSecret,
-          otpauthUrl: data.otpauthUrl,
         });
       }
     } catch (err) {
       console.warn('[CRM Login] Could not reach backend TOTP status:', err);
     } finally {
       setIsCheckingStatus(false);
-    }
-  };
-
-  // Direct real-time key regeneration from login screen
-  const handleRegenerateFromLogin = async () => {
-    setIsRegeneratingOnLogin(true);
-    setRegenerateSuccess('');
-    setError('');
-
-    try {
-      const res = await fetch(getApiUrl('/api/admin/totp/regenerate'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-        },
-        body: JSON.stringify({
-          operatorName: adminName || 'Operations Manager',
-          accessCode: accessCode.trim() || '7860',
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to regenerate key from database');
-      }
-
-      setTotpStatus({
-        isConfigured: true,
-        enabled: true,
-        configuredAt: data.configuredAt,
-        configuredBy: data.configuredBy,
-        secret: data.secret,
-        formattedSecret: data.formattedSecret,
-        otpauthUrl: data.otpauthUrl,
-      });
-
-      setRegenerateSuccess('✓ New Authenticator Key regenerated & saved in PostgreSQL!');
-      if (data.secret) {
-        navigator.clipboard.writeText(data.secret);
-        setCopiedHelperKey(true);
-        setTimeout(() => setCopiedHelperKey(false), 3000);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to regenerate key');
-    } finally {
-      setIsRegeneratingOnLogin(false);
     }
   };
 
@@ -175,9 +110,8 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
       return;
     }
 
-    // If TOTP is not yet configured, master PIN is required
-    if (!totpStatus?.isConfigured && !accessCode.trim()) {
-      setError('Master PIN (7860) is required for initial login.');
+    if (!accessCode.trim()) {
+      setError('Master PIN is required.');
       return;
     }
 
@@ -189,7 +123,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           operatorName: adminName.trim() || 'Operations Manager',
-          accessCode: accessCode.trim() || '7860',
+          accessCode: accessCode.trim(),
           totpCode: cleanTotp,
         }),
       });
@@ -240,7 +174,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
           </div>
           <p className="text-xs text-slate-400">
             {totpStatus?.isConfigured
-              ? 'Copy 6-digit code from your authenticator app and paste here to login.'
+              ? 'Enter the 6-digit code from your authenticator app to authorize.'
               : 'Enter authorization credentials to access CRM.'}
           </p>
         </div>
@@ -261,7 +195,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
               <span>Initial Setup Required</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              No authenticator key configured yet in DB. Login with Master PIN (7860), then go to <strong>CRM Settings &gt; Security &amp; 2FA Key</strong> to generate and save your key.
+              No authenticator key configured yet in the database. Enter your operator credentials to login, then configure your 2FA Key in CRM Settings.
             </p>
           </div>
         )}
@@ -279,7 +213,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
                 type="button"
                 id="btn-paste-totp-clipboard"
                 onClick={handlePasteClipboard}
-                className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors cursor-pointer"
               >
                 <ClipboardPaste className="w-3 h-3" />
                 <span>Paste Code</span>
@@ -303,112 +237,11 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
               />
             </div>
             <p className="text-[11px] text-slate-400 text-center pt-0.5">
-              Copy the active code from Google Authenticator, Microsoft Authenticator, or Authy.
+              Copy the rotating 6-digit code from Google Authenticator, Microsoft Authenticator, or Authy.
             </p>
-
-            {/* First Time / Setup Key Quick Helper */}
-            <div className="pt-1.5 text-center">
-              <button
-                type="button"
-                id="btn-toggle-setup-helper"
-                onClick={() => setShowSetupHelper(!showSetupHelper)}
-                className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 underline transition-colors inline-flex items-center gap-1.5"
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                <span>
-                  {showSetupHelper ? 'Hide Authenticator Setup Key' : 'First time? Click to view Key & QR Code'}
-                </span>
-              </button>
-            </div>
-
-            {showSetupHelper && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left"
-              >
-                <div className="flex items-center justify-between text-xs text-white font-bold">
-                  <span className="flex items-center gap-1.5 text-emerald-400">
-                    <Smartphone className="w-4 h-4" />
-                    <span>Database Authenticator Key</span>
-                  </span>
-                  <span className="text-[10px] text-emerald-400/80 font-mono">RFC 6238 TOTP</span>
-                </div>
-
-                {regenerateSuccess && (
-                  <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 text-[11px] font-semibold flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                    <span>{regenerateSuccess}</span>
-                  </div>
-                )}
-
-                {totpStatus?.otpauthUrl && (
-                  <div className="flex flex-col items-center justify-center p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
-                    <div className="p-2.5 bg-white rounded-xl shadow-md border border-emerald-500/30">
-                      <QRCodeSVG value={totpStatus.otpauthUrl} size={130} level="M" />
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-mono">Scan in Google Authenticator or Authy</span>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 block font-medium">Or paste setup key into app:</span>
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800">
-                    <code className="text-xs font-mono text-emerald-400 flex-1 break-all select-all font-bold tracking-wider">
-                      {totpStatus?.formattedSecret || totpStatus?.secret || 'Loading database key...'}
-                    </code>
-                    {totpStatus?.secret && (
-                      <button
-                        type="button"
-                        id="btn-copy-helper-key"
-                        onClick={() => {
-                          navigator.clipboard.writeText(totpStatus.secret!);
-                          setCopiedHelperKey(true);
-                          setTimeout(() => setCopiedHelperKey(false), 2500);
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0"
-                        title="Copy Key"
-                      >
-                        {copiedHelperKey ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  {copiedHelperKey && (
-                    <span className="text-[10px] text-emerald-400 block text-right font-semibold">
-                      Key copied to clipboard!
-                    </span>
-                  )}
-                </div>
-
-                {/* Regenerate Button Right on Login Screen */}
-                <div className="pt-1 border-t border-slate-800/80">
-                  <button
-                    type="button"
-                    id="btn-regenerate-from-login"
-                    onClick={handleRegenerateFromLogin}
-                    disabled={isRegeneratingOnLogin}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-emerald-400 font-bold text-xs border border-emerald-500/30 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingOnLogin ? 'animate-spin' : ''}`} />
-                    <span>{isRegeneratingOnLogin ? 'Regenerating in DB...' : 'Regenerate New Key in Database'}</span>
-                  </button>
-                </div>
-
-                <ol className="text-[11px] text-slate-400 list-decimal list-inside space-y-0.5 pt-1 border-t border-slate-800/80">
-                  <li>Open Google Authenticator on your phone</li>
-                  <li>Tap &quot;+&quot; &gt; &quot;Enter a setup key&quot; (or scan QR above)</li>
-                  <li>Account: <strong>PakInvest CRM</strong> | Key: <strong>Paste key above</strong></li>
-                  <li>Paste the 6-digit code above and click Authenticate!</li>
-                </ol>
-              </motion.div>
-            )}
           </div>
 
-          {/* Operator Name & Master PIN (Compact Credentials) */}
+          {/* Operator Name & Master PIN */}
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-300">Operator ID</label>
@@ -419,7 +252,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
                   id="input-crm-operator-name"
                   value={adminName}
                   onChange={(e) => setAdminName(e.target.value)}
-                  placeholder="e.g. Operations Manager"
+                  placeholder="Operator ID"
                   className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   required
                 />
@@ -435,7 +268,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
                   id="input-crm-master-pin"
                   value={accessCode}
                   onChange={(e) => setAccessCode(e.target.value)}
-                  placeholder="Master PIN (7860)"
+                  placeholder="••••••••"
                   className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                   required
                 />
@@ -448,7 +281,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
             type="submit"
             id="btn-crm-authenticate"
             disabled={isLoading || isCheckingStatus}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 mt-2"
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer"
           >
             {isLoading ? (
               <>
@@ -468,7 +301,7 @@ export const CrmLogin: React.FC<CrmLoginProps> = ({ onLoginSuccess, onBackToClie
         <div className="pt-4 border-t border-slate-800/80 text-center space-y-1">
           <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 inline" />
-            <span>Authenticator keys are managed and regeneratable in CRM Settings.</span>
+            <span>Multi-factor authentication enforced.</span>
           </p>
         </div>
       </motion.div>

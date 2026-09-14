@@ -63,7 +63,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch(getApiUrl(`/api/admin/totp/status?t=${Date.now()}`), {
+      const res = await fetch(getApiUrl(`/api/admin/totp/details?t=${Date.now()}`), {
         cache: 'no-store',
       });
       const data = await res.json();
