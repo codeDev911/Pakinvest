@@ -671,12 +671,24 @@ const crmTotpRouter = express.Router();
 crmTotpRouter.get('/status', async (req, res) => {
   try {
     const config = await getStoredCrmTotpConfig();
+    const hasConfig = Boolean(config && config.enabled && config.secret);
+    const secret = hasConfig && config ? config.secret : '';
+    const formattedSecret = secret ? (secret.match(/.{1,4}/g)?.join(' ') || secret) : null;
+    const maskedSecret = secret ? `${secret.slice(0, 4)} •••• •••• ${secret.slice(-4)}` : null;
+    const issuer = 'PakInvest CRM';
+    const account = config?.configuredBy || 'Admin Operator';
+    const otpauthUrl = secret ? `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30` : null;
+
     res.json({
       success: true,
-      isConfigured: Boolean(config && config.enabled && config.secret),
+      isConfigured: hasConfig,
       enabled: Boolean(config && config.enabled),
       configuredAt: config?.configuredAt || null,
       configuredBy: config?.configuredBy || null,
+      secret: secret || null,
+      formattedSecret,
+      maskedSecret,
+      otpauthUrl,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to check TOTP status' });
@@ -709,6 +721,73 @@ crmTotpRouter.post('/generate', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/totp/save-key
+ * Save and activate newly generated or regenerated Authenticator key in PostgreSQL database
+ */
+crmTotpRouter.post('/save-key', async (req, res) => {
+  try {
+    const { secret, operatorName = 'Admin Operator', code = '' } = req.body || {};
+
+    if (!secret || typeof secret !== 'string') {
+      return res.status(400).json({ success: false, error: 'Secret is required to save authenticator key' });
+    }
+
+    const cleanSecret = secret.trim().toUpperCase().replace(/[\s-]/g, '');
+    if (cleanSecret.length < 16) {
+      return res.status(400).json({ success: false, error: 'Invalid authenticator secret length' });
+    }
+
+    // Optional verification check with code if provided
+    const cleanCode = (code || '').trim().replace(/\D/g, '');
+    if (cleanCode.length === 6) {
+      const isValid = crmVerifyTotpCode(cleanSecret, cleanCode);
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          error: 'Verification code does not match. Please verify your phone time and try again.',
+        });
+      }
+    }
+
+    const config: CrmTotpConfig = {
+      enabled: true,
+      secret: cleanSecret,
+      configuredAt: new Date().toISOString(),
+      configuredBy: (operatorName || '').trim() || 'Admin Operator',
+      issuer: 'PakInvest CRM',
+    };
+
+    cachedCrmTotpConfig = config;
+    await prisma.systemSetting.upsert({
+      where: { key: 'crm_totp_config' },
+      update: { value: JSON.stringify(config) },
+      create: { key: 'crm_totp_config', value: JSON.stringify(config) },
+    });
+
+    const formattedSecret = cleanSecret.match(/.{1,4}/g)?.join(' ') || cleanSecret;
+    const issuer = 'PakInvest CRM';
+    const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(config.configuredBy)}?secret=${cleanSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+
+    res.json({
+      success: true,
+      message: 'Authenticator Key securely saved into PostgreSQL database!',
+      config: {
+        isConfigured: true,
+        enabled: true,
+        configuredAt: config.configuredAt,
+        configuredBy: config.configuredBy,
+        secret: cleanSecret,
+        formattedSecret,
+        otpauthUrl,
+      },
+    });
+  } catch (err: any) {
+    console.error('[CRM TOTP Save Key Error]:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to save authenticator key in database' });
+  }
+});
+
 crmTotpRouter.post('/verify-setup', async (req, res) => {
   try {
     const { secret, code, operatorName = 'Operations Officer', accessCode = '' } = req.body || {};
@@ -727,7 +806,9 @@ crmTotpRouter.post('/verify-setup', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid Master Authorization PIN.' });
     }
 
-    const isValid = crmVerifyTotpCode(secret, code);
+    const cleanSecret = secret.trim().toUpperCase().replace(/[\s-]/g, '');
+    const cleanCode = code.trim().replace(/\D/g, '');
+    const isValid = crmVerifyTotpCode(cleanSecret, cleanCode);
     if (!isValid) {
       return res.status(400).json({
         success: false,
@@ -737,7 +818,7 @@ crmTotpRouter.post('/verify-setup', async (req, res) => {
 
     const config: CrmTotpConfig = {
       enabled: true,
-      secret: secret.trim().toUpperCase(),
+      secret: cleanSecret,
       configuredAt: new Date().toISOString(),
       configuredBy: operatorName.trim() || 'Admin Operator',
       issuer: 'PakInvest CRM',
@@ -775,32 +856,43 @@ crmTotpRouter.post('/verify-setup', async (req, res) => {
 crmTotpRouter.post('/login', async (req, res) => {
   try {
     const { operatorName = 'Operations Officer', accessCode = '', totpCode = '' } = req.body || {};
+    const cleanTotp = (totpCode || '').trim().replace(/\D/g, '');
     const cleanPin = (accessCode || '').trim().toLowerCase();
     const VALID_PINS = ['admin123', '7860', 'admin786', 'pakinvest', '1234'];
-    if (!VALID_PINS.includes(cleanPin)) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid Master Authorization PIN. (Default: 7860 or admin123)',
-      });
-    }
 
     const config = await getStoredCrmTotpConfig();
 
+    // If TOTP is configured and active in PostgreSQL
     if (config && config.enabled && config.secret) {
-      if (!totpCode || totpCode.trim().length === 0) {
-        return res.status(403).json({
+      if (!cleanTotp || cleanTotp.length !== 6) {
+        return res.status(400).json({
           success: false,
           requiresTotp: true,
-          error: 'TOTP Authenticator Code required. Enter the 6-digit code from your authenticator app.',
+          error: 'Authenticator code required. Please paste or enter the current 6-digit code from Google Authenticator / Authy.',
         });
       }
 
-      const isTotpValid = crmVerifyTotpCode(config.secret, totpCode);
+      const isTotpValid = crmVerifyTotpCode(config.secret, cleanTotp);
       if (!isTotpValid) {
         return res.status(401).json({
           success: false,
           requiresTotp: true,
-          error: 'Invalid 6-digit Authenticator code. Please check your authenticator app and try again.',
+          error: 'Invalid 6-digit Authenticator code. Ensure your device clock is synced and copy the latest code.',
+        });
+      }
+
+      if (cleanPin && !VALID_PINS.includes(cleanPin)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid Master PIN credentials.',
+        });
+      }
+    } else {
+      // If TOTP is not yet configured, allow initial setup access with Master PIN
+      if (!VALID_PINS.includes(cleanPin)) {
+        return res.status(401).json({
+          success: false,
+          error: 'TOTP Key is not yet configured. Please enter Master PIN (7860) to access CRM and configure your Authenticator Key in CRM Settings.',
         });
       }
     }

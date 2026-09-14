@@ -280,7 +280,8 @@ export type CrmNavTab =
   | 'gateways'
   | 'ledger'
   | 'notifications'
-  | 'faqs';
+  | 'faqs'
+  | 'settings';
 
 export interface FaqItem {
   id: string;

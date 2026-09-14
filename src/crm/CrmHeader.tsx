@@ -57,6 +57,8 @@ export const CrmHeader: React.FC<CrmHeaderProps> = ({
         return 'Master Audit Ledger & Financial Records';
       case 'notifications':
         return 'Push & In-App Broadcast Center';
+      case 'settings':
+        return 'CRM Security & Authenticator Key Settings';
       default:
         return 'Management CRM';
     }

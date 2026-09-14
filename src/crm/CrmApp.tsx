@@ -22,6 +22,7 @@ import { CrmUsersView } from './views/CrmUsersView';
 import { CrmGatewaysView } from './views/CrmGatewaysView';
 import { CrmLedgerView } from './views/CrmLedgerView';
 import { CrmFaqView } from './views/CrmFaqView';
+import { CrmSettingsView } from './views/CrmSettingsView';
 import { ToastContainer } from '../components/ToastContainer';
 import { useApp } from '../context/AppContext';
 import { CrmThemeProvider, useCrmTheme } from './context/CrmThemeContext';
@@ -481,6 +482,13 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
         return (
           <CrmLedgerView />
         );
+      case 'settings':
+        return (
+          <CrmSettingsView
+            adminName={adminName || 'Admin Operator'}
+            showToast={showToast}
+          />
+        );
       default:
         return null;
     }
@@ -537,6 +545,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
               { id: 'gateways', label: 'Payment Channels' },
               { id: 'faqs', label: 'Helpdesk & FAQs' },
               { id: 'ledger', label: 'Master Financial Ledger' },
+              { id: 'settings', label: 'Security & 2FA Key' },
             ].map((item) => (
               <button
                 key={item.id}

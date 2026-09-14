@@ -18,6 +18,7 @@ import {
   Gift,
   Bell,
   HelpCircle,
+  Settings,
 } from 'lucide-react';
 import { useCrmTheme } from './context/CrmThemeContext';
 
@@ -102,6 +103,11 @@ export const CrmSidebar: React.FC<CrmSidebarProps> = ({
       id: 'ledger',
       label: 'Financial Ledger',
       icon: <Receipt className="w-4 h-4" />,
+    },
+    {
+      id: 'settings',
+      label: 'Security & 2FA Key',
+      icon: <Settings className="w-4 h-4" />,
     },
   ];
 
