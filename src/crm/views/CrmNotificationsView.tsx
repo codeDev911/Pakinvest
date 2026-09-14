@@ -165,7 +165,7 @@ export const CrmNotificationsView: React.FC<CrmNotificationsViewProps> = ({
   const [title, setTitle] = useState<string>('');
   const [message, setMessage] = useState<string>('');
   const [notifType, setNotifType] = useState<'system' | 'broadcast' | 'promo' | 'alert' | 'profit_unlocked'>('broadcast');
-  const [actionTab, setActionTab] = useState<NavTab | 'none'>('invest');
+  const [actionTab, setActionTab] = useState<NavTab | 'invest' | 'deposit' | 'rewards' | 'team' | 'none'>('invest');
   const [bonusAmount, setBonusAmount] = useState<number | ''>('');
 
   // Audience Preview State

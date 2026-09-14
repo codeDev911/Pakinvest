@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { GoogleGenAI } from '@google/genai';
+import { createCrmTotpRouter } from './crmTotp';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pakinvest_jwt_secret_key_2025_prod';
 
@@ -562,6 +563,9 @@ const authenticate = async (req: express.Request, res: express.Response, next: e
 };
 
 const router = express.Router();
+
+// Mount CRM TOTP Authentication Router (Isolated to CRM admin operations only)
+router.use('/admin/totp', createCrmTotpRouter(prisma));
 
 // ----------------------------------------------------
 // SYSTEM & DATABASE STATUS

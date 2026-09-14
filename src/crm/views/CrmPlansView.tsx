@@ -89,7 +89,7 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
   const [highlightsInput, setHighlightsInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const categories: string[] = Array.from(new Set(plansList.map((p) => p.category).filter((c): c is string => Boolean(c))));
+  const categories: string[] = Array.from(new Set(plansList.map((p) => p.category).filter(Boolean) as string[]));
 
   const filteredPlans = plansList.filter((p) => {
     if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
@@ -484,7 +484,7 @@ export const CrmPlansView: React.FC<CrmPlansViewProps> = ({
                   <input
                     type="text"
                     value={editingPlan.category || ''}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, category: e.target.value })}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, category: e.target.value as any })}
                     placeholder="e.g. Solar Energy, Agro Yield..."
                     className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white"
                   />
