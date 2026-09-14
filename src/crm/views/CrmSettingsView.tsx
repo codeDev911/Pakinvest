@@ -7,14 +7,14 @@ import {
   Copy,
   Check,
   AlertCircle,
-  Eye,
-  EyeOff,
   QrCode,
   ShieldAlert,
   Server,
   Lock,
   CheckCircle2,
   Sparkles,
+  Database,
+  ArrowRight,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { getApiUrl } from '../../config/api';
@@ -43,17 +43,11 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
   // Active TOTP Config from DB
   const [totpData, setTotpData] = useState<TotpDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showActiveSecret, setShowActiveSecret] = useState(false);
-  const [copiedActiveKey, setCopiedActiveKey] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
-  // New Generation / Regeneration State
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [newSecret, setNewSecret] = useState('');
-  const [newFormattedSecret, setNewFormattedSecret] = useState('');
-  const [newOtpauthUrl, setNewOtpauthUrl] = useState('');
-  const [copiedNewKey, setCopiedNewKey] = useState(false);
-  const [verifyTestCode, setVerifyTestCode] = useState('');
-  const [isSavingKey, setIsSavingKey] = useState(false);
+  // Regeneration state
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [lastRegeneratedAt, setLastRegeneratedAt] = useState<string | null>(null);
 
   // Live Test Verifier
   const [testCodeInput, setTestCodeInput] = useState('');
@@ -64,7 +58,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Fetch current TOTP key and status from PostgreSQL
+  // Fetch current TOTP key directly from PostgreSQL
   const fetchTotpStatus = async () => {
     setIsLoading(true);
     setErrorMsg('');
@@ -75,6 +69,9 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
       const data = await res.json();
       if (data?.success) {
         setTotpData(data);
+        if (data.configuredAt) {
+          setLastRegeneratedAt(data.configuredAt);
+        }
       } else {
         throw new Error(data?.error || 'Failed to fetch TOTP status from database');
       }
@@ -89,9 +86,9 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     fetchTotpStatus();
   }, []);
 
-  // Real-time Generate / Regenerate and save immediately into DB
-  const handleGenerateNewKey = async () => {
-    setIsGenerating(true);
+  // Real-time Regenerate Key and save immediately to PostgreSQL database
+  const handleRegenerateKey = async () => {
+    setIsRegenerating(true);
     setErrorMsg('');
     setSuccessMsg('');
     setTestResult(null);
@@ -99,8 +96,11 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     try {
       const res = await fetch(getApiUrl('/api/admin/totp/regenerate'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operatorName: adminName || 'CRM Admin' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        },
+        body: JSON.stringify({ operatorName: adminName || 'Admin Manager' }),
       });
       const data = await res.json();
 
@@ -108,7 +108,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
         throw new Error(data?.error || 'Failed to regenerate key from backend');
       }
 
-      // Real-time update in state from DB
+      // Real-time update in state from live DB response
       setTotpData({
         isConfigured: true,
         enabled: true,
@@ -120,70 +120,27 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
         otpauthUrl: data.otpauthUrl,
       });
 
-      setNewSecret(data.secret);
-      setNewFormattedSecret(data.formattedSecret || data.secret);
-      setNewOtpauthUrl(data.otpauthUrl);
-      setShowActiveSecret(true);
-      setVerifyTestCode('');
-      
-      setSuccessMsg('Real-Time Authenticator Key Generated & Saved! The PostgreSQL database has been immediately updated with this new key. Old key has been invalidated. Please add this new key or scan the new QR code in your authenticator app now.');
-      
+      setLastRegeneratedAt(data.configuredAt || new Date().toISOString());
+      setTestCodeInput('');
+      setSuccessMsg(
+        `✓ REAL-TIME DATABASE KEY UPDATED! New key "${data.formattedSecret || data.secret}" has been written to the PostgreSQL database. All previous keys are now invalidated.`
+      );
+
       if (showToast) {
-        showToast('Real-Time Key Saved', 'New key saved in database. Old key invalidated.', 'success');
+        showToast('Key Regenerated & Saved in DB', 'New Authenticator key is active in database.', 'success');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Error regenerating authenticator key');
+      setErrorMsg(err?.message || 'Error regenerating authenticator key in database');
     } finally {
-      setIsGenerating(false);
+      setIsRegenerating(false);
     }
   };
 
-  // Save and lock the newly generated/regenerated key directly in DB
-  const handleSaveKeyToDatabase = async () => {
-    if (!newSecret) return;
-    setIsSavingKey(true);
-    setErrorMsg('');
-    setSuccessMsg('');
-
-    try {
-      const res = await fetch(getApiUrl('/api/admin/totp/save-key'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          secret: newSecret,
-          operatorName: adminName || 'Admin Operator',
-          code: verifyTestCode.trim(),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to save key in database');
-      }
-
-      setSuccessMsg('Authenticator key successfully saved and activated in PostgreSQL database! Use your authenticator app for future CRM logins.');
-      if (showToast) {
-        showToast('Security Key Saved', 'New authenticator key is now active in database.', 'success');
-      }
-
-      // Reset generation staging & refresh live active key
-      setNewSecret('');
-      setNewFormattedSecret('');
-      setNewOtpauthUrl('');
-      setVerifyTestCode('');
-      await fetchTotpStatus();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to save key in database');
-    } finally {
-      setIsSavingKey(false);
-    }
-  };
-
-  // Test current 6-digit code against saved key
+  // Test current 6-digit code against saved key in real-time
   const handleTestLiveCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testCodeInput.trim() || testCodeInput.trim().length !== 6) return;
+    const clean = testCodeInput.replace(/\D/g, '').trim();
+    if (clean.length !== 6) return;
 
     setIsTestingCode(true);
     setTestResult(null);
@@ -194,7 +151,8 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           operatorName: adminName || 'Admin Operator',
-          totpCode: testCodeInput.trim(),
+          totpCode: clean,
+          accessCode: '7860',
         }),
       });
 
@@ -203,12 +161,12 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
       if (res.ok && data?.success) {
         setTestResult({
           success: true,
-          message: '6-digit code verified successfully! Your authenticator app and server clock are perfectly synchronized.',
+          message: '6-digit code verified successfully! Your authenticator app and server are perfectly in sync.',
         });
       } else {
         setTestResult({
           success: false,
-          message: data?.error || 'Verification code failed. Ensure your authenticator app time is accurate.',
+          message: data?.error || 'Verification code failed. Ensure your authenticator app time is synced.',
         });
       }
     } catch (err: any) {
@@ -221,17 +179,12 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
     }
   };
 
-  const copyToClipboard = (text: string, isNew: boolean) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    if (isNew) {
-      setCopiedNewKey(true);
-      setTimeout(() => setCopiedNewKey(false), 2000);
-    } else {
-      setCopiedActiveKey(true);
-      setTimeout(() => setCopiedActiveKey(false), 2000);
-    }
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2500);
     if (showToast) {
-      showToast('Copied', 'Authenticator key copied to clipboard', 'info');
+      showToast('Copied to Clipboard', 'Authenticator key copied successfully.', 'info');
     }
   };
 
@@ -255,12 +208,13 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
                 <h1 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   CRM Security & Authenticator Key Settings
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  RFC 6238 TOTP
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <Database className="w-3 h-3" />
+                  <span>PostgreSQL Active</span>
                 </span>
               </div>
               <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Configure your Google Authenticator or Authy 2FA key, save it safely in the PostgreSQL database, and regenerate credentials on demand.
+                RFC 6238 Time-based One-Time Password (TOTP) 2FA. Keys are persisted in the database and authenticate in real-time.
               </p>
             </div>
           </div>
@@ -270,7 +224,7 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
             id="btn-refresh-totp-status"
             onClick={fetchTotpStatus}
             disabled={isLoading}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
               isDark
                 ? 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
@@ -291,18 +245,21 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
       )}
 
       {successMsg && (
-        <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs flex items-center gap-2.5">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-          <span>{successMsg}</span>
+        <div className="p-4 rounded-2xl bg-emerald-950/80 border-2 border-emerald-500/60 text-emerald-200 text-xs flex items-start gap-2.5 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold text-emerald-300 block">Database Key Updated</span>
+            <span>{successMsg}</span>
+          </div>
         </div>
       )}
 
-      {/* Main Grid: Current Status & Key Management */}
+      {/* Main Grid: Active Key & Sync Testing */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Active Key Status Card */}
-        <div className="lg:col-span-6 space-y-6">
+        {/* Main Column: Active Key & Real-Time Regeneration */}
+        <div className="lg:col-span-7 space-y-6">
           <div
-            className={`p-6 rounded-3xl border transition-colors space-y-5 ${
+            className={`p-6 rounded-3xl border transition-colors space-y-6 ${
               isDark
                 ? 'bg-slate-900/80 border-slate-800'
                 : 'bg-white border-slate-200 shadow-sm'
@@ -311,164 +268,130 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Smartphone className="w-5 h-5 text-emerald-500" />
-                <h2 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  Active Authenticator Key
+                <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Database Authenticator Secret Key
                 </h2>
               </div>
-              <span
-                className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                  totpData?.isConfigured
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                }`}
-              >
-                {totpData?.isConfigured ? (
-                  <>
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Active in Database</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>Not Configured Yet</span>
-                  </>
-                )}
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Live in Database</span>
               </span>
             </div>
 
-            {totpData?.isConfigured ? (
-              <div className="space-y-4">
-                <div
-                  className={`p-4 rounded-2xl border ${
-                    isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-medium text-slate-400">Database Secret Key:</span>
+            {/* Secret Key Display Box */}
+            <div className="space-y-3">
+              <div
+                className={`p-4 rounded-2xl border ${
+                  isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Active Secret Key (Paste in Authenticator App)</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold">RFC 6238 Base32</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <code className="flex-1 font-mono text-sm sm:text-base font-bold text-emerald-400 select-all tracking-wider break-all bg-emerald-950/40 p-3 rounded-xl border border-emerald-500/20">
+                    {totpData?.formattedSecret || totpData?.secret || 'Loading active key...'}
+                  </code>
+                  {totpData?.secret && (
                     <button
                       type="button"
-                      onClick={() => setShowActiveSecret(!showActiveSecret)}
-                      className="text-[11px] font-semibold text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
+                      id="btn-copy-active-totp"
+                      onClick={() => copyToClipboard(totpData.secret!)}
+                      className="px-3.5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shrink-0 shadow-md shadow-emerald-900/30"
+                      title="Copy Key"
                     >
-                      {showActiveSecret ? (
+                      {copiedKey ? (
                         <>
-                          <EyeOff className="w-3.5 h-3.5" />
-                          <span>Hide Key</span>
+                          <Check className="w-4 h-4 text-white" />
+                          <span>Copied!</span>
                         </>
                       ) : (
                         <>
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Reveal Key</span>
+                          <Copy className="w-4 h-4" />
+                          <span>Copy</span>
                         </>
                       )}
                     </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs font-semibold text-emerald-400 select-all break-all">
-                      {showActiveSecret
-                        ? totpData.formattedSecret || totpData.secret
-                        : totpData.maskedSecret || '•••• •••• •••• ••••'}
-                    </code>
-                    {totpData.secret && (
-                      <button
-                        type="button"
-                        id="btn-copy-active-totp"
-                        onClick={() => copyToClipboard(totpData.secret!, false)}
-                        className={`p-2 rounded-xl border transition-colors ${
-                          isDark
-                            ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                        }`}
-                        title="Copy Key"
-                      >
-                        {copiedActiveKey ? (
-                          <Check className="w-4 h-4 text-emerald-500" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  {copiedActiveKey && (
-                    <p className="text-[10px] text-emerald-400 mt-1 text-right">Key copied to clipboard!</p>
                   )}
                 </div>
+              </div>
 
-                {/* Metadata details */}
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'}`}>
-                    <span className="text-[10px] text-slate-400 block">Configured By</span>
-                    <span className={`font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                      {totpData.configuredBy || adminName || 'Admin'}
-                    </span>
+              {/* QR Code & Scan Helper */}
+              {totpData?.otpauthUrl && (
+                <div className="flex flex-col sm:flex-row items-center gap-5 p-5 rounded-2xl bg-slate-950 border border-slate-800">
+                  <div className="p-3 bg-white rounded-2xl shadow-xl border-2 border-emerald-500/50 shrink-0">
+                    <QRCodeSVG value={totpData.otpauthUrl} size={135} level="M" />
                   </div>
-                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'}`}>
-                    <span className="text-[10px] text-slate-400 block">Activated Date</span>
-                    <span className={`font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                      {totpData.configuredAt
-                        ? new Date(totpData.configuredAt).toLocaleDateString('en-PK', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                        : 'Active'}
-                    </span>
+                  <div className="space-y-2 text-center sm:text-left text-xs">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[11px] border border-emerald-500/30">
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>Scan with Phone Camera</span>
+                    </div>
+                    <p className="text-white font-semibold text-sm">
+                      Google Authenticator or Authy
+                    </p>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      Scan this QR code in your authenticator app to automatically set up the 30-second rotating 6-digit code.
+                    </p>
                   </div>
                 </div>
+              )}
 
-                {/* Active QR Code Preview */}
-                {totpData.otpauthUrl && (
-                  <div className="pt-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Pair Another Authenticator App:
-                      </span>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                      <div className="p-2.5 bg-white rounded-xl shadow-md border-2 border-emerald-500/40 shrink-0">
-                        <QRCodeSVG value={totpData.otpauthUrl} size={110} level="M" />
-                      </div>
-                      <div className="space-y-1 text-center sm:text-left text-xs">
-                        <p className="font-semibold text-emerald-400">Scan with Google Authenticator or Authy</p>
-                        <p className="text-slate-400 text-[11px] leading-relaxed">
-                          Use this QR code if you switch devices or want to link multiple backup authenticator apps.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
-                <div className="flex items-center gap-2 font-bold">
-                  <ShieldAlert className="w-4 h-4 text-amber-400" />
-                  <span>No Authenticator Key Configured Yet</span>
+              {/* Key Metadata Details */}
+              <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className="text-[10px] text-slate-400 block font-medium">Configured By</span>
+                  <span className={`font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    {totpData?.configuredBy || adminName || 'Admin Manager'}
+                  </span>
                 </div>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Generate an authenticator key below and paste it into your Google Authenticator or Authy app. Once saved, every CRM login will require your 6-digit code.
-                </p>
+                <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className="text-[10px] text-slate-400 block font-medium">Last Saved / Regenerated</span>
+                  <span className={`font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    {lastRegeneratedAt
+                      ? new Date(lastRegeneratedAt).toLocaleString('en-PK', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })
+                      : 'Active'}
+                  </span>
+                </div>
               </div>
-            )}
+            </div>
 
-            {/* Action Button: Generate / Regenerate Key */}
-            <div className="pt-2 border-t border-slate-800/80">
+            {/* Primary Action Button: Regenerate Key */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
               <button
                 type="button"
                 id="btn-generate-authenticator-key"
-                onClick={handleGenerateNewKey}
-                disabled={isGenerating}
-                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2"
+                onClick={handleRegenerateKey}
+                disabled={isRegenerating}
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-sm shadow-xl shadow-emerald-950/40 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
               >
-                <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${isRegenerating ? 'animate-spin' : ''}`} />
                 <span>
-                  {totpData?.isConfigured ? 'Regenerate / Update Authenticator Key' : 'Generate Authenticator Key'}
+                  {isRegenerating ? 'Regenerating & Saving to Database...' : 'Regenerate New Key in Database (Real-Time)'}
                 </span>
               </button>
+              <p className="text-[11px] text-slate-400 text-center">
+                Clicking this will instantly generate a new Base32 secret key, save it directly to the PostgreSQL database, and invalidate all old keys immediately.
+              </p>
             </div>
           </div>
+        </div>
 
-          {/* Code Verifier / Quick Test Tool */}
+        {/* Right Column: Code Synchronizer Tester & Security Steps */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Real-time Code Verifier */}
           <div
             className={`p-6 rounded-3xl border transition-colors space-y-4 ${
               isDark
@@ -479,11 +402,11 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
             <div className="flex items-center gap-2.5">
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               <h2 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                Test Authenticator Synchronization
+                Test Live Authenticator Code
               </h2>
             </div>
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Paste the current 6-digit code from your app here to confirm your device clock and the server are in sync.
+              After adding the key or scanning the QR code, type the 6-digit code displayed in your app to confirm real-time synchronization.
             </p>
 
             <form onSubmit={handleTestLiveCode} className="space-y-3">
@@ -496,19 +419,19 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
                     const val = e.target.value.replace(/\D/g, '').slice(0, 6);
                     setTestCodeInput(val);
                   }}
-                  placeholder="Paste 6-digit code"
+                  placeholder="e.g. 123456"
                   maxLength={6}
-                  className={`flex-1 px-4 py-2.5 rounded-xl border text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                  className={`flex-1 px-4 py-3 rounded-xl border text-base font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold ${
                     isDark
-                      ? 'bg-slate-950 border-slate-800 text-white'
-                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                      ? 'bg-slate-950 border-slate-800 text-emerald-400 placeholder:text-slate-700'
+                      : 'bg-slate-50 border-slate-300 text-emerald-700 placeholder:text-slate-400'
                   }`}
                 />
                 <button
                   type="submit"
                   id="btn-test-authenticator-code"
                   disabled={isTestingCode || testCodeInput.length !== 6}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 disabled:opacity-50 text-emerald-400 font-bold text-xs border border-slate-700 transition-colors"
+                  className="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
                   {isTestingCode ? 'Checking...' : 'Verify Code'}
                 </button>
@@ -516,10 +439,10 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
 
               {testResult && (
                 <div
-                  className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 animate-in fade-in duration-150 ${
                     testResult.success
-                      ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
-                      : 'bg-rose-950/60 border border-rose-800 text-rose-300'
+                      ? 'bg-emerald-950/80 border border-emerald-800 text-emerald-300'
+                      : 'bg-rose-950/80 border border-rose-800 text-rose-300'
                   }`}
                 >
                   {testResult.success ? (
@@ -527,174 +450,40 @@ export const CrmSettingsView: React.FC<CrmSettingsViewProps> = ({ adminName, sho
                   ) : (
                     <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                   )}
-                  <span>{testResult.message}</span>
+                  <span className="font-medium">{testResult.message}</span>
                 </div>
               )}
             </form>
           </div>
-        </div>
 
-        {/* Right Column: Generation / Regeneration Setup Panel */}
-        <div className="lg:col-span-6 space-y-6">
+          {/* Quick Setup Instructions */}
           <div
-            className={`p-6 rounded-3xl border transition-colors space-y-5 ${
-              isDark
-                ? 'bg-slate-900/80 border-slate-800'
-                : 'bg-white border-slate-200 shadow-sm'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <KeyRound className="w-5 h-5 text-emerald-500" />
-                <h2 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  {newSecret ? 'New Key Ready to Save' : 'Generate / Regenerate Key'}
-                </h2>
-              </div>
-              {newSecret && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  Unsaved Staging
-                </span>
-              )}
-            </div>
-
-            {newSecret ? (
-              <div className="space-y-5">
-                <div className="text-xs text-slate-400 leading-relaxed">
-                  Follow these 3 easy steps to pair the key and activate it in the database:
-                </div>
-
-                {/* Step 1: QR Code & Scan */}
-                <div className="flex flex-col items-center justify-center p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-                  <span className="text-xs font-bold text-slate-300">Step 1: Scan QR in Authenticator App</span>
-                  <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-emerald-500/40">
-                    <QRCodeSVG value={newOtpauthUrl} size={150} level="M" />
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    PakInvest CRM (Time-based 30s)
-                  </span>
-                </div>
-
-                {/* Step 2: Manual Setup Key to Copy & Paste */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span>Step 2: Or Paste Key Manually</span>
-                    <span className="text-[10px] text-slate-500 font-normal">If camera is unavailable</span>
-                  </label>
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                    <code className="text-xs font-mono text-emerald-400 flex-1 break-all select-all font-bold tracking-wider">
-                      {newFormattedSecret || newSecret}
-                    </code>
-                    <button
-                      type="button"
-                      id="btn-copy-new-secret"
-                      onClick={() => copyToClipboard(newSecret, true)}
-                      className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors shrink-0"
-                      title="Copy Key to Paste in Authenticator"
-                    >
-                      {copiedNewKey ? (
-                        <Check className="w-4 h-4 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                  {copiedNewKey && (
-                    <p className="text-[10px] text-emerald-400 text-right">Key copied to clipboard!</p>
-                  )}
-                </div>
-
-                {/* Step 3: Optional Test Verification Code before Save */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span>Step 3: Confirm 6-Digit Code (Optional Test)</span>
-                    <span className="text-[10px] text-slate-500">Verify before saving</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="input-verify-new-code"
-                    value={verifyTestCode}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setVerifyTestCode(val);
-                    }}
-                    placeholder="Enter 6-digit code from app"
-                    maxLength={6}
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 text-sm font-mono tracking-widest placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* Save to Database Button */}
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewSecret('');
-                      setNewFormattedSecret('');
-                      setNewOtpauthUrl('');
-                    }}
-                    className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    id="btn-save-key-to-db"
-                    onClick={handleSaveKeyToDatabase}
-                    disabled={isSavingKey}
-                    className="flex-[2] py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2"
-                  >
-                    {isSavingKey ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Saving in Database...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Save Key to Database</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center space-y-3">
-                <QrCode className="w-10 h-10 text-slate-600 mx-auto" />
-                <div>
-                  <h3 className={`text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Ready to Generate or Regenerate
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
-                    Click &quot;Generate / Regenerate Authenticator Key&quot; on the left to create a new key. You can copy it, paste it in Google Authenticator or Authy, and save it directly into the database.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Information & Security Policy Card */}
-          <div
-            className={`p-6 rounded-3xl border transition-colors space-y-3 ${
+            className={`p-6 rounded-3xl border transition-colors space-y-3.5 ${
               isDark
                 ? 'bg-slate-900/80 border-slate-800 text-slate-300'
                 : 'bg-white border-slate-200 text-slate-700 shadow-sm'
             }`}
           >
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-500">
-              <Sparkles className="w-4 h-4" />
-              <span>CRM Authentication Flow Details</span>
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-emerald-400" />
+              <h3 className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                How Real-Time 2FA Works
+              </h3>
             </div>
-            <ul className="text-xs space-y-2 text-slate-400 list-disc list-inside leading-relaxed">
+            <ol className="text-xs space-y-2.5 text-slate-400 list-decimal list-inside">
               <li>
-                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Saved in Database:</strong> Your key is stored encrypted in the PostgreSQL <code className="text-emerald-400">SystemSetting</code> table and is persistent across deployments.
+                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Add Key to Authenticator:</strong> Tap &quot;+&quot; in Google Authenticator or Authy and scan the QR code, or paste the secret key above.
               </li>
               <li>
-                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Quick Copy & Paste Login:</strong> On the CRM login page, simply paste the current 6-digit code from Google Authenticator to enter immediately.
+                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Instant Invalidation:</strong> Whenever you click &quot;Regenerate New Key&quot;, the database is immediately overwritten. Old keys become invalid instantly.
               </li>
               <li>
-                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Regenerate Anytime:</strong> You can regenerate your key at any time from this Settings page if you change phones or rotate credentials.
+                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Login Verification:</strong> On future logins to PakInvest CRM, enter the 6-digit code currently visible on your phone.
               </li>
-            </ul>
+              <li>
+                <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>Time Synchronization:</strong> Codes rotate every 30 seconds. Ensure your phone clock is set to Automatic network time.
+              </li>
+            </ol>
           </div>
         </div>
       </div>
