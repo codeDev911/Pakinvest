@@ -913,12 +913,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // In-flight mutex refs to prevent rapid double-clicks on slow internet
+  const isClaimingProfitRef = useRef<boolean>(false);
+  const isClaimingAllRef = useRef<boolean>(false);
+
   // Claim single active plan profit
   const claimProfit = async (investmentId: string) => {
     if (!isAuthenticated) {
       setIsAuthModalOpen(true);
       return;
     }
+    if (isClaimingProfitRef.current) {
+      return;
+    }
+    isClaimingProfitRef.current = true;
     try {
       const res = await fetch(getApiUrl('/api/investments/claim'), {
         method: 'POST',
@@ -993,6 +1001,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch (err: any) {
       showToast('Error', err?.message || 'Failed to claim profit', 'error');
+    } finally {
+      isClaimingProfitRef.current = false;
     }
   };
 
@@ -1002,6 +1012,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsAuthModalOpen(true);
       return;
     }
+    if (isClaimingAllRef.current) {
+      return;
+    }
+    isClaimingAllRef.current = true;
     try {
       const res = await fetch(getApiUrl('/api/investments/claim-all'), {
         method: 'POST',
@@ -1054,6 +1068,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch (err: any) {
       showToast('Error', err?.message || 'Failed to claim profits', 'error');
+    } finally {
+      isClaimingAllRef.current = false;
     }
   };
 

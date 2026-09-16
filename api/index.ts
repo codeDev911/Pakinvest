@@ -1636,14 +1636,26 @@ router.post('/investments/activate', authenticate, async (req, res) => {
   }
 });
 
+// In-memory mutex map to prevent concurrent race-condition requests from same user
+const activeClaimLocks = new Set<string>();
+
 router.post('/investments/claim', authenticate, async (req, res) => {
+  const user = (req as any).user;
+  const lockKey = `claim_${user.id}`;
+  if (activeClaimLocks.has(lockKey)) {
+    return res.status(429).json({ error: 'A yield collection is already in progress. Please wait a moment.' });
+  }
+  activeClaimLocks.add(lockKey);
+
   try {
-    const user = (req as any).user;
     const { investmentId } = req.body;
 
     if (!investmentId) {
       return res.status(400).json({ error: 'Investment ID is required' });
     }
+
+    const now = Date.now();
+    const CYCLE_DURATION_MS = 86400000; // Exact 24 hours
 
     if (investmentId === 'all') {
       const activeInvs = await prisma.activeInvestment.findMany({
@@ -1654,11 +1666,22 @@ router.post('/investments/claim', authenticate, async (req, res) => {
         return res.status(400).json({ error: 'You have no active investment packages earning yield.' });
       }
 
-      const now = Date.now();
+      // Filter only packages that have ACTUALLY completed their 24-hour cycle
+      const readyInvs = activeInvs.filter((inv) => {
+        const lastClaim = Number(inv.lastClaimTimestamp);
+        return lastClaim <= 0 || now >= lastClaim + CYCLE_DURATION_MS;
+      });
+
+      if (readyInvs.length === 0) {
+        return res.status(400).json({
+          error: 'Your 24-hour daily yield cycle is still in progress. Please wait until countdown finishes.',
+        });
+      }
+
       let totalDailyProfits = 0;
       const operations: any[] = [];
 
-      for (const inv of activeInvs) {
+      for (const inv of readyInvs) {
         const exactDaily = Math.round(inv.dailyProfitAmount);
         totalDailyProfits += exactDaily;
         const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
@@ -1685,6 +1708,7 @@ router.post('/investments/claim', authenticate, async (req, res) => {
           where: { id: user.id },
           data: {
             balance: { increment: totalDailyProfits },
+            withdrawableBalance: { increment: totalDailyProfits },
             totalEarnedProfit: { increment: totalDailyProfits },
           },
         })
@@ -1705,7 +1729,7 @@ router.post('/investments/claim', authenticate, async (req, res) => {
             gateway: 'Yield_Payout',
             referenceCode: `CLAIM-ALL-${Date.now().toString().slice(-6)}`,
             timestamp: getFormattedNow(),
-            notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${activeInvs.length} packages`,
+            notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${readyInvs.length} packages`,
           },
         })
       );
@@ -1728,6 +1752,7 @@ router.post('/investments/claim', authenticate, async (req, res) => {
         claimedAmount: totalDailyProfits,
         totalClaimed: totalDailyProfits,
         balance: freshUser?.balance || 0,
+        withdrawableBalance: freshUser?.withdrawableBalance || 0,
         totalEarnedProfit: freshUser?.totalEarnedProfit || 0,
       });
     }
@@ -1740,13 +1765,23 @@ router.post('/investments/claim', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Active investment package not found' });
     }
 
+    // STRICT 24-HOUR VALIDATION
+    const lastClaim = Number(inv.lastClaimTimestamp);
+    if (lastClaim > 0 && now < lastClaim + CYCLE_DURATION_MS) {
+      const waitRemainingSec = Math.ceil((lastClaim + CYCLE_DURATION_MS - now) / 1000);
+      const hours = Math.floor(waitRemainingSec / 3600);
+      const mins = Math.floor((waitRemainingSec % 3600) / 60);
+      return res.status(400).json({
+        error: `Yield for "${inv.planName}" is not ready yet. Please wait ${hours}h ${mins}m for the 24-hour cycle to complete.`,
+      });
+    }
+
     // Exact daily profit amount configured for this plan
     const exactDailyProfit = Math.round(inv.dailyProfitAmount);
     if (exactDailyProfit <= 0) {
       return res.status(400).json({ error: 'Invalid profit calculation for this package.' });
     }
 
-    const now = Date.now();
     const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
     const isCompleted = newDaysRemaining <= 0;
     const txId = `TXN-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -1848,12 +1883,20 @@ router.post('/investments/claim', authenticate, async (req, res) => {
   } catch (err: any) {
     console.error('[Claim Profit Error]:', err);
     res.status(500).json({ error: err?.message || 'Failed to claim profit' });
+  } finally {
+    activeClaimLocks.delete(lockKey);
   }
 });
 
 router.post('/investments/claim-all', authenticate, async (req, res) => {
+  const user = (req as any).user;
+  const lockKey = `claim_${user.id}`;
+  if (activeClaimLocks.has(lockKey)) {
+    return res.status(429).json({ error: 'A yield collection is already in progress. Please wait a moment.' });
+  }
+  activeClaimLocks.add(lockKey);
+
   try {
-    const user = (req as any).user;
     const activeInvs = await prisma.activeInvestment.findMany({
       where: { userId: user.id, status: 'active' },
     });
@@ -1863,10 +1906,24 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
     }
 
     const now = Date.now();
+    const CYCLE_DURATION_MS = 86400000; // Exact 24 hours
+
+    // Only collect packages that have actually passed 24h
+    const readyInvs = activeInvs.filter((inv) => {
+      const lastClaim = Number(inv.lastClaimTimestamp);
+      return lastClaim <= 0 || now >= lastClaim + CYCLE_DURATION_MS;
+    });
+
+    if (readyInvs.length === 0) {
+      return res.status(400).json({
+        error: 'Your 24-hour daily yield cycle is still in progress. Please wait until countdown finishes.',
+      });
+    }
+
     let totalDailyProfits = 0;
     const operations: any[] = [];
 
-    for (const inv of activeInvs) {
+    for (const inv of readyInvs) {
       const exactDaily = Math.round(inv.dailyProfitAmount);
       totalDailyProfits += exactDaily;
       const newDaysRemaining = Math.max(0, inv.daysRemaining - 1);
@@ -1914,7 +1971,7 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
           gateway: 'Yield_Payout',
           referenceCode: `CLAIM-ALL-${Date.now().toString().slice(-6)}`,
           timestamp: getFormattedNow(),
-          notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${activeInvs.length} packages`,
+          notes: `Batch claimed exact Rs. ${totalDailyProfits.toLocaleString()} daily yield across ${readyInvs.length} packages`,
         },
       })
     );
@@ -1936,11 +1993,14 @@ router.post('/investments/claim-all', authenticate, async (req, res) => {
       message: `Successfully collected Rs. ${totalDailyProfits.toLocaleString()} in daily profits!`,
       totalClaimed: totalDailyProfits,
       balance: freshUser?.balance || 0,
+      withdrawableBalance: freshUser?.withdrawableBalance || 0,
       totalEarnedProfit: freshUser?.totalEarnedProfit || 0,
     });
   } catch (err: any) {
     console.error('[Claim All Error]:', err);
     res.status(500).json({ error: err?.message || 'Failed to claim all profits' });
+  } finally {
+    activeClaimLocks.delete(lockKey);
   }
 });
 
