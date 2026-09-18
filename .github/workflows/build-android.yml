@@ -44,6 +44,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '17.0'
+
+      - name: Accept Android SDK Licenses & Install Platforms
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "platforms;android-34" "build-tools;35.0.0" || true
 
       - name: Install NPM Dependencies
         run: npm ci || npm install
