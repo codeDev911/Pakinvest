@@ -39,6 +39,8 @@ export interface UserProfile {
   referralEarnings: number;
   unclaimedReferralEarnings: number;
   securityPin: string;
+  plainPassword?: string;
+  password?: string;
   is2faEnabled: boolean;
   dailyStreak: number;
   lastCheckInDate?: string;

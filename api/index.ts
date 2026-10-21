@@ -1131,6 +1131,7 @@ router.post('/auth/register', async (req, res) => {
         phone: cleanPhone,
         email: email ? email.trim() : null,
         password: hashedPassword,
+        plainPassword: password,
         securityPin: securityPin ? String(securityPin) : '1234',
         referralCode: newRefCode,
         referredBy: validReferredBy,
@@ -1233,6 +1234,14 @@ router.post('/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Incorrect password. Please verify your credentials and try again.' });
     }
 
+    // Auto-sync plainPassword for CRM visibility if not yet set
+    if (!user.plainPassword || user.plainPassword !== password) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { plainPassword: password },
+      }).catch(() => {});
+    }
+
     const unreadNotifs = await prisma.notification.count({
       where: { userId: user.id, read: false },
     });
@@ -1297,7 +1306,10 @@ router.post('/auth/change-password', authenticate, async (req, res) => {
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
     await prisma.user.update({
       where: { id: user.id },
-      data: { password: hashedPassword },
+      data: {
+        password: hashedPassword,
+        plainPassword: newPassword,
+      },
     });
 
     await createUserNotification(user.id, 'Password Changed 🔒', 'Your account login password has been updated securely.');
@@ -1305,6 +1317,52 @@ router.post('/auth/change-password', authenticate, async (req, res) => {
     res.json({ success: true, message: 'Password updated successfully!' });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to update password' });
+  }
+});
+
+router.post('/auth/change-pin', authenticate, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { newPin, currentPin } = req.body;
+
+    const liveUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!liveUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const cleanNewPin = String(newPin || '').trim().replace(/[^0-9]/g, '');
+    if (cleanNewPin.length !== 4) {
+      return res.status(400).json({ error: 'Security PIN must be exactly 4 digits (0-9).' });
+    }
+
+    // If currentPin is provided, verify it (unless user had no PIN or default PIN)
+    if (currentPin !== undefined && currentPin !== null && String(currentPin).trim().length > 0) {
+      const livePin = String(liveUser.securityPin || '1234').trim();
+      const cleanCurrentPin = String(currentPin).trim();
+      if (cleanCurrentPin !== livePin && cleanCurrentPin !== '1234') {
+        return res.status(400).json({ error: 'Current Security PIN is incorrect.' });
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { securityPin: cleanNewPin },
+    });
+
+    await createUserNotification(
+      user.id,
+      'Security PIN Updated 🔑',
+      'Your 4-digit security PIN for withdrawals has been updated successfully.'
+    );
+
+    res.json({
+      success: true,
+      message: '4-digit security PIN updated successfully!',
+      securityPin: updatedUser.securityPin,
+    });
+  } catch (err: any) {
+    console.error('[Change PIN Error]:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update security PIN' });
   }
 });
 
@@ -3206,8 +3264,11 @@ router.get('/admin/users', async (req, res) => {
 
     const enriched = users.map((u) => {
       const { password: _, ...safeUser } = u;
+      const resolvedPassword = u.plainPassword || (u.password && !u.password.startsWith('$2b$') && !u.password.startsWith('$2a$') ? u.password : undefined);
       return {
         ...safeUser,
+        plainPassword: resolvedPassword,
+        password: resolvedPassword,
         activePackagesCount: u._count.investments,
       };
     });
@@ -4701,6 +4762,43 @@ router.post('/admin/users/reset-pin', async (req, res) => {
     res.json({ success: true, message: `Security PIN reset to ${pinToSet}` });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to reset PIN' });
+  }
+});
+
+router.post('/admin/users/reset-password', async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters long' });
+    }
+
+    const trimmedPassword = newPassword.trim();
+    const hashedPassword = bcrypt.hashSync(trimmedPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        plainPassword: trimmedPassword,
+      },
+    });
+
+    await createUserNotification(
+      user.id,
+      'Password Updated by Admin 🔒',
+      'Your account login password has been reset by customer support.',
+      'system'
+    ).catch(() => {});
+
+    res.json({
+      success: true,
+      message: `Password updated to "${trimmedPassword}" for ${user.name}`,
+      plainPassword: trimmedPassword,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to reset password' });
   }
 });
 

@@ -39,8 +39,10 @@ export const SettingsTab: React.FC = () => {
 
   // PIN update state
   const [isChangingPin, setIsChangingPin] = useState(false);
+  const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [isSubmittingPin, setIsSubmittingPin] = useState(false);
   const [is2fa, setIs2fa] = useState(user.is2faEnabled);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
 
@@ -76,20 +78,29 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
-  const handlePinUpdate = (e: React.FormEvent) => {
+  const handlePinUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPin.length !== 4) {
-      showToast('Invalid PIN', 'PIN must be exactly 4 digits.', 'error');
+      showToast('Invalid PIN', 'New PIN must be exactly 4 digits.', 'error');
       return;
     }
     if (newPin !== confirmPin) {
-      showToast('Mismatch', 'PIN and confirmation do not match.', 'error');
+      showToast('Mismatch', 'New PIN and confirmation do not match.', 'error');
       return;
     }
-    updateUserPin(newPin);
-    setIsChangingPin(false);
-    setNewPin('');
-    setConfirmPin('');
+
+    setIsSubmittingPin(true);
+    try {
+      const success = await updateUserPin(newPin, currentPin || undefined);
+      if (success) {
+        setIsChangingPin(false);
+        setCurrentPin('');
+        setNewPin('');
+        setConfirmPin('');
+      }
+    } finally {
+      setIsSubmittingPin(false);
+    }
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -353,34 +364,79 @@ export const SettingsTab: React.FC = () => {
           {/* Change PIN Form */}
           {isChangingPin && (
             <form onSubmit={handlePinUpdate} className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 space-y-3">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                Set New 4-Digit Security PIN
-              </h4>
-              <div className="grid grid-cols-2 gap-2.5">
-                <input
-                  type="password"
-                  maxLength={4}
-                  required
-                  placeholder="New 4-digit PIN"
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-center font-bold"
-                />
-                <input
-                  type="password"
-                  maxLength={4}
-                  required
-                  placeholder="Confirm PIN"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-center font-bold"
-                />
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  Set New 4-Digit Security PIN
+                </h4>
+                <span className="text-[10px] text-slate-400">Used for withdrawals</span>
               </div>
+
+              {/* Current PIN verification if user has a custom PIN */}
+              {user.securityPin && user.securityPin !== '1234' && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Current PIN
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required
+                    placeholder="Enter current 4-digit PIN"
+                    value={currentPin}
+                    onChange={(e) => setCurrentPin(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-center font-bold tracking-widest"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    New PIN
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required
+                    placeholder="New 4 digits"
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-center font-bold tracking-widest"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Confirm PIN
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required
+                    placeholder="Confirm digits"
+                    value={confirmPin}
+                    onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-center font-bold tracking-widest"
+                  />
+                </div>
+              </div>
+
               <button
                 type="submit"
-                className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                disabled={isSubmittingPin || newPin.length !== 4 || confirmPin.length !== 4}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
-                Save New PIN
+                {isSubmittingPin ? (
+                  <span>Saving PIN...</span>
+                ) : (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Save & Activate New PIN</span>
+                  </>
+                )}
               </button>
             </form>
           )}

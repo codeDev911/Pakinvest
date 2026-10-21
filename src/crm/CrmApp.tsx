@@ -326,6 +326,28 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
     }
   };
 
+  const handleResetPassword = async (userId: string, newPassword: string) => {
+    try {
+      const res = await fetch(getApiUrl('/api/admin/users/reset-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, newPassword }),
+      });
+      const data = await safeJson(res);
+      if (data?.success) {
+        showToast('Password Reset', `Password successfully updated.`, 'success');
+        await loadCrmData();
+        return true;
+      } else {
+        showToast('Error', data?.error || 'Failed to reset password.', 'error');
+        return false;
+      }
+    } catch (err) {
+      showToast('Error', 'Network error resetting password.', 'error');
+      return false;
+    }
+  };
+
   // Channel Actions
   const handleSaveChannel = async (channel: OfficialDepositChannel) => {
     try {
@@ -463,6 +485,7 @@ const CrmAppContent: React.FC<CrmAppProps> = ({ onSwitchToClient, onLogout }) =>
             users={allUsers}
             onAdjustBalance={handleAdjustBalance}
             onResetPin={handleResetPin}
+            onResetPassword={handleResetPassword}
           />
         );
       case 'gateways':

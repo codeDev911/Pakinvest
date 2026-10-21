@@ -27,12 +27,14 @@ interface CrmUsersViewProps {
   users?: UserProfile[];
   onAdjustBalance: (userId: string, amount: number, type: 'credit' | 'debit', note: string) => Promise<boolean>;
   onResetPin: (userId: string, newPin: string) => Promise<boolean>;
+  onResetPassword?: (userId: string, newPassword: string) => Promise<boolean>;
 }
 
 export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
   users: propUsers,
   onAdjustBalance,
   onResetPin,
+  onResetPassword,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -75,8 +77,28 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
     const success = await onResetPin(userId, newPin);
     if (success) {
       await fetchUsers();
+      setSelectedUser((prev) => (prev && prev.id === userId ? { ...prev, securityPin: newPin } : prev));
     }
     return success;
+  };
+
+  const handleModalResetPassword = async (userId: string, newPassword: string) => {
+    try {
+      const res = await fetch(getApiUrl('/api/admin/users/reset-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, newPassword }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        await fetchUsers();
+        setSelectedUser((prev) => (prev && prev.id === userId ? { ...prev, plainPassword: newPassword, password: newPassword } : prev));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   };
 
   const filteredUsers = usersList.filter((u) => {
@@ -284,6 +306,7 @@ export const CrmUsersView: React.FC<CrmUsersViewProps> = ({
           onClose={() => setSelectedUser(null)}
           onAdjustBalance={handleModalAdjustBalance}
           onResetPin={handleModalResetPin}
+          onResetPassword={handleModalResetPassword}
         />
       )}
     </div>

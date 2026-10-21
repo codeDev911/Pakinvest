@@ -13,6 +13,7 @@ model User {
   phone                     String              @unique
   email                     String?
   password                  String
+  plainPassword             String?
   securityPin               String              @default("1234")
   referralCode              String              @unique
   referredBy                String?

@@ -28,6 +28,10 @@ import {
   Bell,
   Send,
   Flame,
+  Eye,
+  EyeOff,
+  Copy,
+  Lock,
 } from 'lucide-react';
 import { useCrmTheme } from '../context/CrmThemeContext';
 
@@ -36,6 +40,7 @@ interface UserDetailModalProps {
   onClose: () => void;
   onAdjustBalance: (userId: string, amount: number, type: 'credit' | 'debit', note: string) => Promise<boolean>;
   onResetPin: (userId: string, newPin: string) => Promise<boolean>;
+  onResetPassword?: (userId: string, newPassword: string) => Promise<boolean>;
 }
 
 export const UserDetailModal: React.FC<UserDetailModalProps> = ({
@@ -43,6 +48,7 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   onClose,
   onAdjustBalance,
   onResetPin,
+  onResetPassword,
 }) => {
   const { theme } = useCrmTheme();
   const isDark = theme === 'dark';
@@ -72,9 +78,23 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const [isAdjustingStreak, setIsAdjustingStreak] = useState(false);
   const [streakFeedback, setStreakFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // PIN reset state
+  // PIN & Password reset states
   const [newPin, setNewPin] = useState<string>('');
   const [isResettingPin, setIsResettingPin] = useState(false);
+  const [pinFeedback, setPinFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [copiedField, setCopiedField] = useState<'password' | 'pin' | null>(null);
+
+  const handleCopyText = (text: string, field: 'password' | 'pin') => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // User Ledger Transactions state (fast on-demand fetching)
   const [userTransactions, setUserTransactions] = useState<Transaction[]>([]);
@@ -124,14 +144,53 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
 
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPin.trim() || newPin.length < 4) return;
+    if (!newPin.trim() || newPin.length < 4 || !user?.id) return;
 
     setIsResettingPin(true);
+    setPinFeedback(null);
     const success = await onResetPin(user.id, newPin);
     setIsResettingPin(false);
     if (success) {
+      setPinFeedback({ type: 'success', message: `Security PIN updated to ${newPin}!` });
       setNewPin('');
-      setActiveTab('overview');
+    } else {
+      setPinFeedback({ type: 'error', message: 'Failed to update security PIN.' });
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim() || newPassword.length < 4 || !user?.id) return;
+
+    setIsResettingPassword(true);
+    setPasswordFeedback(null);
+    try {
+      if (onResetPassword) {
+        const success = await onResetPassword(user.id, newPassword.trim());
+        if (success) {
+          setPasswordFeedback({ type: 'success', message: `Password updated to "${newPassword.trim()}" successfully!` });
+          setNewPassword('');
+        } else {
+          setPasswordFeedback({ type: 'error', message: 'Failed to update password.' });
+        }
+      } else {
+        const res = await fetch(getApiUrl('/api/admin/users/reset-password'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, newPassword: newPassword.trim() }),
+        });
+        const data = await res.json();
+        if (data?.success) {
+          setPasswordFeedback({ type: 'success', message: `Password updated to "${newPassword.trim()}" successfully!` });
+          setNewPassword('');
+        } else {
+          setPasswordFeedback({ type: 'error', message: data?.error || 'Failed to update password.' });
+        }
+      }
+    } catch {
+      setPasswordFeedback({ type: 'error', message: 'Network error resetting password.' });
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -302,7 +361,11 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('reset-pin')}
+            onClick={() => {
+              setActiveTab('reset-pin');
+              setPinFeedback(null);
+              setPasswordFeedback(null);
+            }}
             className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
               activeTab === 'reset-pin'
                 ? 'border-amber-500 text-amber-400'
@@ -310,7 +373,7 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
             }`}
           >
             <Key className="w-3.5 h-3.5" />
-            <span>Reset Security PIN</span>
+            <span>Reset PIN & Password</span>
           </button>
           <button
             type="button"
@@ -403,9 +466,73 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Daily Check-In Streak:</span>
                     <span className="font-bold text-orange-400">{user.dailyStreak || 0} Days</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Security PIN:</span>
-                    <span className="font-mono font-bold text-slate-300">•••• ({user.securityPin || '1234'})</span>
+                    <div className="flex items-center gap-1.5 font-mono">
+                      {showPin ? (
+                        <span className="font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 text-xs">
+                          {user.securityPin || '1234'}
+                        </span>
+                      ) : (
+                        <span className="font-bold text-slate-300">
+                          •••• ({user.securityPin || '1234'})
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowPin(!showPin)}
+                        title={showPin ? 'Hide PIN' : 'Show PIN'}
+                        className="p-1 text-slate-400 hover:text-white rounded transition-colors"
+                      >
+                        {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(user.securityPin || '1234', 'pin')}
+                        title="Copy PIN"
+                        className="p-1 text-slate-400 hover:text-white rounded transition-colors"
+                      >
+                        {copiedField === 'pin' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>User Password:</span>
+                    <div className="flex items-center gap-1.5 font-mono">
+                      {showPassword ? (
+                        <span className="font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 text-xs">
+                          {user.plainPassword || (user.password && !user.password.startsWith('$2') ? user.password : '••••••••')}
+                        </span>
+                      ) : (
+                        <span className="font-bold text-slate-300">
+                          •••• ({user.plainPassword || (user.password && !user.password.startsWith('$2') ? user.password : '••••••••')})
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                        className="p-1 text-slate-400 hover:text-white rounded transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(user.plainPassword || (user.password && !user.password.startsWith('$2') ? user.password : ''), 'password')}
+                        title="Copy password"
+                        className="p-1 text-slate-400 hover:text-white rounded transition-colors"
+                      >
+                        {copiedField === 'password' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex justify-between">
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Team Commissions Claimed:</span>
@@ -841,36 +968,112 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
           )}
 
           {activeTab === 'reset-pin' && (
-            <form onSubmit={handlePinSubmit} className="space-y-4">
-              <div
-                className={`p-4 rounded-2xl border text-xs leading-relaxed ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
-                }`}
-              >
-                Reset the user's 4-digit security PIN for withdrawal authorisations.
-              </div>
+            <div className="space-y-6">
+              {/* Security PIN Section */}
+              <form onSubmit={handlePinSubmit} className={`p-5 rounded-2xl border space-y-4 ${
+                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400" />
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                      4-Digit Security PIN
+                    </h5>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Current: <strong className="text-slate-200 font-bold">{user.securityPin || '1234'}</strong>
+                  </span>
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">New 4-Digit Security PIN</label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="e.g. 1234"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-center tracking-widest text-lg font-black focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  required
-                />
-              </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  The security PIN protects fund withdrawals and payment gateway additions.
+                </p>
 
-              <button
-                type="submit"
-                disabled={isResettingPin}
-                className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-md shadow-amber-950/40"
-              >
-                {isResettingPin ? 'Updating PIN...' : 'Save New Security PIN'}
-              </button>
-            </form>
+                {pinFeedback && (
+                  <div className={`p-3 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+                    pinFeedback.type === 'success'
+                      ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+                      : 'bg-rose-950/40 border-rose-800 text-rose-300'
+                  }`}>
+                    {pinFeedback.type === 'success' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    <span>{pinFeedback.message}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">Set New Security PIN</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value)}
+                    placeholder="e.g. 1234 or 5678"
+                    className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-center tracking-widest text-lg font-black focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isResettingPin}
+                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-md shadow-amber-950/40 disabled:opacity-50"
+                >
+                  {isResettingPin ? 'Updating PIN...' : 'Save New Security PIN'}
+                </button>
+              </form>
+
+              {/* Account Password Section */}
+              <form onSubmit={handlePasswordSubmit} className={`p-5 rounded-2xl border space-y-4 ${
+                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                      User Login Password
+                    </h5>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Current: <strong className="text-emerald-400 font-bold">{user.plainPassword || (user.password && !user.password.startsWith('$2') ? user.password : 'Encrypted')}</strong>
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Reset the investor's mobile portal sign-in password directly.
+                </p>
+
+                {passwordFeedback && (
+                  <div className={`p-3 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+                    passwordFeedback.type === 'success'
+                      ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+                      : 'bg-rose-950/40 border-rose-800 text-rose-300'
+                  }`}>
+                    {passwordFeedback.type === 'success' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    <span>{passwordFeedback.message}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">Set New Password (min 4 characters)</label>
+                  <input
+                    type="text"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (e.g. Pass@123)"
+                    className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isResettingPassword}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950/40 disabled:opacity-50"
+                >
+                  {isResettingPassword ? 'Updating Password...' : 'Save New Password'}
+                </button>
+              </form>
+            </div>
           )}
 
           {activeTab === 'send-notification' && (

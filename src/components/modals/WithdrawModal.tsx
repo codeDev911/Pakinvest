@@ -157,13 +157,14 @@ export const WithdrawModal: React.FC = () => {
   };
 
   const handleConfirmWithdrawal = async () => {
-    if (pin !== user.securityPin && pin !== '1234') {
-      showToast('Incorrect PIN', 'The 4-digit security PIN is incorrect (Default PIN: 1234)', 'error');
+    const userPin = String(user.securityPin || '1234').trim();
+    if (String(pin).trim() !== userPin) {
+      showToast('Incorrect PIN', 'The 4-digit security PIN is incorrect. Please check your PIN in Settings.', 'error');
       return;
     }
 
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 600));
 
     let title = customTitle;
     let number = customNumber;
@@ -589,7 +590,9 @@ export const WithdrawModal: React.FC = () => {
                 </div>
 
                 <p className="text-[11px] text-slate-400">
-                  Default PIN for demo: <span className="font-mono font-bold text-emerald-500">1234</span>
+                  {user.securityPin && user.securityPin !== '1234'
+                    ? 'Use the custom 4-digit PIN you configured in Settings.'
+                    : <span>Default PIN for new accounts: <strong className="font-mono text-emerald-500">1234</strong></span>}
                 </p>
 
                 <div className="flex gap-2.5 pt-2">

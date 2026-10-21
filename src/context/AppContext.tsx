@@ -112,7 +112,7 @@ interface AppContextType {
   fetchNotifications: () => Promise<void>;
   addPaymentAccount: (account: Omit<PaymentAccount, 'id' | 'addedDate'>) => Promise<void>;
   deletePaymentAccount: (id: string) => Promise<void>;
-  updateUserPin: (newPin: string) => void;
+  updateUserPin: (newPin: string, currentPin?: string) => Promise<boolean>;
   changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   refreshAllData: () => Promise<void>;
 
@@ -1217,9 +1217,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const updateUserPin = (newPin: string) => {
-    setUser((prev) => ({ ...prev, securityPin: newPin }));
-    showToast('PIN Updated', 'Your 4-digit security PIN has been updated.', 'success');
+  const updateUserPin = async (newPin: string, currentPin?: string): Promise<boolean> => {
+    if (!isAuthenticated) {
+      setIsAuthModalOpen(true);
+      showToast('Sign In Required', 'Please sign in to change your security PIN.', 'warning');
+      return false;
+    }
+
+    const cleanPin = String(newPin || '').trim().replace(/[^0-9]/g, '');
+    if (cleanPin.length !== 4) {
+      showToast('Invalid PIN', 'Security PIN must be exactly 4 digits.', 'error');
+      return false;
+    }
+
+    try {
+      const res = await fetch(getApiUrl('/api/auth/change-pin'), {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ newPin: cleanPin, currentPin }),
+      });
+      const { ok, data } = await safeParseJson<{ success?: boolean; message?: string; securityPin?: string; error?: string }>(res);
+
+      if (ok && data?.success) {
+        const savedPin = data.securityPin || cleanPin;
+        setUser((prev) => ({ ...prev, securityPin: savedPin }));
+        showToast('PIN Updated 🔑', data.message || 'Your 4-digit security PIN has been updated.', 'success');
+        return true;
+      } else {
+        showToast('PIN Update Failed', data?.error || 'Unable to update security PIN', 'error');
+        return false;
+      }
+    } catch (err: any) {
+      showToast('Error', err?.message || 'Failed to update PIN', 'error');
+      return false;
+    }
   };
 
   const changePassword = async (oldPassword: string, newPassword: string, confirmPassword: string) => {
