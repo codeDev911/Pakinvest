@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Analytics } from "@vercel/analytics/next";
 import { AppProvider } from './context/AppContext';
 import { ClientApp } from './client/ClientApp';
 import { CrmApp } from './crm/CrmApp';
@@ -69,6 +70,7 @@ export default function App() {
 
   return (
     <AppProvider>
+      <Analytics />
       {/* Route Protection: /crm-control isolation & dedicated CRM authentication */}
       {isCrm ? (
         hasAdminAuth ? (
